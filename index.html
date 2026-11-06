@@ -1,22 +1,426 @@
-<!DOCTYPE html>
-<html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover"><meta name="theme-color" content="#121d1b"><meta name="description" content="Build your frontier. Raise an army. Turn the tide. A playable strategy tug-of-war."><title>Ironroot Frontier · RTS</title><link rel="manifest" href="./manifest.webmanifest"><link rel="icon" href="./icon.svg" type="image/svg+xml"><link rel="stylesheet" href="./styles.css"></head>
-<body>
-<div class="app">
-<header class="topbar"><a class="brand" href="./" aria-label="Ironroot Frontier home"><span class="brand-mark">♜</span><span>IRONROOT<small>F R O N T I E R</small></span></a><div class="match-label"><span class="live-dot"></span> <span id="matchType">SOLO SKIRMISH</span> <span class="separator">/</span> <span id="opponentLabel">THE IRON MARSHAL</span></div><div class="resources"><div class="gold-block"><span class="coin">◆</span><b id="gold">420</b><small id="income">+10 /s</small></div><div class="army-block"><span>⚑</span><b id="army">0</b><small>ARMY</small></div><div class="clock-block"><b id="time">00:00</b><small>BATTLE TIME</small></div></div></header>
-<main class="battlefield" id="battlefield"><canvas id="battle" aria-label="Battlefield. Select a building below, then tap a green build slot to place it. Drag to explore." tabindex="0"></canvas>
-<div class="battle-top"><div class="base-status yours"><span>YOUR CITADEL</span><div class="hp-track"><i id="yourHp"></i></div><b id="yourHpText">100%</b></div><div class="phase" id="phase">THE LONG REACH <small>THREE LANES · ONE FRONTIER</small></div><div class="base-status enemy"><span>ENEMY CITADEL</span><div class="hp-track"><i id="enemyHp"></i></div><b id="enemyHpText">100%</b></div></div>
-<div id="objectiveHUD" class="objective-hud hidden" role="status"><b id="objectiveProgress"></b><span id="objectiveTime"></span></div><div class="toolbelt"><button id="pause" class="icon-button" title="Pause (Space)" aria-label="Pause game">Ⅱ</button><button id="speed" class="icon-button" title="Battle speed" aria-label="Change battle speed">1×</button><button id="sound" class="icon-button muted" title="Sound effects" aria-label="Enable sound effects">♪</button><button id="settings" class="icon-button" title="Preferences" aria-label="Open preferences">⚙</button></div>
-<div class="map-note" id="mapNote"><span class="key">DRAG</span> to explore <span class="note-dot">·</span> <span class="key">TAP</span> a building to manage it</div>
-<div id="toast" class="toast" role="status"></div>
-<div class="selection-panel hidden" id="selectionPanel"><div class="selection-heading"><span id="selectionIcon"></span><div><h3 id="selectionTitle"></h3><p id="selectionDetail"></p></div><button id="closeSelection" aria-label="Close building details">×</button></div><div class="selection-stats" id="selectionStats"></div><p class="selection-description" id="selectionDescription"></p><div class="selection-actions"><button id="upgrade" class="gold-button">Upgrade</button><button id="sell" class="secondary-button">Salvage</button></div></div>
-<div class="bottom-map"><button id="home" class="map-jump" title="Your base" aria-label="Go to your base">⌂</button><canvas id="minimap" aria-label="Map overview. Tap to move the camera."></canvas><button id="front" class="map-jump" title="Follow frontline" aria-label="Follow the frontline">⚔</button></div>
-<div class="pause-veil hidden" id="pauseVeil"><span>PAUSED</span><small>Take a breath. Plan your next move.</small><button id="resume" class="gold-button">Resume battle</button><button id="saveExit" class="secondary-button">Save & return to title</button><div class="pause-links"><button id="pauseSettings" class="text-button">Preferences</button><button id="help" class="text-button" aria-label="How to play">Field guide</button></div></div>
-</main>
-<section class="command-deck"><div class="deck-heading"><span id="buildPrompt">BUILD YOUR FRONTIER</span><small id="buildHelp">Choose a building, then place it in your territory.</small><button id="cancelBuild" class="hidden">Cancel ×</button></div><div class="deck-body"><div class="build-cards" id="buildCards"></div><button id="rally" class="rally-card"><span class="rally-icon">✦</span><b>Rally strike</b><small>Break an enemy push</small><span class="rally-cost" id="rallyCost">◆ 75 <em>25s cooldown</em></span></button></div></section>
-</div>
-<div class="modal-backdrop" id="welcome"><section class="welcome modal" role="dialog" aria-modal="true" aria-labelledby="welcomeTitle"><div class="eyebrow">A REAL-TIME TUG OF WAR</div><div class="welcome-sigil">♜</div><h1 id="welcomeTitle">IRONROOT<span>FRONTIER</span></h1><p class="welcome-copy">Build your line. Raise an army.<br>Turn the tide.</p><div class="welcome-rule"></div><div class="mode-tabs"><button class="active" data-mode="skirmish">SKIRMISH</button><button data-mode="challenges">FIELD TRIALS <span>5</span></button></div><div id="skirmishConfig"><div class="mode-label">CHOOSE YOUR OPPONENT</div><div class="difficulty-choices"><button class="active" data-difficulty="easy"><b>The Outrider</b><small>A gentler first battle</small></button><button data-difficulty="normal"><b>The Marshal</b><small>A balanced challenge</small></button><button data-difficulty="hard"><b>The Warlord</b><small>No ground given</small></button></div></div><div id="challengeConfig" class="hidden"><div class="challenge-choices" id="challengeChoices"></div><div class="challenge-brief"><div class="challenge-heading"><h3 id="challengeName"></h3><span id="challengeMedal"></span></div><p id="challengeDescription"></p><p class="challenge-objective" id="challengeObjective"></p><ul id="challengeBriefing"></ul><details><summary>Commander’s hint</summary><p id="challengeHint"></p></details></div></div><button class="start-button" id="start">ENTER THE FRONTIER <span>→</span></button><p class="welcome-foot">Solo skirmish & field trials · Touch & mouse · v0.5</p><button class="text-button" id="welcomeHelp">Read the field guide</button><button class="text-button" id="welcomeSettings">Preferences & sound</button></section></div>
-<div class="modal-backdrop hidden" id="helpModal"><section class="guide modal" role="dialog" aria-modal="true" aria-labelledby="guideTitle"><button class="modal-close" id="closeHelp" aria-label="Close field guide">×</button><div class="eyebrow">THE COMMANDER'S FIELD GUIDE</div><h2 id="guideTitle">Win the ground war.</h2><p class="guide-intro">Destroy the enemy citadel. Your buildings raise troops automatically, so your job is the plan.</p><div class="guide-grid"><article><span>01</span><h3>Build the engine</h3><p>Select a building, then tap a green slot. Troops march down its nearest lane. Gold flows in over time.</p></article><article><span>02</span><h3>Make a mixed army</h3><p>Warriors screen your archers. Wizards punish ground swarms. Gryphons bypass melee; archers shoot them down. Siege breaks towers.</p></article><article><span>03</span><h3>Commit to a lane</h3><p>Stack producers behind a push or spread out to divide the enemy. Forward buildings reinforce faster, but are exposed.</p></article><article><span>04</span><h3>Turn the tide</h3><p>Towers buy time, but don't heal. Upgrade surviving buildings, invest in Gold mines, or use a Rally strike to thin enemy troops.</p></article></div><div class="guide-tip"><b>A war of attrition.</b> Towers can be worn down by continuous waves. After 5 minutes, production accelerates. After 7, both citadels begin to crumble.</div><p class="controls"><b>Touch:</b> Tap to build · Drag to pan · Tap the minimap to jump<br><b>Keyboard:</b> 1–7 buildings · R strike · Space pause · Esc cancel · Arrow keys pan</p><button id="guideDone" class="gold-button">Ready to command</button></section></div>
-<div class="modal-backdrop hidden" id="settingsModal"><section class="settings-modal modal" role="dialog" aria-modal="true" aria-labelledby="settingsTitle"><button class="modal-close" id="closeSettings" aria-label="Close preferences">×</button><div class="eyebrow">MAKE THE FRONTIER YOURS</div><h2 id="settingsTitle">Preferences</h2><div class="settings-grid"><label class="setting-row"><span>Enable audio<small>Music and sound effects</small></span><input id="audioEnabled" type="checkbox"></label><label class="setting-row"><span>Music<small>Original adaptive frontier score</small></span><input id="musicEnabled" type="checkbox"></label><label class="setting-row"><span>Sound effects<small>Construction, combat and commands</small></span><input id="sfxEnabled" type="checkbox"></label><label class="setting-row volume-row"><span>Master volume <b id="volumeValue">50%</b></span><input id="masterVolume" type="range" min="0" max="100" step="5" aria-label="Master volume"></label><label class="setting-row"><span>Reduced motion<small>No shake or flying debris</small></span><input id="reduceMotion" type="checkbox"></label><label class="setting-row"><span>Effect detail<small>Lower on slower devices</small></span><select id="effectQuality"><option value="high">High</option><option value="low">Low</option></select></label></div><details class="history-details"><summary>Recent battles</summary><div id="battleHistory"></div></details><p class="settings-note">Preferences, saved battles and medals stay on this browser or device. No account or tracking.</p><button id="settingsDone" class="gold-button">Back to the frontier</button></section></div>
-<div class="modal-backdrop hidden" id="resultModal"><section class="result modal" role="dialog" aria-modal="true" aria-labelledby="resultTitle"><div class="eyebrow" id="resultEyebrow">THE FRONTIER IS YOURS</div><div class="result-sigil" id="resultSigil">⚑</div><h2 id="resultTitle">VICTORY</h2><p id="resultCopy">Your army broke the enemy citadel.</p><div class="result-stats"><div><b id="resultTime"></b><span>BATTLE TIME</span></div><div><b id="resultKills"></b><span>ENEMIES FELLED</span></div><div><b id="resultBuilt"></b><span>BUILDINGS RAISED</span></div></div><button id="playAgain" class="start-button">FIGHT ANOTHER DAY <span>→</span></button><button id="inspectBattle" class="text-button">Inspect the battlefield</button></section></div>
-<script type="module" src="./app.js"></script>
-</body></html>
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1, viewport-fit=cover"
+    />
+    <meta name="theme-color" content="#121d1b" />
+    <meta
+      name="description"
+      content="Build your frontier. Raise an army. Turn the tide. A playable strategy tug-of-war."
+    />
+    <title>Ironroot Frontier · RTS</title>
+    <link rel="manifest" href="./manifest.webmanifest" />
+    <link rel="icon" href="./icon.svg" type="image/svg+xml" />
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <div class="app">
+      <header class="topbar">
+        <a class="brand" href="./" aria-label="Ironroot Frontier home"
+          ><span class="brand-mark">♜</span
+          ><span>IRONROOT<small>F R O N T I E R</small></span></a
+        >
+        <div class="match-label">
+          <span class="live-dot"></span>
+          <span id="matchType">SOLO SKIRMISH</span>
+          <span class="separator">/</span>
+          <span id="opponentLabel">THE IRON MARSHAL</span>
+        </div>
+        <div class="resources">
+          <div class="gold-block">
+            <span class="coin">◆</span><b id="gold">420</b
+            ><small id="income">+10 /s</small>
+          </div>
+          <div class="army-block">
+            <span>⚑</span><b id="army">0</b><small>ARMY</small>
+          </div>
+          <div class="clock-block">
+            <b id="time">00:00</b><small>BATTLE TIME</small>
+          </div>
+        </div>
+      </header>
+      <main class="battlefield" id="battlefield">
+        <canvas
+          id="battle"
+          aria-label="Battlefield. Select a building below, then tap a green build slot to place it. Drag to explore."
+          tabindex="0"
+        ></canvas>
+        <div class="battle-top">
+          <div class="base-status yours">
+            <span>YOUR CITADEL</span>
+            <div class="hp-track"><i id="yourHp"></i></div>
+            <b id="yourHpText">100%</b>
+          </div>
+          <div class="phase" id="phase">
+            THE LONG REACH <small>THREE LANES · ONE FRONTIER</small>
+          </div>
+          <div class="base-status enemy">
+            <span>ENEMY CITADEL</span>
+            <div class="hp-track"><i id="enemyHp"></i></div>
+            <b id="enemyHpText">100%</b>
+          </div>
+        </div>
+        <div id="objectiveHUD" class="objective-hud hidden" role="status">
+          <b id="objectiveProgress"></b><span id="objectiveTime"></span>
+        </div>
+        <div class="toolbelt">
+          <button
+            id="pause"
+            class="icon-button"
+            title="Pause (Space)"
+            aria-label="Pause game"
+          >
+            Ⅱ</button
+          ><button
+            id="speed"
+            class="icon-button"
+            title="Battle speed"
+            aria-label="Change battle speed"
+          >
+            1×</button
+          ><button
+            id="sound"
+            class="icon-button muted"
+            title="Sound effects"
+            aria-label="Enable sound effects"
+          >
+            ♪</button
+          ><button
+            id="settings"
+            class="icon-button"
+            title="Preferences"
+            aria-label="Open preferences"
+          >
+            ⚙
+          </button>
+        </div>
+        <div class="map-note" id="mapNote">
+          <span class="key">DRAG</span> to explore
+          <span class="note-dot">·</span> <span class="key">TAP</span> a
+          building to manage it
+        </div>
+        <div id="toast" class="toast" role="status"></div>
+        <div class="selection-panel hidden" id="selectionPanel">
+          <div class="selection-heading">
+            <span id="selectionIcon"></span>
+            <div>
+              <h3 id="selectionTitle"></h3>
+              <p id="selectionDetail"></p>
+            </div>
+            <button id="closeSelection" aria-label="Close building details">
+              ×
+            </button>
+          </div>
+          <div class="selection-stats" id="selectionStats"></div>
+          <p class="selection-description" id="selectionDescription"></p>
+          <div class="selection-actions">
+            <button id="upgrade" class="gold-button">Upgrade</button
+            ><button id="sell" class="secondary-button">Salvage</button>
+          </div>
+        </div>
+        <div class="bottom-map">
+          <button
+            id="home"
+            class="map-jump"
+            title="Your base"
+            aria-label="Go to your base"
+          >
+            ⌂</button
+          ><canvas
+            id="minimap"
+            aria-label="Map overview. Tap to move the camera."
+          ></canvas
+          ><button
+            id="front"
+            class="map-jump"
+            title="Follow frontline"
+            aria-label="Follow the frontline"
+          >
+            ⚔
+          </button>
+        </div>
+        <div class="pause-veil hidden" id="pauseVeil">
+          <span>PAUSED</span><small>Take a breath. Plan your next move.</small
+          ><button id="resume" class="gold-button">Resume battle</button
+          ><button id="saveExit" class="secondary-button">
+            Save & return to title
+          </button>
+          <div class="pause-links">
+            <button id="pauseSettings" class="text-button">Preferences</button
+            ><button id="help" class="text-button" aria-label="How to play">
+              Field guide
+            </button>
+          </div>
+        </div>
+      </main>
+      <section class="command-deck">
+        <div class="deck-heading">
+          <span id="buildPrompt">BUILD YOUR FRONTIER</span
+          ><small id="buildHelp"
+            >Choose a building, then place it in your territory.</small
+          ><button id="cancelBuild" class="hidden">Cancel ×</button>
+        </div>
+        <div class="deck-body">
+          <div class="build-cards" id="buildCards"></div>
+          <button id="rally" class="rally-card">
+            <span class="rally-icon">✦</span><b>Rally strike</b
+            ><small>Break an enemy push</small
+            ><span class="rally-cost" id="rallyCost"
+              >◆ 75 <em>25s cooldown</em></span
+            >
+          </button>
+        </div>
+      </section>
+    </div>
+    <div class="modal-backdrop" id="welcome">
+      <section
+        class="welcome modal"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="welcomeTitle"
+      >
+        <div class="eyebrow">A REAL-TIME TUG OF WAR</div>
+        <div class="welcome-sigil">♜</div>
+        <h1 id="welcomeTitle">IRONROOT<span>FRONTIER</span></h1>
+        <p class="welcome-copy">
+          Build your line. Raise an army.<br />Turn the tide.
+        </p>
+        <div class="welcome-rule"></div>
+        <div class="mode-tabs">
+          <button class="active" data-mode="skirmish">SKIRMISH</button
+          ><button data-mode="campaign">CAMPAIGN <span>12</span></button
+          ><button data-mode="challenges">FIELD TRIALS <span>5</span></button>
+        </div>
+        <div id="skirmishConfig">
+          <div class="mode-label">CHOOSE YOUR OPPONENT</div>
+          <div class="difficulty-choices">
+            <button class="active" data-difficulty="easy">
+              <b>The Outrider</b><small>A gentler first battle</small></button
+            ><button data-difficulty="normal">
+              <b>The Marshal</b><small>A balanced challenge</small></button
+            ><button data-difficulty="hard">
+              <b>The Warlord</b><small>No ground given</small>
+            </button>
+          </div>
+        </div>
+        <div id="campaignConfig" class="hidden">
+          <div class="campaign-overview">
+            <span>THE IRONROOT CAMPAIGN</span><b id="campaignProgressText"></b>
+          </div>
+          <div class="campaign-chapters" id="campaignChapters"></div>
+          <h3 class="campaign-chapter-title" id="campaignChapterTitle"></h3>
+          <p class="campaign-chapter-story" id="campaignChapterStory"></p>
+          <div class="campaign-missions" id="campaignMissions"></div>
+          <div class="campaign-brief">
+            <div class="campaign-dialogue">
+              <b id="campaignSpeaker"></b>
+              <p id="campaignDialogue"></p>
+            </div>
+            <h3 id="campaignMissionTitle"></h3>
+            <p id="campaignMissionDescription"></p>
+            <p class="challenge-objective" id="campaignObjective"></p>
+            <ul id="campaignBriefing"></ul>
+            <p class="campaign-medals" id="campaignMedals"></p>
+            <details>
+              <summary>Commander’s hint</summary>
+              <p id="campaignHint"></p>
+            </details>
+            <p class="campaign-unlock" id="campaignUnlock"></p>
+          </div>
+        </div>
+        <div id="challengeConfig" class="hidden">
+          <div class="challenge-choices" id="challengeChoices"></div>
+          <div class="challenge-brief">
+            <div class="challenge-heading">
+              <h3 id="challengeName"></h3>
+              <span id="challengeMedal"></span>
+            </div>
+            <p id="challengeDescription"></p>
+            <p class="challenge-objective" id="challengeObjective"></p>
+            <ul id="challengeBriefing"></ul>
+            <details>
+              <summary>Commander’s hint</summary>
+              <p id="challengeHint"></p>
+            </details>
+          </div>
+        </div>
+        <button class="start-button" id="start">
+          ENTER THE FRONTIER <span>→</span>
+        </button>
+        <p class="save-status hidden" id="saveStatus" role="status"></p>
+        <p class="welcome-foot">Campaign · Skirmish · Field trials · v0.6</p>
+        <div class="welcome-links">
+          <button class="text-button" id="welcomeHelp">
+            Read the field guide</button
+          ><button class="text-button" id="welcomeSettings">
+            Preferences & sound
+          </button>
+        </div>
+      </section>
+    </div>
+    <div class="modal-backdrop hidden" id="helpModal">
+      <section
+        class="guide modal"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="guideTitle"
+      >
+        <button
+          class="modal-close"
+          id="closeHelp"
+          aria-label="Close field guide"
+        >
+          ×
+        </button>
+        <div class="eyebrow">THE COMMANDER'S FIELD GUIDE</div>
+        <h2 id="guideTitle">Win the ground war.</h2>
+        <p class="guide-intro">
+          Destroy the enemy citadel. Your buildings raise troops automatically,
+          so your job is the plan.
+        </p>
+        <div class="guide-grid">
+          <article>
+            <span>01</span>
+            <h3>Build the engine</h3>
+            <p>
+              Select a building, then tap a green slot. Troops march down its
+              nearest lane. Gold flows in over time.
+            </p>
+          </article>
+          <article>
+            <span>02</span>
+            <h3>Make a mixed army</h3>
+            <p>
+              Warriors screen your archers. Wizards punish ground swarms.
+              Gryphons bypass melee; archers shoot them down. Siege breaks
+              towers.
+            </p>
+          </article>
+          <article>
+            <span>03</span>
+            <h3>Commit to a lane</h3>
+            <p>
+              Stack producers behind a push or spread out to divide the enemy.
+              Forward buildings reinforce faster, but are exposed.
+            </p>
+          </article>
+          <article>
+            <span>04</span>
+            <h3>Turn the tide</h3>
+            <p>
+              Towers buy time, but don't heal. Upgrade surviving buildings,
+              invest in Gold mines, or use a Rally strike to thin enemy troops.
+            </p>
+          </article>
+        </div>
+        <div class="guide-tip">
+          <b>A war of attrition.</b> Towers can be worn down by continuous
+          waves. After 5 minutes, production accelerates. After 7, both citadels
+          begin to crumble.
+        </div>
+        <p class="controls">
+          <b>Touch:</b> Tap to build · Drag to pan · Tap the minimap to jump<br /><b
+            >Keyboard:</b
+          >
+          1–7 buildings · R strike · Space pause · Esc cancel · Arrow keys pan
+        </p>
+        <button id="guideDone" class="gold-button">Ready to command</button>
+      </section>
+    </div>
+    <div class="modal-backdrop hidden" id="settingsModal">
+      <section
+        class="settings-modal modal"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="settingsTitle"
+      >
+        <button
+          class="modal-close"
+          id="closeSettings"
+          aria-label="Close preferences"
+        >
+          ×
+        </button>
+        <div class="eyebrow">MAKE THE FRONTIER YOURS</div>
+        <h2 id="settingsTitle">Preferences</h2>
+        <div class="settings-grid">
+          <label class="setting-row"
+            ><span>Enable audio<small>Music and sound effects</small></span
+            ><input id="audioEnabled" type="checkbox" /></label
+          ><label class="setting-row"
+            ><span>Music<small>Original adaptive frontier score</small></span
+            ><input id="musicEnabled" type="checkbox" /></label
+          ><label class="setting-row"
+            ><span
+              >Sound effects<small
+                >Construction, combat and commands</small
+              ></span
+            ><input id="sfxEnabled" type="checkbox" /></label
+          ><label class="setting-row volume-row"
+            ><span>Master volume <b id="volumeValue">50%</b></span
+            ><input
+              id="masterVolume"
+              type="range"
+              min="0"
+              max="100"
+              step="5"
+              aria-label="Master volume" /></label
+          ><label class="setting-row"
+            ><span>Reduced motion<small>No shake or flying debris</small></span
+            ><input id="reduceMotion" type="checkbox" /></label
+          ><label class="setting-row"
+            ><span>Effect detail<small>Lower on slower devices</small></span
+            ><select id="effectQuality">
+              <option value="high">High</option>
+              <option value="low">Low</option>
+            </select></label
+          >
+        </div>
+        <details class="history-details">
+          <summary>Recent battles</summary>
+          <div id="battleHistory"></div>
+        </details>
+        <p class="settings-note">
+          Preferences, saved battles and medals stay on this browser or device.
+          No account or tracking.
+        </p>
+        <button id="settingsDone" class="gold-button">
+          Back to the frontier
+        </button>
+      </section>
+    </div>
+    <div class="modal-backdrop hidden" id="resultModal">
+      <section
+        class="result modal"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="resultTitle"
+      >
+        <div class="eyebrow" id="resultEyebrow">THE FRONTIER IS YOURS</div>
+        <div class="result-sigil" id="resultSigil">⚑</div>
+        <h2 id="resultTitle">VICTORY</h2>
+        <p id="resultCopy">Your army broke the enemy citadel.</p>
+        <div id="resultObjectives" class="result-objectives hidden"></div>
+        <p id="progressSaveWarning" class="save-warning hidden" role="status">
+          Progress could not be saved on this browser. Keep this page open and
+          free some storage before leaving.
+        </p>
+        <div class="result-stats">
+          <div><b id="resultTime"></b><span>BATTLE TIME</span></div>
+          <div><b id="resultKills"></b><span>ENEMIES FELLED</span></div>
+          <div><b id="resultBuilt"></b><span>BUILDINGS RAISED</span></div>
+        </div>
+        <button id="playAgain" class="start-button">
+          FIGHT ANOTHER DAY <span>→</span></button
+        ><button id="resultMenu" class="text-button">Return to title</button
+        ><button id="inspectBattle" class="text-button">
+          Inspect the battlefield
+        </button>
+      </section>
+    </div>
+    <script type="module" src="./app.js"></script>
+  </body>
+</html>
