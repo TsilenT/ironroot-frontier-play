@@ -1,0 +1,83 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="theme-color" content="#121d1b" />
+    <meta name="description" content="Five short, replayable Ironroot Frontier practice lessons. Your saved game stays untouched." />
+    <title>Guided practice · Ironroot Frontier</title>
+    <link rel="icon" href="./icon.svg" type="image/svg+xml" />
+    <link rel="stylesheet" href="./training.css" />
+  </head>
+  <body>
+    <header class="training-header">
+      <a href="./" id="returnGame" class="return-link" aria-label="Return to Ironroot Frontier game">← Return to game</a>
+      <span class="training-brand">IRONROOT <b>FIELD SCHOOL</b></span>
+    </header>
+    <p class="safe-notice"><strong>Practice only.</strong> No saves or rewards. Your saved battle, campaign and records stay untouched. Practice resets when you leave.</p>
+    <main class="training-workspace">
+      <section class="field-panel" id="fieldPanel" aria-label="Practice battlefield">
+        <div class="field-heading">
+          <span id="fieldState">INSTRUCTIONS · TIME STOPPED</span>
+          <span><b id="gold">0</b> gold <small id="income">+5/s</small></span>
+          <span id="battleTime">0:00</span>
+        </div>
+        <p id="fieldAction" class="field-action">Follow the current lesson below.</p>
+        <div class="canvas-wrap" id="canvasWrap">
+          <canvas id="trainingBattle" tabindex="0" aria-label="Practice battlefield. Choose an available building, then tap a gold highlighted site. Drag to pan without spending. Keyboard users can use the labeled site buttons in the lesson panel." aria-describedby="fieldHelp fieldAction"></canvas>
+          <span class="map-note" aria-hidden="true">YOUR FRONTIER →</span>
+        </div>
+        <nav class="map-controls" aria-label="Battlefield navigation">
+          <button type="button" id="homeCamera" title="Home camera (H)">⌂ Home</button>
+          <canvas id="trainingMinimap" tabindex="0" role="slider" aria-label="Battlefield minimap position" aria-valuemin="0" aria-valuemax="3200" aria-valuenow="700" aria-valuetext="Your frontier"></canvas>
+          <button type="button" id="frontCamera" title="Front camera (F)">Front →</button>
+        </nav>
+        <p id="fieldHelp" class="field-help">Drag to pan · tap minimap to travel · H home · F front · ← → pan</p>
+      </section>
+      <aside class="coach" aria-label="Guided practice lesson">
+        <div class="lesson-switcher">
+          <label for="lessonPicker">Replay a lesson</label>
+          <select id="lessonPicker"></select>
+        </div>
+        <div class="lesson-heading"><span id="lessonNumber" class="eyebrow">LESSON 1 / 5</span><span id="stepCount" class="step-count"></span></div>
+        <h1 id="lessonName">Guided practice</h1>
+        <p id="lessonSubtitle" class="lesson-subtitle"></p>
+        <details class="setup-disclosure"><summary id="setupSummary">Practice setup</summary><ul id="setupBriefing"></ul></details>
+        <section class="instruction" aria-labelledby="stepTitle">
+          <span id="stepKind" class="step-kind">YOUR TURN</span>
+          <h2 id="stepTitle" tabindex="-1">Preparing your lesson…</h2>
+          <p id="stepPrompt"></p>
+          <p id="objective" class="objective"></p>
+          <ul id="reviewResults" class="review-results" hidden></ul>
+          <div class="status-message" id="feedback" role="status" aria-live="polite" aria-atomic="true"></div>
+          <div class="lesson-actions">
+            <button type="button" id="continueLesson" class="primary" hidden>Continue</button>
+            <button type="button" id="pauseLesson" hidden>Pause observation</button>
+            <button type="button" id="recoverGold" hidden>Wait for income</button>
+          </div>
+        </section>
+        <section class="command-panel" aria-label="Available lesson actions">
+          <div class="command-heading"><h2>Build deck</h2><button type="button" id="cancelChoice" class="quiet" disabled>Cancel</button></div>
+          <p id="choiceHint" class="choice-hint">Choose a building, then a marked site. Nothing is placed for you.</p>
+          <div id="buildDeck" class="build-deck"></div>
+          <div id="siteActions" class="site-actions" aria-label="Marked practice sites"></div>
+          <div id="buildingActions" class="site-actions" aria-label="Your highlighted buildings"></div>
+          <div id="selectionPanel" class="selection-panel" hidden>
+            <span id="selectionName"></span>
+            <button type="button" id="upgradeBuilding">Upgrade</button>
+          </div>
+        </section>
+        <div class="session-actions"><button type="button" id="restartLesson">↻ Restart lesson</button><button type="button" id="skipLesson">Skip lesson →</button></div>
+        <details class="controls-help">
+          <summary>Controls &amp; practice rules</summary>
+          <p>Touch, mouse and keyboard. Choose a build card, then tap the gold highlighted site. A drag of more than 8 pixels pans and never spends gold. Cancel clears your choice before selecting an owned building.</p>
+          <p>1–7 choose the matching available building. Escape cancels. H / F move home / front; arrow keys pan. Space pauses or resumes an observation. Tab moves between controls; Enter or Space activates a focused button. The named site buttons are an alternative to tapping the map.</p>
+          <p>Every build and upgrade costs real practice gold. Only the current lesson's highlighted actions are available. Time stops for instructions and runs for observations. Switching away pauses the lesson; resume it yourself.</p>
+          <p>Lessons use temporary authored battles and starting gold. No progress, saves, history, backups or rewards are written. You can replay any lesson. This page does not add controller support.</p>
+        </details>
+      </aside>
+    </main>
+    <noscript><p class="load-error">Practice needs JavaScript. <a href="./">Return to the game.</a></p></noscript>
+    <script type="module" src="./training-app.js"></script>
+  </body>
+</html>

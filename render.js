@@ -1,5 +1,14 @@
 import { BattleVFX } from './vfx.js';
-import { BUILDINGS, UNITS, WORLD, LANES, SPELL } from './engine.js';
+import {
+  BUILDINGS,
+  UNITS,
+  SPELL,
+  getMap,
+  buildSites,
+  buildBounds,
+  homeX,
+  worldX,
+} from './engine.js';
 const COLORS = [
   { cloth: '#539d95', bright: '#b4e3c3', dark: '#214d4a', flag: '#80c5ad' },
   { cloth: '#ad6554', bright: '#edbb92', dark: '#683e35', flag: '#d59070' },
@@ -130,9 +139,11 @@ export class Renderer {
     this.height = 0;
     this.camera = 800;
     this.zoom = 1;
+    this.map = getMap('classic');
+    this.theme = 'woodland';
     this.terrain = this.makeTerrain();
     this.baseTerrain = this.terrain;
-    this.theme = 'woodland';
+    this.terrainKey = this.map.id + ':' + this.map.revision + ':' + this.theme;
     this.resize();
     this.time = 0;
     this.reducedMotion = matchMedia('(prefers-reduced-motion: reduce)').matches;
@@ -151,21 +162,50 @@ export class Renderer {
     this.mini.height = Math.round(mr.height * dpr);
     this.mw = mr.width;
     this.mh = mr.height;
-    this.scale = Math.max(0.32, this.height / 900) * this.zoom;
+    this.scale = Math.max(0.32, this.height / this.map.height) * this.zoom;
     this.clampCamera();
+  }
+  /** Select a registered battlefield before setting the battle's camera. */
+  setMap(mapOrId = 'classic') {
+    const map = getMap(typeof mapOrId === 'string' ? mapOrId : mapOrId?.id);
+    if (typeof mapOrId !== 'string' && mapOrId !== map)
+      throw new Error('Use a registered battlefield descriptor.');
+    if (map === this.map) return map;
+    const oldBase = this.baseTerrain,
+      oldTerrain = this.terrain;
+    this.map = map;
+    this.baseTerrain = this.makeTerrain();
+    this.terrain = this.baseTerrain;
+    this.terrainKey = null;
+    this.releaseTerrain(oldTerrain);
+    if (oldBase !== oldTerrain) this.releaseTerrain(oldBase);
+    this.setTheme(this.theme);
+    this.clampCamera();
+    return map;
+  }
+  releaseTerrain(canvas) {
+    // Only the active map's base and active theme retain canvas backing stores.
+    if (canvas && canvas !== this.baseTerrain && canvas !== this.terrain) {
+      canvas.width = 0;
+      canvas.height = 0;
+    }
   }
   setTheme(theme = 'woodland') {
     if (!['woodland', 'highland', 'ashlands', 'citadel'].includes(theme))
       theme = 'woodland';
-    if (theme === this.theme) return;
+    const key = this.map.id + ':' + this.map.revision + ':' + theme;
+    if (key === this.terrainKey) return;
+    const oldTerrain = this.terrain;
     this.theme = theme;
+    this.terrainKey = key;
     if (theme === 'woodland') {
       this.terrain = this.baseTerrain;
+      this.releaseTerrain(oldTerrain);
       return;
     }
     const canvas = document.createElement('canvas');
-    canvas.width = 3200;
-    canvas.height = 900;
+    canvas.width = this.map.width;
+    canvas.height = this.map.height;
     const c = canvas.getContext('2d');
     c.filter =
       theme === 'highland'
@@ -180,17 +220,17 @@ export class Renderer {
     );
     if (theme === 'highland') {
       for (let i = 0; i < 100; i++) {
-        const x = r() * 3200,
+        const x = r() * this.map.width,
           y = r() < 0.5 ? r() * 150 : 760 + r() * 140;
         ellipse(c, x, y, 10 + r() * 35, 4 + r() * 13, '#d7dcc377');
       }
       c.fillStyle = '#c4d8d51a';
-      c.fillRect(0, 0, 3200, 900);
+      c.fillRect(0, 0, this.map.width, this.map.height);
     } else if (theme === 'ashlands') {
       for (let i = 0; i < 65; i++) {
-        const x = r() * 3200,
-          y = r() * 900;
-        if (LANES.some((a) => Math.abs(a - y) < 60)) continue;
+        const x = r() * this.map.width,
+          y = r() * this.map.height;
+        if (this.map.lanes.some((a) => Math.abs(a - y) < 60)) continue;
         line(
           c,
           [
@@ -204,19 +244,23 @@ export class Renderer {
         );
       }
     } else {
-      for (const y of LANES)
-        for (let x = 0; x < 3200; x += 54) {
+      for (const y of this.map.lanes)
+        for (let x = 0; x < this.map.width; x += 54) {
           c.fillStyle = (x / 54) % 2 ? '#b0ad9255' : '#757e6a44';
           c.fillRect(x + 1, y - 35, 51, 33);
           c.fillRect(x - 25, y + 2, 51, 32);
         }
     }
     this.terrain = canvas;
+    this.releaseTerrain(oldTerrain);
   }
   clampCamera() {
-    const half = this.width / (2 * this.scale);
+    const half = this.width / (2 * this.scale),
+      middle = this.map.width / 2;
     this.camera =
-      half >= 1600 ? 1600 : Math.max(half, Math.min(3200 - half, this.camera));
+      half >= middle
+        ? middle
+        : Math.max(half, Math.min(this.map.width - half, this.camera));
   }
   screenToWorld(x, y) {
     return {
@@ -234,28 +278,34 @@ export class Renderer {
     this.camera -= pixels / this.scale;
     this.clampCamera();
   }
-  snap(p) {
+  snap(p, side = 0) {
+    // Match Classic pointer/controller ties: later column and higher row win.
+    // Occupancy is intentionally not considered: an occupied tap stays occupied.
+    const columns = this.map.siteColumns,
+      x = Math.max(columns[0], Math.min(columns.at(-1), homeX(this.map, side, p.x)));
     return {
-      x: Math.max(
-        270,
-        Math.min(1250, 270 + Math.round((p.x - 270) / 140) * 140),
-      ),
-      y: LANES.reduce((a, b) =>
+      x: Number.isNaN(x)
+        ? NaN
+        : worldX(this.map, side, columns.reduce((a, b) =>
+          Math.abs(a - x) < Math.abs(b - x) ? a : b,
+        )),
+      y: this.map.lanes.reduce((a, b) =>
         Math.abs(a - p.y) < Math.abs(b - p.y) ? a : b,
       ),
     };
   }
   makeTerrain() {
     const canvas = document.createElement('canvas');
-    canvas.width = 3200;
-    canvas.height = 900;
+    canvas.width = this.map.width;
+    canvas.height = this.map.height;
     const c = canvas.getContext('2d'),
-      r = rng(3182);
+      r = rng(3182),
+      middle = this.map.width / 2;
     c.fillStyle = '#74815a';
-    c.fillRect(0, 0, 3200, 900);
+    c.fillRect(0, 0, this.map.width, this.map.height);
     for (let i = 0; i < 850; i++) {
-      const x = r() * 3200,
-        y = r() * 900;
+      const x = r() * this.map.width,
+        y = r() * this.map.height;
       ellipse(
         c,
         x,
@@ -269,21 +319,21 @@ export class Renderer {
       c.strokeStyle = color;
       c.lineWidth = width;
       c.beginPath();
-      c.moveTo(1590 + offset, -100);
+      c.moveTo(middle - 10 + offset, -100);
       c.bezierCurveTo(
-        1450 + offset,
+        middle - 150 + offset,
         200,
-        1700 + offset,
+        middle + 100 + offset,
         380,
-        1580 + offset,
+        middle - 20 + offset,
         570,
       );
       c.bezierCurveTo(
-        1480 + offset,
+        middle - 120 + offset,
         720,
-        1660 + offset,
+        middle + 60 + offset,
         830,
-        1590 + offset,
+        middle - 10 + offset,
         1000,
       );
       c.stroke();
@@ -292,15 +342,15 @@ export class Renderer {
     river(0, '#496c66', 108);
     river(-10, '#587d71', 60);
     river(13, '#71917d', 3);
-    for (const y of LANES) {
+    for (const y of this.map.lanes) {
       c.fillStyle = '#657450';
-      c.fillRect(0, y - 54, 3200, 108);
+      c.fillRect(0, y - 54, this.map.width, 108);
       c.fillStyle = '#a99f73';
-      c.fillRect(0, y - 43, 3200, 86);
+      c.fillRect(0, y - 43, this.map.width, 86);
       c.fillStyle = '#b4a77c';
-      c.fillRect(0, y - 31, 3200, 62);
+      c.fillRect(0, y - 31, this.map.width, 62);
       for (let j = 0; j < 140; j++) {
-        const x = r() * 3200;
+        const x = r() * this.map.width;
         ellipse(
           c,
           x,
@@ -315,32 +365,32 @@ export class Renderer {
       c.setLineDash([6, 23]);
       c.beginPath();
       c.moveTo(100, y);
-      c.lineTo(3100, y);
+      c.lineTo(this.map.width - 100, y);
       c.stroke();
       c.setLineDash([]);
       c.fillStyle = '#635e48';
-      c.fillRect(1492, y - 51, 202, 102);
-      for (let x = 1494; x < 1695; x += 13) {
+      c.fillRect(middle - 108, y - 51, 202, 102);
+      for (let x = middle - 106; x < middle + 95; x += 13) {
         c.fillStyle = x % 2 ? '#998a61' : '#ac9b6d';
         c.fillRect(x, y - 47, 11, 94);
       }
       c.fillStyle = '#d0b988';
-      c.fillRect(1488, y - 55, 210, 8);
-      c.fillRect(1488, y + 47, 210, 8);
-      for (let x = 1494; x < 1700; x += 50) {
+      c.fillRect(middle - 112, y - 55, 210, 8);
+      c.fillRect(middle - 112, y + 47, 210, 8);
+      for (let x = middle - 106; x < middle + 100; x += 50) {
         c.fillStyle = '#5b6249';
         c.fillRect(x, y - 65, 8, 20);
         c.fillRect(x, y + 45, 8, 20);
       }
     }
     for (let i = 0; i < 390; i++) {
-      const x = r() * 3200,
-        y = r() * 900;
+      const x = r() * this.map.width,
+        y = r() * this.map.height;
       if (
-        LANES.some((a) => Math.abs(y - a) < 68) ||
-        (x > 1460 && x < 1720) ||
+        this.map.lanes.some((a) => Math.abs(y - a) < 68) ||
+        (x > middle - 140 && x < middle + 120) ||
         x < 190 ||
-        x > 3010
+        x > this.map.width - 190
       )
         continue;
       if (y < 155 || y > 760 || r() < 0.06) tree(c, x, y, 0.7 + r() * 0.8);
@@ -357,7 +407,7 @@ export class Renderer {
       }
     }
     // Quiet ruins and border markers give the frontier scale.
-    for (const x of [1440, 1760])
+    for (const x of [middle - 160, middle + 160])
       for (const y of [125, 775]) {
         rock(c, x, y, 2.5);
         c.fillStyle = '#747f68';
@@ -365,7 +415,10 @@ export class Renderer {
         c.fillStyle = '#a5a786';
         c.fillRect(x - 12, y - 49, 24, 9);
       }
-    for (const x of [1390, 1810]) {
+    for (const x of [
+      buildBounds(this.map, 0).maxX + 70,
+      buildBounds(this.map, 1).minX - 70,
+    ]) {
       c.strokeStyle = '#b9c48b77';
       c.setLineDash([9, 14]);
       c.lineWidth = 2;
@@ -393,28 +446,28 @@ export class Renderer {
     c.drawImage(this.terrain, 0, 0);
     // Subtle side tints on each half.
     c.fillStyle = '#4597800c';
-    c.fillRect(0, 150, 1390, 600);
+    const frontier = buildBounds(this.map, 0).maxX + 70;
+    c.fillRect(0, 150, frontier, 600);
     c.fillStyle = '#a051370b';
-    c.fillRect(1810, 150, 1390, 600);
+    c.fillRect(this.map.width - frontier, 150, frontier, 600);
     if (ui.build) {
-      for (const y of LANES)
-        for (let x = 270; x <= 1250; x += 140) {
-          const valid = game.canBuild(ui.build, x, y).ok;
-          c.fillStyle = valid ? '#c8e2a429' : '#273d2820';
-          c.strokeStyle = valid ? '#d0e7a67a' : '#52644733';
-          c.lineWidth = 1.5;
-          c.fillRect(x - 55, y - 55, 110, 110);
-          c.strokeRect(x - 55, y - 55, 110, 110);
-          if (valid) {
-            c.strokeStyle = '#d0e7a699';
-            c.beginPath();
-            c.moveTo(x - 7, y);
-            c.lineTo(x + 7, y);
-            c.moveTo(x, y - 7);
-            c.lineTo(x, y + 7);
-            c.stroke();
-          }
+      for (const { x, y } of buildSites(this.map, 0)) {
+        const valid = game.canBuild(ui.build, x, y).ok;
+        c.fillStyle = valid ? '#c8e2a429' : '#273d2820';
+        c.strokeStyle = valid ? '#d0e7a67a' : '#52644733';
+        c.lineWidth = 1.5;
+        c.fillRect(x - 55, y - 55, 110, 110);
+        c.strokeRect(x - 55, y - 55, 110, 110);
+        if (valid) {
+          c.strokeStyle = '#d0e7a699';
+          c.beginPath();
+          c.moveTo(x - 7, y);
+          c.lineTo(x + 7, y);
+          c.moveTo(x, y - 7);
+          c.lineTo(x, y + 7);
+          c.stroke();
         }
+      }
     }
     const selected = s.buildings.find((b) => b.id === ui.selected);
     if (selected) {
@@ -547,7 +600,7 @@ export class Renderer {
       c.restore();
     }
     for (const e of s.effects) this.drawEffect(e);
-    this.vfx.draw(c, { x: left, y: 0, width: right - left, height: 900 });
+    this.vfx.draw(c, { x: left, y: 0, width: right - left, height: this.map.height });
     if (ui.pointer && ui.build && !ui.dragging) {
       const p = this.snap(ui.pointer);
       const valid = game.canBuild(ui.build, p.x, p.y).ok;
@@ -586,7 +639,7 @@ export class Renderer {
     c.fillStyle = '#e5edc2aa';
     c.fillText('YOUR FRONTIER', 780, 145);
     c.fillStyle = '#f1d5b7aa';
-    c.fillText('ENEMY FRONTIER', 2430, 145);
+    c.fillText('ENEMY FRONTIER', this.map.width - 770, 145);
     c.restore();
     const shade = c.createLinearGradient(0, 0, 0, this.height);
     shade.addColorStop(0, '#172b2638');
@@ -1492,33 +1545,95 @@ export class Renderer {
     c.fillStyle = '#56704e';
     c.fillRect(0, 0, w, h);
     c.fillStyle = '#628476';
-    c.fillRect(w * 0.48, 0, w * 0.04, h);
+    c.fillRect(
+      ((this.map.width / 2 - 64) / this.map.width) * w,
+      0,
+      (128 / this.map.width) * w,
+      h,
+    );
     c.strokeStyle = '#b4b58c88';
     c.lineWidth = 1;
-    for (const y of LANES) {
+    for (const y of this.map.lanes) {
       c.beginPath();
-      c.moveTo(0, (y / 900) * h);
-      c.lineTo(w, (y / 900) * h);
+      c.moveTo(0, (y / this.map.height) * h);
+      c.lineTo(w, (y / this.map.height) * h);
       c.stroke();
     }
     for (const b of s.buildings) {
       c.fillStyle = b.side ? '#e9a080' : '#bbdfaf';
-      c.fillRect((b.x / 3200) * w - 1, (b.y / 900) * h - 1, 3, 3);
+      c.fillRect(
+        (b.x / this.map.width) * w - 1,
+        (b.y / this.map.height) * h - 1,
+        3,
+        3,
+      );
     }
     for (const u of s.units) {
       c.fillStyle = u.side ? '#df9b77' : '#c7dfaf';
-      c.fillRect((u.x / 3200) * w, (u.y / 900) * h, 1.5, 1.5);
+      c.fillRect(
+        (u.x / this.map.width) * w,
+        (u.y / this.map.height) * h,
+        1.5,
+        1.5,
+      );
     }
-    c.fillStyle = '#f0d28c';
-    c.fillRect(4, h / 2 - 3, 4, 6);
-    c.fillStyle = '#e5a281';
-    c.fillRect(w - 8, h / 2 - 3, 4, 6);
-    const vw = Math.min(w, (this.width / this.scale / 3200) * w),
-      vx = (this.camera / 3200) * w - vw / 2;
+    if (this.map.id === 'classic') {
+      // Preserve the shipped Classic citadel symbols exactly.
+      c.fillStyle = '#f0d28c';
+      c.fillRect(4, h / 2 - 3, 4, 6);
+      c.fillStyle = '#e5a281';
+      c.fillRect(w - 8, h / 2 - 3, 4, 6);
+    } else {
+      for (const base of s.bases) {
+        c.fillStyle = base.side ? '#e5a281' : '#f0d28c';
+        c.fillRect(
+          (base.x / this.map.width) * w - 2,
+          (base.y / this.map.height) * h - 3,
+          4,
+          6,
+        );
+      }
+    }
+    const vw = Math.min(w, (this.width / this.scale / this.map.width) * w),
+      vx = (this.camera / this.map.width) * w - vw / 2;
     c.fillStyle = '#f0ecd415';
     c.fillRect(vx, 0, vw, h);
     c.strokeStyle = '#ece3b9';
     c.lineWidth = 1.5;
     c.strokeRect(vx + 0.75, 0.75, vw - 1.5, h - 1.5);
   }
+}
+
+/** Enlarged, static portraits reuse the actual original battlefield models. */
+export function drawUnitPortrait(canvas, type, side = 0) {
+  if (!Object.hasOwn(UNITS, type) || typeof canvas?.getContext !== 'function')
+    return false;
+  const c = canvas.getContext('2d');
+  if (!c) return false;
+  canvas.width = 224;
+  canvas.height = 200;
+  c.setTransform(2, 0, 0, 2, 0, 0);
+  c.clearRect(0, 0, 112, 100);
+  c.save();
+  c.translate(56, 74);
+  c.scale(1.6, 1.6);
+  const data = UNITS[type];
+  Renderer.prototype.drawUnit.call(
+    { c, reducedMotion: true },
+    {
+      type,
+      side: side === 1 ? 1 : 0,
+      id: 1,
+      x: 0,
+      y: 0,
+      hp: data.hp,
+      maxHp: data.hp,
+      level: 1,
+      cooldown: 1,
+      attack: 0,
+    },
+    0,
+  );
+  c.restore();
+  return true;
 }

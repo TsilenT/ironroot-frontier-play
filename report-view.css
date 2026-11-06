@@ -1,0 +1,175 @@
+/* Scoped battle debrief. No external assets, motion, or result-control overrides. */
+.battle-report {
+  --report-ink: #eee9d9;
+  --report-muted: #c1c8b5;
+  --report-rule: #52604a;
+  color: var(--report-ink);
+  margin: 18px 0;
+  min-width: 0;
+  width: 100%;
+  text-align: left;
+  border: 1px solid #79805b;
+  border-radius: 3px;
+  background: #16271f;
+  font: 400 13px/1.55 var(--font, system-ui, sans-serif);
+  overflow-wrap: anywhere;
+  font-variant-numeric: tabular-nums;
+}
+.battle-report > summary {
+  min-height: 58px;
+  padding: 12px 14px;
+  cursor: pointer;
+  color: #e5ce95;
+  background: linear-gradient(110deg, #314032, #23352a);
+  list-style-position: inside;
+}
+.battle-report > summary::marker,
+.battle-report .report-subdetails > summary::marker { color: #dfc787; }
+.battle-report[open] > summary { border-bottom: 1px solid var(--report-rule); }
+.battle-report .report-summary-title {
+  font: 600 21px/1.15 var(--display, system-ui, sans-serif);
+  letter-spacing: .6px;
+}
+.battle-report .report-summary-subtitle {
+  display: block;
+  padding-left: 17px;
+  padding-top: 2px;
+  font-size: 12px;
+  color: #c9ceba;
+}
+/* The result dialog's existing body owns vertical scrolling and its fixed footer. */
+.battle-report .report-body {
+  padding: 16px 14px 20px;
+  min-width: 0;
+}
+.battle-report summary:focus-visible,
+.battle-report .report-table-scroll:focus-visible {
+  outline: 2px solid #f4d68d;
+  outline-offset: -3px;
+}
+.battle-report .report-header {
+  position: relative;
+  padding-bottom: 14px;
+  border-bottom: 1px solid var(--report-rule);
+  margin-bottom: 16px;
+}
+.battle-report .report-kicker { font-size: 11px; letter-spacing: 1.7px; color: #d8c488; }
+.battle-report .report-header h3 {
+  font: 600 27px/1.12 var(--display, system-ui, sans-serif);
+  letter-spacing: .4px;
+  margin: 7px 0;
+  color: #f0e6c9;
+}
+.battle-report .report-header p { margin: 0 0 9px; color: var(--report-muted); font-size: 12px; }
+.battle-report .report-result {
+  display: inline-block;
+  padding: 3px 9px;
+  border: 1px solid #8a8c64;
+  border-radius: 2px;
+  color: #e5ce95;
+  font-size: 12px;
+  font-weight: 700;
+}
+.battle-report p { margin: 7px 0; }
+.battle-report .report-scope {
+  margin-top: 20px;
+  border-left: 3px solid #c4b477;
+  background: #d6c7970d;
+  padding: 11px 12px;
+  color: #d6dcc9;
+  font-size: 12px;
+}
+.battle-report .report-scope > strong { color: #eddbad; font-size: 13px; }
+.battle-report .report-scope p:last-child { margin-bottom: 0; }
+.battle-report .report-section { margin-top: 22px; min-width: 0; }
+.battle-report .report-section > h3 {
+  font: 600 22px/1.2 var(--display, system-ui, sans-serif);
+  letter-spacing: .35px;
+  margin: 0 0 9px;
+  color: #e5ce95;
+}
+.battle-report .report-note { font-size: 12px; color: var(--report-muted); line-height: 1.55; }
+.battle-report .report-table { width: 100%; border-collapse: collapse; table-layout: fixed; font-size: 12px; }
+.battle-report .report-table caption { text-align: left; color: var(--report-muted); font-size: 12px; padding: 0 0 9px; }
+.battle-report .report-table th,
+.battle-report .report-table td { padding: 9px 5px; border-bottom: 1px solid #43513f; vertical-align: top; }
+.battle-report .report-table thead th { font-weight: 700; color: #d8c488; background: #26382b; }
+.battle-report .report-table th:first-child { width: 48%; text-align: left; padding-left: 7px; }
+.battle-report .report-table tbody th { font-weight: 500; }
+.battle-report .report-table td,
+.battle-report .report-table thead th:not(:first-child) { text-align: right; }
+.battle-report .report-table th.report-side-label { white-space: nowrap; overflow-wrap: normal; word-break: normal; }
+.battle-report .report-table td { overflow-wrap: anywhere; }
+.battle-report .report-table td small { display: block; font-size: 11px; color: var(--report-muted); }
+.battle-report .report-total-row > * { border-top: 2px solid #77805a; color: #e5ce95; }
+.battle-report .report-legend { display: flex; flex-wrap: wrap; gap: 5px 16px; margin: 12px 0; font-size: 12px; }
+.battle-report .report-legend > span { display: inline-flex; align-items: center; gap: 8px; }
+.battle-report .report-key { display: inline-block; width: 22px; height: 0; position: relative; flex: 0 0 22px; border-top: 2px solid #d8c488; }
+.battle-report .report-key::after { content: ''; position: absolute; width: 6px; height: 6px; top: -4px; right: -1px; border-radius: 50%; background: #d8c488; }
+.battle-report .report-key-enemy { border-top: 2px dashed #e9a48d; }
+.battle-report .report-key-enemy::after { border-radius: 0; transform: rotate(45deg); background: #e9a48d; }
+.battle-report .report-chart { margin: 14px 0; padding: 12px 10px; border: 1px solid #4b5b45; border-radius: 3px; background: #102219; min-width: 0; }
+.battle-report .report-chart figcaption { display: flex; justify-content: space-between; flex-wrap: wrap; gap: 2px 10px; margin-bottom: 13px; }
+.battle-report .report-chart figcaption strong { font-size: 14px; font-weight: 600; color: #e8dfc5; }
+.battle-report .report-chart figcaption > span { font-size: 12px; color: var(--report-muted); }
+.battle-report .report-chart-grid { display: grid; grid-template-columns: minmax(27px, max-content) minmax(0, 1fr); column-gap: 7px; }
+.battle-report .report-y-axis { display: flex; flex-direction: column; justify-content: space-between; padding: 0 0 5px; text-align: right; font-size: 12px; line-height: 1; color: var(--report-muted); }
+.battle-report .report-graph { width: 100%; height: 120px; display: block; overflow: visible; }
+.battle-report .report-gridline { stroke: #4d5c46; stroke-width: 1; stroke-dasharray: 2 4; }
+.battle-report .report-line-0 { fill: #d8c488; }
+.battle-report .report-line-1 { fill: #e9a48d; }
+.battle-report .report-trace { vector-effect: non-scaling-stroke; }
+.battle-report .report-x-axis { grid-column: 2; display: flex; justify-content: space-between; gap: 10px; font-size: 12px; line-height: 1.4; color: var(--report-muted); padding-top: 5px; }
+.battle-report .report-axis-label { margin: 4px 0 12px; color: var(--report-muted); font-size: 12px; text-align: center; }
+.battle-report .report-chart-values { font-size: 12px; }
+.battle-report .report-chart-values caption { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+.battle-report .report-chart-values th:first-child { width: 4.5em; padding-left: 3px; }
+.battle-report .report-chart-values th:last-child { width: 35%; }
+.battle-report .report-chart-values th,
+.battle-report .report-chart-values td { padding: 7px 3px; }
+.battle-report .report-chart > .report-note { margin-bottom: 0; }
+.battle-report .report-subdetails { margin-top: 15px; border-top: 1px solid var(--report-rule); }
+.battle-report .report-subdetails > summary { padding: 12px 2px; min-height: 44px; cursor: pointer; font-size: 12px; color: #e5ce95; font-weight: 600; }
+.battle-report .report-table-scroll { overflow-x: auto; min-width: 0; max-width: 100%; margin: 13px 0; scrollbar-color: #a0a579 #1b2c23; }
+.battle-report .report-samples .report-table { min-width: 420px; }
+.battle-report .report-samples .report-table th:first-child { width: 20%; }
+.battle-report .report-objective-result { padding: 9px 11px; background: #d6c7970d; border: 1px solid #4c5b43; }
+.battle-report .report-objective-list { list-style: none; padding: 0; margin: 0; }
+.battle-report .report-objective-list li { display: flex; align-items: flex-start; flex-wrap: wrap; gap: 6px 11px; padding: 12px 0; border-bottom: 1px solid #43513f; }
+.battle-report .report-objective-list li > div { min-width: 0; flex: 1 1 130px; }
+.battle-report .report-objective-list strong { font-size: 13px; font-weight: 500; }
+.battle-report .report-objective-list p { font-size: 12px; color: var(--report-muted); margin-bottom: 0; }
+.battle-report .report-objective-state { color: #efd4ae; font-size: 12px; padding: 1px 7px; border: 1px solid #777c58; border-radius: 2px; }
+.battle-report .report-objective-state.is-met { color: #d1dfb9; border-color: #7d9667; }
+.battle-report .report-limitations ul { padding-left: 19px; font-size: 12px; color: var(--report-muted); }
+.battle-report .report-limitations li + li { margin-top: 8px; }
+@media (max-width: 360px) {
+  .battle-report .report-body { padding: 13px 9px 16px; }
+  .battle-report .report-chart { padding: 11px 7px; }
+  .battle-report .report-scope { padding: 9px; }
+  .battle-report .report-chart-values th,
+  .battle-report .report-chart-values td { padding-left: 2px; padding-right: 2px; }
+}
+@media (forced-colors: active) {
+  .battle-report .report-trace { stroke: CanvasText; }
+  .battle-report .report-line { fill: CanvasText; }
+  .battle-report .report-gridline { stroke: GrayText; }
+  .battle-report .report-key { border-color: CanvasText; }
+  .battle-report .report-key::after { background: CanvasText; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .battle-report, .battle-report * { scroll-behavior: auto; animation: none; transition: none; }
+}
+
+.battle-report .report-download { padding: 11px 0 0; }
+.battle-report [data-report-download] {
+  display: block; width: 100%; min-height: 44px; padding: 10px 12px;
+  color: #ead8a5; border: 1px solid #858b60; border-radius: 3px;
+  background: #2c3c2b; font: 600 13px/1.5 var(--font, system-ui, sans-serif);
+  text-align: center; cursor: pointer; white-space: normal;
+}
+.battle-report [data-report-download]:hover { background: #3a4a32; }
+.battle-report [data-report-download]:focus-visible { outline: 2px solid #f4d68d; outline-offset: 2px; }
+.battle-report [data-report-download]:disabled { opacity: .6; cursor: not-allowed; }
+.battle-report .report-download-status { color: #ead8a5; font-size: 12px; }
+.battle-report .report-download-status:empty { display: none; }

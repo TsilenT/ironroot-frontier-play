@@ -1,4 +1,47 @@
-@import url('https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700;800&family=DM+Sans:wght@400;500;600;700&display=swap');
+/* Locally bundled typefaces for online and offline play.
+   Font files and complete OFL notices must be deployed together.
+   Derived from pinned Google Fonts sources; see FONTS-NOTICES.txt. */
+
+@font-face {
+  font-family: 'Barlow Condensed';
+  src: url('./barlow-condensed-latin-500.woff2') format('woff2');
+  font-style: normal;
+  font-weight: 500;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'Barlow Condensed';
+  src: url('./barlow-condensed-latin-600.woff2') format('woff2');
+  font-style: normal;
+  font-weight: 600;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'Barlow Condensed';
+  src: url('./barlow-condensed-latin-700.woff2') format('woff2');
+  font-style: normal;
+  font-weight: 700;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'Barlow Condensed';
+  src: url('./barlow-condensed-latin-800.woff2') format('woff2');
+  font-style: normal;
+  font-weight: 800;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'DM Sans';
+  src: url('./dm-sans-latin-400-700.woff2') format('woff2');
+  font-style: normal;
+  font-weight: 400 700;
+  font-display: swap;
+}
+
 :root {
   --bg: #101916;
   --panel: #18231f;
@@ -555,6 +598,11 @@ button:disabled {
   color: #c9d2bb;
   font-size: 10px;
   padding: 8px 11px;
+}
+#retryPreferences,
+#retryHistory,
+#retryResultHistory {
+  min-height: 44px;
 }
 .selection-actions .gold-button {
   flex: 1;
@@ -1252,6 +1300,8 @@ button:disabled {
   color: #d4dabc;
   font: 600 12px var(--display);
   letter-spacing: 1.5px;
+  line-height: 1.25;
+  text-wrap: balance;
 }
 @media (min-width: 701px) {
   .build-cards {
@@ -2153,7 +2203,7 @@ button:disabled {
 }
 .campaign-chapters {
   display: grid;
-  grid-template-columns: repeat(4, 1fr);
+  grid-template-columns: repeat(auto-fit, minmax(115px, 1fr));
   gap: 7px;
 }
 .campaign-chapters button {
@@ -2190,7 +2240,7 @@ button:disabled {
 }
 .campaign-missions {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
+  grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
   gap: 8px;
   margin-bottom: 13px;
 }
@@ -2556,6 +2606,9 @@ button:disabled {
   }
   .campaign-mode #resumeSaved {
     grid-column: 2;
+    height: auto;
+    font-size: 10px;
+    letter-spacing: 1px;
   }
   .campaign-mode #start:has(+ .resume-saved.hidden) {
     grid-column: 1 / -1;
@@ -2713,4 +2766,372 @@ body.gamepad-active a:focus {
   margin: 4px 5px 4px 0;
   padding: 9px 12px;
   font-size: 10px;
+}
+
+/* The field reference uses native disclosures, readable without canvas. */
+.codex-section {
+  margin: 24px 0 18px;
+  border: 1px solid #7d8b6155;
+  border-radius: 8px;
+  background: #15251f;
+}
+.codex-section > summary {
+  min-height: 64px;
+  padding: 15px;
+  cursor: pointer;
+  color: #eed8a7;
+  font: 600 21px var(--display);
+}
+.codex-section > summary small {
+  display: block;
+  margin: 5px 0 0 19px;
+  color: #bac7af;
+  font: 11px var(--font);
+}
+.codex-content {
+  padding: 0 14px 14px;
+}
+.codex-note {
+  font-size: 11px;
+  line-height: 1.7;
+  color: #b8c5af;
+}
+.codex-heading {
+  font: 600 23px var(--display);
+  color: #e5dbbf;
+  margin: 23px 0 10px;
+}
+.codex-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  align-items: start;
+}
+.codex-card {
+  min-width: 0;
+  border: 1px solid #61765766;
+  border-radius: 6px;
+  background: #24382d;
+  overflow: hidden;
+}
+.codex-card > summary {
+  min-height: 110px;
+  padding: 8px;
+  display: flex;
+  align-items: center;
+  position: relative;
+  gap: 5px;
+  cursor: pointer;
+  list-style: none;
+}
+.codex-card > summary::-webkit-details-marker {
+  display: none;
+}
+.codex-card canvas {
+  width: 80px;
+  height: 72px;
+  flex: 0 0 80px;
+  object-fit: contain;
+  border-radius: 50%;
+  background: radial-gradient(ellipse, #8f9e7655, #24382d00 70%);
+}
+.codex-card summary > span:not(.codex-expand):not(.codex-building) {
+  min-width: 0;
+  flex: 1;
+}
+.codex-card strong {
+  display: block;
+  color: #efdfb8;
+  font: 600 21px/1.1 var(--display);
+}
+.codex-card small {
+  display: block;
+  color: #c2cbb8;
+  font-size: 11px;
+  line-height: 1.5;
+  margin-top: 5px;
+}
+.codex-card em {
+  display: block;
+  color: #b4c4a3;
+  font-size: 8px;
+  line-height: 1.5;
+  font-style: normal;
+  letter-spacing: 0.3px;
+  margin-top: 7px;
+}
+.codex-expand {
+  position: absolute;
+  right: 8px;
+  top: 6px;
+  font: 16px var(--font);
+  color: #d5c591;
+}
+.codex-card[open] .codex-expand {
+  transform: rotate(45deg);
+}
+.codex-body {
+  padding: 0 12px 12px;
+  color: #c8d0be;
+  font-size: 11px;
+  line-height: 1.75;
+  overflow-wrap: anywhere;
+}
+.codex-body b {
+  color: #ebdfc0;
+}
+.codex-body p {
+  margin: 12px 0;
+}
+.codex-body ul {
+  padding-left: 16px;
+  margin: 12px 0 0;
+}
+.codex-body li {
+  margin: 8px 0;
+}
+.codex-stats {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 6px 10px;
+  margin: 8px 0 14px;
+  padding: 10px 0;
+  border-block: 1px solid #91a08033;
+}
+.codex-stats div {
+  display: flex;
+  justify-content: space-between;
+  gap: 5px;
+}
+.codex-stats dt {
+  color: #b5c1a9;
+  font-size: 10px;
+}
+.codex-stats dd {
+  margin: 0;
+  color: #eddbab;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.codex-building {
+  width: 66px;
+  flex: 0 0 66px;
+}
+.codex-building svg {
+  width: 100%;
+  height: 65px;
+}
+.codex-economy {
+  margin-top: 14px;
+  border-top: 1px solid #91a08033;
+}
+.codex-economy > summary {
+  min-height: 48px;
+  cursor: pointer;
+  padding: 14px 0;
+  color: #e2d3a9;
+  font-size: 13px;
+}
+.codex-economy h3 {
+  font: 600 23px var(--display);
+  color: #e5dbbf;
+}
+@media (max-width: 600px) {
+  .codex-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .codex-content {
+    padding: 0 10px 10px;
+  }
+  .codex-card > summary {
+    min-height: 100px;
+  }
+  .codex-card canvas {
+    width: 86px;
+    height: 77px;
+    flex-basis: 86px;
+  }
+  .codex-note,
+  .codex-body,
+  .codex-card small {
+    font-size: 12px;
+  }
+  .codex-stats dt {
+    font-size: 11px;
+  }
+  .codex-card em {
+    font-size: 9px;
+  }
+}
+@media (max-width: 360px) {
+  .codex-stats {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .codex-stats dt {
+    overflow-wrap: normal;
+  }
+}
+
+/* The selector changes real geometry, independently of AI difficulty. */
+.map-picker {
+  margin: 0 0 16px;
+  border: 1px solid #637553;
+  border-radius: 6px;
+  text-align: left;
+  background: #17281e;
+}
+.map-picker > summary {
+  min-height: 48px;
+  padding: 12px;
+  color: #cbd4ba;
+  font-size: 11px;
+  cursor: pointer;
+}
+.map-picker > summary b {
+  color: #e6d5a7;
+  font: 600 18px var(--display);
+  margin-left: 5px;
+}
+.map-choices {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 6px;
+  margin: 0 10px;
+}
+.map-choices button {
+  min-width: 0;
+  padding: 7px 4px;
+  background: #21352a;
+  border: 1px solid #4e6548;
+  color: #c9d3b8;
+}
+.map-choices button.active {
+  background: #415039;
+  border-color: #d5be7e;
+  color: #efdfb2;
+}
+.map-choices svg {
+  width: 100%;
+  height: 45px;
+  display: block;
+}
+.map-choices b {
+  display: block;
+  font: 600 18px var(--display);
+}
+.map-choices small {
+  display: block;
+  font-size: 10px;
+  line-height: 1.5;
+  margin-top: 3px;
+}
+.map-description {
+  color: #c4cdb6;
+  font-size: 11px;
+  line-height: 1.7;
+  margin: 12px;
+}
+.map-reference-note {
+  border-left: 2px solid #a9ad71;
+  padding-left: 10px;
+}
+.font-license {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  max-height: 260px;
+  overflow: auto;
+  border: 1px solid #67775455;
+  padding: 12px;
+  font: 11px/1.65 var(--font);
+  color: #bbc6ae;
+}
+.credits-details p {
+  font-size: 11px;
+  line-height: 1.8;
+}
+@media (max-width: 360px) {
+  .map-choices b {
+    font-size: 16px;
+  }
+  .map-choices small {
+    font-size: 10px;
+  }
+}
+/* Battlefield context stays readable even between compact citadel bars. */
+@media (max-width: 700px), (max-height: 500px) and (orientation: landscape) {
+  .phase { font-size: 11px; letter-spacing: .5px; line-height: 1.1; }
+  .phase small { font-size: 9px; letter-spacing: 0; line-height: 1.35; margin-top: 3px; }
+}
+
+/* Campaign reconnaissance stays optional and scrolls inside the briefing. */
+.campaign-scout { margin: 14px 0; border: 1px solid #58715a; border-radius: 7px; background: #15271f; padding: 10px 12px; }
+.campaign-scout summary { min-height: 28px; cursor: pointer; color: #e2d5a8; font: 600 17px var(--display); }
+.campaign-scout[open] summary { margin-bottom: 12px; }
+#campaignScoutReport { min-width: 0; overflow-wrap: anywhere; }
+#campaignScoutReport svg { display: block; width: 100%; height: auto; max-height: 260px; }
+#campaignScoutReport p, #campaignScoutReport li { font-size: 12px; line-height: 1.6; }
+#campaignScoutReport h4 { font: 600 17px var(--display); color: #e0d8b6; margin: 12px 0 6px; }
+#campaignScoutReport ul { margin: 6px 0; padding-left: 17px; }
+@media (max-width: 520px) {
+  .campaign-missions { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .campaign-scout { padding: 9px; }
+  .campaign-scout summary { font-size: 16px; min-height: 30px; }
+  #campaignScoutReport p, #campaignScoutReport li { font-size: 12px; }
+  .campaign-chapters span, .campaign-missions small { font-size: 8px; letter-spacing: .35px; }
+}
+
+.scouting-armies { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+.scouting-army { min-width: 0; padding: 10px; border: 1px solid #3e5948; border-radius: 5px; background: #112018; }
+#campaignScoutReport .scouting-army-title { margin: 0 0 8px; color: #dfd8b7; }
+#campaignScoutReport .scouting-map-facts { color: #dfd8b7; }
+#campaignScoutReport .scouting-note { color: #a5b3a4; }
+@media (max-width: 560px) { .scouting-armies { grid-template-columns: 1fr; } }
+
+/* Keep the outcome controls reachable while a long debrief scrolls separately. */
+.result {
+  width: 760px;
+  display: flex;
+  flex-direction: column;
+  padding: 0;
+  overflow: hidden;
+}
+.result-body {
+  min-height: 0;
+  overflow: auto;
+  padding: 28px 32px 20px;
+  scrollbar-width: thin;
+  scrollbar-color: #7b8559 transparent;
+}
+.result-body > p {font-size: 12px; color: #bdc6b1; line-height: 1.5;}
+.welcome-links .training-link {display: inline-flex; align-items: center; justify-content: center; min-height: 44px; color: #e8d39b; text-decoration: none;}
+.welcome-links .training-link:focus-visible {outline: 2px solid #f4d68d; outline-offset: 3px;}
+.result-actions {
+  flex: 0 0 auto;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px 14px;
+  padding: 14px 32px 18px;
+  background: #17271e;
+  border-top: 1px solid #58674a;
+}
+.result-actions .start-button {grid-column: 1 / -1; margin: 0;}
+.result .result-actions .text-button {margin: 0; min-height: 36px;}
+.result #resultMenu {margin-right: 0;}
+.welcome-links {flex-wrap: wrap;}
+@media(max-width:700px) {
+  .result-body {padding: 20px 17px 14px;}
+  .result-actions {padding: 12px 17px 14px; gap: 5px 10px;}
+  .result .result-actions .text-button {min-height: 44px; font-size: 10px;}
+  .result .result-sigil {font-size: 36px; margin-top: 10px;}
+  .result h2 {font-size: 42px;}
+  .welcome-links {gap: 10px 16px;}
+}
+@media(max-height:500px) and (orientation:landscape) {
+  .result-body {padding: 15px 24px 12px;}
+  .result-actions {padding: 8px 24px 10px; gap: 4px 12px;}
+  .result-actions .start-button {padding: 10px 14px; font-size: 16px;}
+  .result .result-actions .text-button {min-height: 30px; font-size: 10px;}
+  .result .result-sigil {font-size: 28px; margin-top: 4px;}
+  .result h2, .result.campaign-result h2 {font-size: 30px; margin: 4px 0;}
+  .result-stats, .campaign-result .result-stats {margin: 14px 0;}
 }

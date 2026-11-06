@@ -1,4 +1,4 @@
-import {Game, BUILDINGS, LANES} from './engine.js';
+import {Game, BUILDINGS, MAPS} from './engine.js';
 
 /** Campaign rules sit above the ordinary simulation, like field-trial objectives. */
 export const CAMPAIGN_VERSION = 1;
@@ -8,6 +8,7 @@ export const CAMPAIGN_CHAPTERS = [
   {id:'highpass',number:2,name:'The High Pass',subtitle:'Carry the signal over the mountains',theme:'highland',description:'Scout Sera brings word of an army beyond Stonegate. Keep the signal stations alive and win a passage through the highlands.',epilogue:'Stonegate opens. Beyond the pass, the smoke of a hundred furnaces darkens the sky.'},
   {id:'furnace',number:3,name:'The Furnace March',subtitle:'Break the machinery of conquest',theme:'ashlands',description:'Vey’s engineers replace every fallen regiment. Cut their foundries and supply lines before their moving front reaches the valley.',epilogue:'The furnaces fall silent. Vey retreats to the Crownworks, taking the last of his host with him.'},
   {id:'crownworks',number:4,name:'The Last Crown',subtitle:'End the war at its source',theme:'citadel',description:'The Crownworks command all three roads. Secure a foothold, hold against the counterattack, and break the marshal’s final citadel.',epilogue:'The iron crown is lowered. Rowan leaves no throne behind, only three open roads and a watchfire that belongs to every village.'},
+  {id:'frontier',number:5,name:'The Open Frontier',subtitle:'Build a peace that can hold',theme:'woodland',description:'The crown is gone, but its abandoned toll forts still divide the frontier. Rowan, Sera and Iona must reopen a long road, settle the river crossings, and give the scattered settlements a common home.',epilogue:'No banner claims the two bridges. The river charter belongs to every settlement, the distant beacons answer, and the frontier keeps its own watch.'},
 ];
 
 const target=(type,x,lane)=>({type,x,lane});
@@ -166,11 +167,88 @@ export const CAMPAIGN_MISSIONS = [
     objectives:[{id:'crown',type:'citadel',label:'Destroy the enemy citadel'}],medals:[swift(240),intact(4000)],
     briefing:['1,400 starting gold; both citadels start at 6,000 HP','Your middle barracks and archery start at level 2, with a mine and outer towers','Hard adaptive enemy starts with 120 gold; middle tower, barracks and archery are level 2'],
   },
+  {
+    id:'open-horizon',chapterId:'frontier',number:13,mapId:'long-march',name:'Open Horizon',subtitle:'Carry the peace beyond the valley',
+    description:'Beyond the Crownworks, abandoned toll towers still close the long road. The relief column has established a field barracks, but holdout gryphons circle the outer tracks.',
+    dialogue:{speaker:'Captain Rowan',text:'Ending a war opens a gate. Keeping it open is the work that comes after.'},
+    victoryText:'The toll towers fall and the relief column reaches the horizon. Sera turns toward the beacons while Iona follows the river.',
+    objective:'Destroy both marked middle-lane toll towers within 4:00 while keeping the marked starting barracks alive. An enemy-citadel victory still requires the barracks.',
+    hint:'Your starting mine already brings income to 7.5 gold/sec. Place a forward middle watchtower and archers ahead of the marked barracks before buying more mines. Once that screen holds the gryphons, send siege toward the toll towers and cover the outer lanes with archers.',
+    difficulty:'normal',seed:5101,timeLimit:240,startingGold:1100,startingHealth:5200,prerequisites:['ironroot'],
+    playerBuildings:[['barracks',970,1,2],['archery',830,1],['mint',410,1]],
+    enemyBuildings:[['watchtower',2750,1,3],['watchtower',2890,1,3],['barracks',3170,1,2],['aerie',3310,1,3],['aerie',3450,1,3],['aerie',3030,0,3],['aerie',3030,2,3]],
+    objectives:[destroy('tolls','Break both toll towers',[target('watchtower',2750,1),target('watchtower',2890,1)]),protect('Keep the relief barracks alive',[target('barracks',970,1)])],medals:[swift(200),intact(4200)],
+    briefing:['Losing or salvaging the marked relief barracks fails immediately; the enemy citadel is an alternative victory only while it survives'],
+  },
+  {
+    id:'river-charter',chapterId:'frontier',number:14,mapId:'twin-span',name:'The River Charter',subtitle:'Make room for a living frontier',
+    description:'Two bridges serve every settlement along the river. Iona must keep their watchposts standing and fund a shared granary without filling every site with soldiers.',
+    dialogue:{speaker:'Quartermaster Iona',text:'Sixteen sites. Two bridges. Leave room for the people who will live here when the soldiers leave.'},
+    victoryText:'The watchposts stand and the granary is funded. The river settlements sign a charter that makes neither bank a border.',
+    objective:'Keep both marked starting watchtowers alive and reach 17.5 gold/sec at 3:30. An early enemy-citadel victory still requires both towers.',
+    hint:'Three mines fit on either bank, but leave space for counters. Northern siege threatens the watchpost; southern gryphons demand archers. Upgrade instead of filling every site.',
+    difficulty:'normal',seed:5203,timeLimit:210,startingGold:1100,startingHealth:3800,prerequisites:['open-horizon'],
+    playerBuildings:[['watchtower',970,0,3],['watchtower',970,1,3],['barracks',830,0],['archery',830,1],['mint',410,0]],
+    enemyBuildings:[['foundry',2230,0,3],['foundry',2370,0,2],['barracks',2510,0,2],['aerie',2230,1,3],['aerie',2370,1,3],['aerie',2510,1,3]],
+    objectives:[economy(17.5),protect('Keep both bridge watchposts alive',[target('watchtower',970,0),target('watchtower',970,1)])],medals:[wealthy(20),veterans(6)],
+    briefing:['Income is checked at 3:30; losing or salvaging either marked watchpost fails immediately; an enemy-citadel victory can finish early'],
+  },
+  {
+    id:'far-beacon',chapterId:'frontier',number:15,mapId:'long-march',name:'The Far Beacons',subtitle:'Reach the people beyond the road',
+    description:'Sera finds the distant signal route occupied by companies still drawing pay from the old crown. Cut the two outer pay stations and hold the road while the settlements answer.',
+    dialogue:{speaker:'Scout Sera',text:'Do not mistake a distant light for an empty road. Reach both beacons, then give them time to answer.'},
+    victoryText:'The pay stations close and both beacons answer. The far settlements send delegates to meet Iona at the bridges.',
+    objective:'Destroy both marked outer-lane mines and hold for 3:10, within 4:40, with at least 2,000 citadel HP. An enemy-citadel victory can end the hold early but still requires 2,000 HP.',
+    hint:'Attack both outer supply lines with ranged support against flyers. A central defense buys the long journey time; expand income before committing all your gold to the road.',
+    difficulty:'normal',seed:5309,timeLimit:280,startingGold:1350,startingHealth:5400,prerequisites:['open-horizon'],
+    playerBuildings:[['barracks',970,0,2],['archery',830,0],['barracks',970,2,2],['archery',830,2],['mint',410,1]],
+    enemyBuildings:[['mint',3590,0],['mint',3590,2],['aerie',3030,0,3],['aerie',3030,2,3],['aerie',3310,0,3],['aerie',3310,2,3],['barracks',3170,0,2],['barracks',3170,2,2],['foundry',2750,1,3],['sanctum',2890,1,3],['sanctum',3030,1,3]],
+    objectives:[destroy('paystations','Close both outer pay stations',[target('mint',3590,0),target('mint',3590,2)]),survive(190),health(2000)],medals:[swift(245),wealthy(15)],
+    briefing:['Both pay stations must fall and the road must hold until 3:10, unless the enemy citadel falls first; falling below 2,000 citadel HP fails immediately'],
+  },
+  {
+    id:'common-ground',chapterId:'frontier',number:16,mapId:'twin-span',name:'Common Ground',subtitle:'Keep the bridges open for everyone',
+    description:'The last toll commander attacks the meeting of the river and beacon settlements. Their shared camp must survive while Rowan breaks the two works that supply the attack.',
+    dialogue:{speaker:'Captain Rowan',text:'We are not here to choose a new ruler. We are here so no one can close these roads again.'},
+    victoryText:'The last toll works fall. River and beacon delegates meet on common ground, with no throne and no conquered bank between them.',
+    objective:'Destroy the marked northern foundry and southern sanctum within 5:00 while keeping the marked starting mine and southern barracks alive. An enemy-citadel victory still requires both protected buildings.',
+    hint:'The commander pays for every reinforcement and reacts to your army. Protect the northern mine with a ground screen, retain archers against southern flyers, then upgrade a balanced force instead of exhausting all sixteen sites.',
+    difficulty:'hard',seed:5407,timeLimit:300,startingGold:1500,startingHealth:6000,enemyGold:80,ai:true,prerequisites:['river-charter','far-beacon'],
+    playerBuildings:[['mint',410,0],['barracks',970,0,2],['archery',830,0],['barracks',690,1,2],['archery',830,1,2]],
+    enemyBuildings:[['foundry',2650,0,2],['sanctum',2650,1,2],['barracks',2230,0,2],['barracks',2230,1,2],['archery',2370,0,2],['aerie',2510,1,3],['mint',2930,0]],
+    objectives:[destroy('tollworks','Break the two toll works',[target('foundry',2650,0),target('sanctum',2650,1)]),protect('Keep the council mine and southern barracks alive',[target('mint',410,0),target('barracks',690,1)])],medals:[swift(245),intact(4500)],
+    briefing:['Losing or salvaging the marked council mine or southern barracks fails immediately; both toll works or the enemy citadel must fall by 5:00'],
+  },
+
 ];
 
-const firstAuthoredId=new Game({ai:false}).nextId;
+/** New chapter briefings derive force counts/levels from the actual paid setup. */
+function describeDeployment(placements,map) {
+  const names=map.lanes.length===2?['North','South']:['North','Middle','South'];
+  return map.lanes.map((_,lane)=>{
+    const groups=new Map();
+    for(const [type,,placedLane,level=1] of placements)if(placedLane===lane) {
+      const key=`level-${level} ${BUILDINGS[type].name}`;groups.set(key,(groups.get(key)||0)+1);
+    }
+    return `${names[lane]}: ${[...groups].map(([label,count])=>`${count} × ${label}`).join(', ')||'no starting buildings'}`;
+  }).join('; ');
+}
+const firstAuthoredIds=Object.fromEntries(Object.keys(MAPS).map(mapId=>[mapId,new Game({ai:false,mapId}).nextId]));
 for(const mission of CAMPAIGN_MISSIONS) {
+  mission.mapId=mission.mapId||'classic';
   mission.ai=mission.ai===true;
+  if(mission.chapterId==='frontier') {
+    const map=MAPS[mission.mapId];
+    mission.deployment={player:describeDeployment(mission.playerBuildings,map),enemy:describeDeployment(mission.enemyBuildings,map)};
+    mission.briefing=[
+      `${map.name}: ${map.width.toLocaleString('en-US')}-unit battlefield, ${map.lanes.length} lanes, ${map.buildLimit} building sites per side`,
+      `${mission.startingGold.toLocaleString('en-US')} starting gold; your citadel starts at ${mission.startingHealth.toLocaleString('en-US')} HP; enemy citadel starts at 6,000 HP`,
+      `Your deployment: ${mission.deployment.player}`,
+      `Enemy deployment: ${mission.deployment.enemy}`,
+      mission.ai?`${mission.difficulty[0].toUpperCase()+mission.difficulty.slice(1)} adaptive enemy starts with ${mission.enemyGold||0} gold and ordinary income; it pays for buildings, upgrades and rally strikes`:'Fixed enemy deployment; no new enemy buildings, upgrades or rally strikes',
+      ...mission.briefing
+    ];
+  }
   mission.mode=mission.objectives[0].type;
   mission.markedTargets=mission.objectives.flatMap(o=>o.type==='destroy'?o.targets:[]);
   mission.protectedTargets=mission.objectives.flatMap(o=>o.type==='protect'?o.targets:[]);
@@ -183,11 +261,11 @@ function missionFor(id) {
   return mission;
 }
 export function createCampaignMission(id) {
-  const mission=missionFor(id),game=new Game({difficulty:mission.difficulty,seed:mission.seed,ai:mission.ai});
+  const mission=missionFor(id),game=new Game({difficulty:mission.difficulty,seed:mission.seed,ai:mission.ai,mapId:mission.mapId});
   const s=game.state;
   s.buildings=[];s.effects=[];s.stats.built=[0,0];s.gold=[10000,10000];
   for(const [side,placements] of [[0,mission.playerBuildings],[1,mission.enemyBuildings]])for(const [type,x,lane,level=1] of placements) {
-    const result=game.build(type,x,LANES[lane],side);
+    const result=game.build(type,x,game.map.lanes[lane],side);
     if(!result.ok)throw new Error(`Invalid campaign formation ${id}: ${result.reason}`);
     for(let i=1;i<level;i++)if(!game.upgrade(result.building.id,side).ok)throw new Error(`Invalid campaign upgrade ${id}`);
   }
@@ -199,10 +277,13 @@ export function createCampaignMission(id) {
 /** Deterministic authored IDs distinguish original structures from later rebuilds. */
 export function getCampaignTargets(game,id) {
   const mission=missionFor(id);
+  if(game.map?.id!==mission.mapId)throw new RangeError(`Campaign battlefield mismatch: ${id} requires ${mission.mapId}, received ${game.map?.id||'unknown'}`);
   return [...mission.markedTargets.map(t=>({...t,side:1,kind:'destroy'})),...mission.protectedTargets.map(t=>({...t,side:0,kind:'protect'}))]
     .map(t=>{
       const placements=t.side?mission.enemyBuildings:mission.playerBuildings;
-      const originalId=firstAuthoredId+(t.side?mission.playerBuildings.length:0)+placements.findIndex(([type,x,lane])=>type===t.type&&x===t.x&&lane===t.lane);
+      const placementIndex=placements.findIndex(([type,x,lane])=>type===t.type&&x===t.x&&lane===t.lane);
+      if(placementIndex<0)throw new Error(`Invalid campaign target ${id}: ${t.type} at ${t.x}, lane ${t.lane}`);
+      const originalId=firstAuthoredIds[mission.mapId]+(t.side?mission.playerBuildings.length:0)+placementIndex;
       return {...t,originalId,building:game.state.buildings.find(b=>b.id===originalId&&b.side===t.side&&b.hp>0&&b.type===t.type&&b.x===t.x&&b.lane===t.lane)||null};
     });
 }

@@ -1,4 +1,4 @@
-import { Game } from './engine.js';
+import { Game, getMap } from './engine.js';
 import {
   CAMPAIGN_MISSIONS, CAMPAIGN_STORAGE_KEY, createCampaignProgress,
   normalizeCampaignProgress, isMissionUnlocked, evaluateCampaignMission,
@@ -156,7 +156,7 @@ function identity(value) {
 }
 function history(value) {
   if (!Array.isArray(value) || value.length > 30) fail('Recent results must contain at most 30 entries.');
-  const keys = ['won', 'draw', 'challengeId', 'campaignId', 'difficulty', 'time', 'kills', 'built', 'date'];
+  const keys = ['won', 'draw', 'challengeId', 'campaignId', 'difficulty', 'time', 'kills', 'built', 'date', 'mapId'];
   return value.map(record => {
     fields(record, keys, ['won', 'difficulty', 'time', 'kills', 'built', 'date'], 'Recent result');
     const ids = identity(record), draw = own(record, 'draw') ? record.draw : false;
@@ -164,17 +164,29 @@ function history(value) {
       fail('Recent result has invalid win/draw flags.');
     if (!['easy', 'normal', 'hard'].includes(record.difficulty)) fail('Recent result has an unknown difficulty.');
     const authored = ids.challengeId ? CHALLENGES.find(c => c.id === ids.challengeId) : CAMPAIGN_MISSIONS.find(m => m.id === ids.campaignId);
+    const map = {};
+    if (own(record, 'mapId')) {
+      try {
+        if (typeof record.mapId !== 'string' || getMap(record.mapId).id !== record.mapId) throw new Error('Unknown map');
+      } catch { fail('Recent result contains an unknown battlefield.'); }
+      map.mapId = record.mapId;
+    }
+    if (authored && (record.mapId ?? 'classic') !== (authored.mapId ?? 'classic'))
+      fail(`Authored mission results require the ${getMap(authored.mapId ?? 'classic').name} battlefield.`);
     number(record.time, 0, authored ? authored.timeLimit + .25 : 10000, 'Recent result time');
     number(record.kills, 0, 1e9, 'Recent result kills', true);
     number(record.built, 0, 1e9, 'Recent result buildings', true);
     return { won: record.won, draw, ...ids, difficulty: record.difficulty, time: record.time,
-      kills: record.kills, built: record.built, date: iso(record.date, 'Recent result date') };
+      kills: record.kills, built: record.built, date: iso(record.date, 'Recent result date'), ...map };
   });
 }
 /** Engine restore validates values; these allowlists also exclude unrelated/private metadata. */
 function gameFields(data) {
   const check = (value, keys, label, optional = []) => fields(value, [...keys, ...optional], keys, label);
-  check(data, ['version', 'difficulty', 'seed', 'ai', 'nextId', 'aiTimer', 'accumulator', 'tick', 'state'], 'Engine save');
+  object(data, 'Engine save');
+  // V1 remains the exact Classic schema; only v2 may carry explicit map identity.
+  const mapFields = data.version === 2 ? ['mapId', 'mapRevision'] : [];
+  check(data, ['version', ...mapFields, 'difficulty', 'seed', 'ai', 'nextId', 'aiTimer', 'accumulator', 'tick', 'state'], 'Engine save');
   const s = data.state;
   check(s, ['time', 'gold', 'income', 'bases', 'buildings', 'units', 'projectiles', 'effects', 'frontline', 'winner', 'spellCooldown', 'overtime', 'stats'], 'Engine state');
   check(s.stats, ['kills', 'built', 'damage'], 'Battle statistics');
@@ -209,6 +221,8 @@ function battle(value, progress) {
   if (game.state.winner !== null || game.state.bases.some(base => base.hp <= 0)) fail('Saved battle has already ended.');
   const mission = ids.campaignId ? CAMPAIGN_MISSIONS.find(m => m.id === ids.campaignId) : CHALLENGES.find(c => c.id === ids.challengeId);
   if (mission) {
+    if (game.map.id !== (mission.mapId ?? 'classic'))
+      fail(`Authored missions require the ${getMap(mission.mapId ?? 'classic').name} battlefield.`);
     if (game.difficulty !== mission.difficulty || game.ai !== (mission.ai === true)) fail('Saved battle does not match its mission rules.');
     if (ids.campaignId && !isMissionUnlocked(progress, ids.campaignId)) fail('Saved campaign battle is locked by the backup progress.');
     const result = ids.campaignId ? evaluateCampaignMission(game, ids.campaignId) : evaluateChallenge(game, ids.challengeId);

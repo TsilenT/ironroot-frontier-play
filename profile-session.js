@@ -12,24 +12,29 @@ export class ProfileSessionError extends Error {
   constructor(code, message) { super(message); this.name = 'ProfileSessionError'; this.code = code; }
 }
 function error(code, message) { throw new ProfileSessionError(code, message); }
-function marker(raw) {
-  if (raw === null) return { raw, phase: 'ready', epoch: null };
+function marker(raw, requiredProtocolVersion) {
+  if (raw === null) return { raw, version: 0, phase: 'ready', epoch: null };
   if (typeof raw !== 'string' || raw.length > 512) error('invalid-marker', 'The profile marker is invalid. Keep other Ironroot tabs closed and recover from a backup.');
   let value;
   try { value = JSON.parse(raw); } catch { error('invalid-marker', 'The profile marker is unreadable. Keep other Ironroot tabs closed and recover from a backup.'); }
   if (!value || typeof value !== 'object' || Array.isArray(value) ||
       Object.keys(value).length !== 4 || !['format','version','epoch','phase'].every(k => Object.hasOwn(value,k)) ||
-      value.format !== FORMAT || value.version !== 1 || !PHASES.includes(value.phase) ||
+      value.format !== FORMAT || !Number.isInteger(value.version) || value.version < 1 || value.version > requiredProtocolVersion || !PHASES.includes(value.phase) ||
       typeof value.epoch !== 'string' || !/^[a-zA-Z0-9-]{1,80}$/.test(value.epoch))
     error('invalid-marker', 'The profile marker is invalid or incompatible. Keep other Ironroot tabs closed and recover from a backup.');
-  return { raw, phase: value.phase, epoch: value.epoch };
+  return { raw, version: value.version, phase: value.phase, epoch: value.epoch };
 }
-function encoded(epoch, phase) { return JSON.stringify({ format: FORMAT, version: 1, epoch, phase }); }
+function encoded(epoch, phase, version) { return JSON.stringify({ format: FORMAT, version, epoch, phase }); }
 
-/** getBackend must expose throwing getItem/setItem/removeItem methods, never swallow read errors. */
-export function createProfileSession(getBackend, { newEpoch = nextEpoch } = {}) {
+/**
+ * getBackend must expose throwing getItem/setItem/removeItem methods, never swallow read errors.
+ * Version 2 fences older clients before they can drop newly authored campaign IDs.
+ * Only construction upgrades a ready marker; a failed or uncertain upgrade requires reload.
+ */
+export function createProfileSession(getBackend, { newEpoch = nextEpoch, requiredProtocolVersion = 1 } = {}) {
   if (typeof getBackend !== 'function' || typeof newEpoch !== 'function') throw new TypeError('A storage getter and epoch factory are required.');
-  let boundRaw, boundKnown = false, initiallyUnavailable = false, transaction = null;
+  if (![1, 2].includes(requiredProtocolVersion)) throw new TypeError('The required profile protocol must be version 1 or 2.');
+  let boundRaw, boundKnown = false, initiallyUnavailable = false, transaction = null, upgradeAttempted = false, upgradeError = null;
   function backend() {
     let value;
     try { value = getBackend(); }
@@ -49,26 +54,45 @@ export function createProfileSession(getBackend, { newEpoch = nextEpoch } = {}) 
       error('marker-read-failed', 'The profile marker cannot be read. Keep this page open; saving and importing are blocked until storage is available.');
     }
   }
-  function read() { return marker(rawRead()); }
-  try { const initial = read(); boundRaw = initial.raw; boundKnown = initial.phase === 'ready'; }
-  catch (e) { initiallyUnavailable = e.code !== 'invalid-marker'; }
+  function read() { return marker(rawRead(), requiredProtocolVersion); }
+  function needsUpgrade(current) { return requiredProtocolVersion === 2 && current.version < 2; }
+  try {
+    let initial = read();
+    if (initial.phase === 'ready' && needsUpgrade(initial)) {
+      upgradeAttempted = true;
+      // A ready v1 epoch remains the same profile. Absent markers need an identifier.
+      const epoch = initial.epoch ?? newEpoch();
+      if (typeof epoch !== 'string' || !/^[a-zA-Z0-9-]{1,80}$/.test(epoch))
+        error('invalid-epoch', 'The expanded campaign profile could not be protected. No profile data was changed. Reload before saving.');
+      const desired = encoded(epoch, 'ready', requiredProtocolVersion);
+      verifiedMarkerWrite(initial.raw, desired);
+      initial = marker(desired, requiredProtocolVersion);
+    }
+    boundRaw = initial.raw; boundKnown = initial.phase === 'ready';
+  } catch (e) {
+    // Never treat an attempted but unverified migration as ordinary unsaved play.
+    upgradeError = upgradeAttempted ? e : null;
+    initiallyUnavailable = !upgradeAttempted && e.code !== 'invalid-marker';
+  }
 
   function status() {
     let current;
     try { current = read(); }
     catch (e) {
       return { phase: e.code === 'invalid-marker' ? 'invalid' : 'unavailable', canWrite: false,
-        canReload: false, reloadRequired: false, recoveryRequired: e.code === 'invalid-marker' || !!transaction,
+        canReload: false, reloadRequired: false, recoveryRequired: e.code === 'invalid-marker' || !!transaction || !!upgradeError,
         ownsImport: false, initiallyUnavailable, code: e.code, message: e.message };
     }
     const ownsImport = !!transaction && current.epoch === transaction.epoch && current.raw === transaction.restoringRaw && !transaction.done;
-    const canWrite = current.phase === 'ready' && boundKnown && current.raw === boundRaw;
+    const upgradeRequired = current.phase === 'ready' && needsUpgrade(current);
+    const canWrite = current.phase === 'ready' && !upgradeRequired && !upgradeError && boundKnown && current.raw === boundRaw;
     const reloadRequired = current.phase === 'ready' && !canWrite;
     return { phase: current.phase, canWrite, canReload: current.phase === 'ready', reloadRequired,
       recoveryRequired: current.phase === 'failed', ownsImport, initiallyUnavailable,
-      code: current.phase === 'restoring' ? 'restore-in-progress' : current.phase === 'failed' ? 'recovery-required' : reloadRequired ? 'stale-session' : 'ready',
+      code: current.phase === 'restoring' ? 'restore-in-progress' : current.phase === 'failed' ? 'recovery-required' : upgradeRequired ? 'profile-upgrade-required' : reloadRequired ? 'stale-session' : 'ready',
       message: current.phase === 'restoring' ? 'A backup restoration is in progress. Keep this page paused and do not reload until it finishes.' :
         current.phase === 'failed' ? 'A backup restoration needs recovery. Keep this page paused and close other Ironroot tabs before recovering.' :
+        upgradeRequired ? 'The expanded campaign profile could not be protected. Saving is blocked. Restore storage access and reload before making changes.' :
         reloadRequired ? 'This profile was replaced or could not be verified when this tab opened. Reload before making changes.' : 'Profile is ready.' };
   }
   function requireNormalWrite() {
@@ -78,6 +102,7 @@ export function createProfileSession(getBackend, { newEpoch = nextEpoch } = {}) 
   function requireNormalRead() {
     const current = read();
     if (current.phase !== 'ready') error(current.phase === 'failed' ? 'recovery-required' : 'restore-in-progress', 'This profile is being restored or needs recovery. Do not load partial data.');
+    if (needsUpgrade(current) || upgradeError) error('profile-upgrade-required', 'This profile has not been verified for the expanded campaign. Reload before loading or changing its saves.');
   }
   function keyAllowed(key, importing = false) {
     if (typeof key !== 'string' || key === PROFILE_MARKER_KEY || (importing && !IMPORT_KEYS.has(key)))
@@ -125,7 +150,7 @@ export function createProfileSession(getBackend, { newEpoch = nextEpoch } = {}) 
       const epoch = newEpoch();
       if (typeof epoch !== 'string' || !/^[a-zA-Z0-9-]{1,80}$/.test(epoch) || epoch === current.epoch)
         return response(false, 'invalid-epoch', 'A fresh import identifier could not be created. No profile data was changed.');
-      transaction = { epoch, restoringRaw: encoded(epoch, 'restoring'), priorReady: current.phase === 'ready', started: false, finishing: null, done: false };
+      transaction = { epoch, restoringRaw: encoded(epoch, 'restoring', requiredProtocolVersion), priorReady: current.phase === 'ready', started: false, finishing: null, done: false };
       verifiedMarkerWrite(current.raw, transaction.restoringRaw);
       transaction.started = true;
       return response(true, 'import-started', 'Import ownership verified.', { epoch });
@@ -141,7 +166,7 @@ export function createProfileSession(getBackend, { newEpoch = nextEpoch } = {}) 
       return response(false, 'outcome-conflict', 'Retry finalization with the original outcome; do not change a verified recovery decision.', { phase: 'blocked', outcome });
     // Returning to an already partial profile does not make that profile safe to reload.
     const phase = outcome === 'restored' || (outcome === 'rolled-back' && transaction.priorReady) ? 'ready' : 'failed';
-    const desired = encoded(transaction.epoch, phase);
+    const desired = encoded(transaction.epoch, phase, requiredProtocolVersion);
     transaction.finishing ||= { outcome, phase, raw: desired };
     try {
       const current = read();
