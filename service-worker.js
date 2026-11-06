@@ -1,10 +1,13 @@
 // Atomic, versioned offline shell. Bump VERSION with every public build.
-const VERSION = 'ironroot-v0.6.0';
+const VERSION = 'ironroot-v0.7.0';
 const FILES = [
   './',
   './index.html',
   './styles.css',
   './app.js',
+  './backup.js',
+  './profile-session.js',
+  './controller.js',
   './engine.js',
   './render.js',
   './challenges.js',

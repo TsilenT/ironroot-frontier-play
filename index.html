@@ -142,6 +142,13 @@
             ⚔
           </button>
         </div>
+        <div
+          id="controllerCursor"
+          class="controller-cursor hidden"
+          aria-hidden="true"
+        >
+          <span>A</span>
+        </div>
         <div class="pause-veil hidden" id="pauseVeil">
           <span>PAUSED</span><small>Take a breath. Plan your next move.</small
           ><button id="resume" class="gold-button">Resume battle</button
@@ -251,7 +258,7 @@
           ENTER THE FRONTIER <span>→</span>
         </button>
         <p class="save-status hidden" id="saveStatus" role="status"></p>
-        <p class="welcome-foot">Campaign · Skirmish · Field trials · v0.6</p>
+        <p class="welcome-foot">Campaign · Skirmish · Field trials · v0.7</p>
         <div class="welcome-links">
           <button class="text-button" id="welcomeHelp">
             Read the field guide</button
@@ -327,6 +334,13 @@
           >
           1–7 buildings · R strike · Space pause · Esc cancel · Arrow keys pan
         </p>
+        <p class="controls" id="controllerHelp">
+          <b>Controller · experimental:</b> Left stick moves the cursor, right
+          stick pans. A confirms, B cancels, LB/RB chooses buildings, X opens
+          HUD focus, Y arms Rally, Start pauses. D-pad navigates controls. LT
+          slows the cursor. Connect a standard controller and press a button.
+          Physical hardware validation is ongoing.
+        </p>
         <button id="guideDone" class="gold-button">Ready to command</button>
       </section>
     </div>
@@ -379,6 +393,76 @@
             </select></label
           >
         </div>
+        <details class="history-details" id="controllerSettings">
+          <summary>Controller controls · experimental</summary>
+          <p id="controllerStatus">
+            Connect a standard controller and press a button.
+          </p>
+          <p>
+            Left stick: cursor · Right stick: pan · A: confirm/place · B: back ·
+            X: HUD focus · Y: rally · LB/RB: buildings · D-pad: navigate
+            controls · Start: pause · View: home · Left stick press: follow ·
+            LT: precision.
+          </p>
+          <p>
+            In menus, use the stick or D-pad to focus and A to activate.
+            Left/right adjusts sliders and choices. Touch and keyboard remain
+            available. Physical controller testing is ongoing.
+          </p>
+        </details>
+        <section
+          id="profileRecovery"
+          class="profile-recovery hidden"
+          aria-label="Profile recovery"
+        >
+          <h3>Keep this session safe</h3>
+          <p id="profileRecoveryMessage" role="alert"></p>
+          <p>
+            This tab will not write over a changed or partially restored
+            profile. Keep it open while recovering. Reload replaces this tab’s
+            retained battle with the verified saved profile. You can export the
+            in-memory session first.
+          </p>
+          <button id="exportRecovery" class="secondary-button">
+            Export in-memory session
+          </button>
+          <button id="retryProfileFinish" class="secondary-button hidden">
+            Retry finalization
+          </button>
+          <button id="resumeRecovery" class="secondary-button hidden">
+            Keep retained session
+          </button>
+          <button id="profileReload" class="gold-button">
+            Reload saved profile
+          </button>
+        </section>
+        <details class="history-details backup-details">
+          <summary>Save backups</summary>
+          <p>
+            Download a portable JSON copy. Importing replaces this browser’s
+            campaign stars, trial records, preferences, history and saved
+            battle. Files stay on your device.
+          </p>
+          <label class="backup-check"
+            ><input id="backupIncludeBattle" type="checkbox" checked /> Include
+            saved battle</label
+          >
+          <div class="backup-actions">
+            <button id="exportBackup" class="secondary-button">
+              Export backup</button
+            ><button id="importBackup" class="secondary-button">
+              Choose backup to import
+            </button>
+          </div>
+          <input
+            id="backupFile"
+            type="file"
+            accept=".json,application/json"
+            class="hidden"
+            aria-label="Choose Ironroot backup file"
+          />
+          <p id="backupStatus" role="status"></p>
+        </details>
         <details class="history-details">
           <summary>Recent battles</summary>
           <div id="battleHistory"></div>
@@ -418,6 +502,34 @@
         ><button id="resultMenu" class="text-button">Return to title</button
         ><button id="inspectBattle" class="text-button">
           Inspect the battlefield
+        </button>
+      </section>
+    </div>
+    <div class="modal-backdrop hidden" id="backupModal">
+      <section
+        class="backup-modal modal"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="backupTitle"
+      >
+        <div class="eyebrow">A NEW CHAPTER FROM YOUR FILE</div>
+        <h2 id="backupTitle">Restore this backup?</h2>
+        <p id="backupSummary"></p>
+        <p class="backup-warning">
+          This replaces all campaign stars, trial records, preferences, battle
+          history and the saved battle on this browser. Your current battle will
+          be replaced. Export a backup first if you want to keep it.
+        </p>
+        <p>Close other Ironroot tabs before restoring a backup.</p>
+        <label id="backupRecoveryRow" class="backup-check hidden"
+          ><input id="backupRecoveryConsent" type="checkbox" /> Other Ironroot
+          tabs are closed. Replace the unfinished restoration with this
+          backup.</label
+        >
+        <p id="backupImportStatus" role="alert"></p>
+        <button id="cancelImport" class="secondary-button">Cancel</button
+        ><button id="confirmImport" class="gold-button">
+          Replace local saves
         </button>
       </section>
     </div>

@@ -1,12 +1,15 @@
 /** Storage may be absent, denied or full. Never report an unwritten save as saved. */
 export function createStorage(getBackend) {
   return {
-    get(key) {
+    read(key) {
       try {
-        return getBackend().getItem(key);
+        return { ok: true, value: getBackend().getItem(key) };
       } catch {
-        return null;
+        return { ok: false, value: null };
       }
+    },
+    get(key) {
+      return this.read(key).value;
     },
     set(key, value) {
       try {
@@ -71,15 +74,39 @@ export function nativeSpaceTarget(target) {
  * Identical saves are a no-op, so hiding an already-paused tab does not rewrite it.
  */
 export function createSaveSession(storage, key) {
-  let expected = null;
-  let claimed = false;
+  let expected = null,
+    claimed = false,
+    unavailableClaim = false;
+  const read = () => {
+    try {
+      return storage.read
+        ? storage.read(key)
+        : { ok: true, value: storage.get(key) };
+    } catch {
+      return { ok: false, value: null };
+    }
+  };
   return {
     claim() {
-      expected = storage.get(key);
-      claimed = true;
+      const current = read();
+      expected = current.value;
+      claimed = current.ok;
+      unavailableClaim = !current.ok;
+      return current.ok;
+    },
+    status() {
+      const current = read();
+      if (!current.ok) return 'unavailable';
+      // A game begun with storage denied may recover only into an empty slot.
+      if (!claimed && unavailableClaim && current.value === null) {
+        expected = null;
+        claimed = true;
+        unavailableClaim = false;
+      }
+      return claimed && current.value === expected ? 'current' : 'stale';
     },
     isCurrent() {
-      return claimed && storage.get(key) === expected;
+      return this.status() === 'current';
     },
     set(target, value) {
       if (target !== key || !this.isCurrent()) return false;

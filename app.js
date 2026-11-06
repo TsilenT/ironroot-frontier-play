@@ -1,3 +1,17 @@
+import { createProfileSession, PROFILE_MARKER_KEY } from './profile-session.js';
+import {
+  GamepadInput,
+  moveCursor,
+  nextFocusIndex,
+  spatialFocusIndex,
+  nextAffordableIndex,
+} from './controller.js';
+import {
+  createBackup,
+  parseBackup,
+  restoreBackup,
+  MAX_BACKUP_BYTES,
+} from './backup.js';
 import { Game, BUILDINGS, UNITS, LANES, SPELL, upgradeCost } from './engine.js';
 import { Renderer, iconSVG } from './render.js';
 import {
@@ -64,13 +78,22 @@ const labels = {
   sanctum: ['Sanctum', 'Magic & splash', '14s / wave'],
   aerie: ['Aerie', 'Flying raiders', '15s / wave'],
 };
-const storage = createStorage(() => localStorage);
+const profileSession = createProfileSession(() => localStorage);
+const storage = createStorage(() => profileSession.storage);
+let recoveryHold = null,
+  profileGate = null,
+  pendingFinalizeOutcome = null,
+  allowProfileReload = false,
+  importGeneration = 0,
+  retainedHistory = null;
 let saveWarning = false;
 const SETTINGS = 'ironroot.settings.v1',
   SAVE = 'ironroot.battle.v1',
   HISTORY = 'ironroot.history.v1',
   TRIALS = 'ironroot.trials.v1';
 const battleSession = createSaveSession(storage, SAVE);
+let knownHistory = readHistory(storage, HISTORY),
+  knownHistoryAvailable = storage.read(HISTORY).ok;
 let campaignProgress = readCampaignProgress(storage),
   progressDirty = false;
 const nextCampaign = getCampaignOverview(campaignProgress).nextMissionId;
@@ -136,6 +159,7 @@ function sound(name, options) {
   audio.play(name, options);
 }
 function savePreferences() {
+  if (recoveryHold || profileGate) return false;
   preferences.sound = soundOn;
   storage.set(SETTINGS, JSON.stringify(preferences));
 }
@@ -181,7 +205,14 @@ for (const [type, d] of Object.entries(BUILDINGS)) {
   $('buildCards').append(btn);
 }
 function canInteract() {
-  return started && !paused && game.state.winner === null && !objectiveOutcome;
+  return (
+    started &&
+    !paused &&
+    !recoveryHold &&
+    !profileGate &&
+    game.state.winner === null &&
+    !objectiveOutcome
+  );
 }
 function selectBuild(type) {
   if (!canInteract()) return;
@@ -339,8 +370,12 @@ function pauseControl(mode = 'pause') {
 }
 pauseControl();
 function pause(value) {
+  if (!value && (recoveryHold || profileGate)) {
+    showRecoverySettings();
+    return;
+  }
   if (!started || game.state.winner !== null || objectiveOutcome) return;
-  if (!value && !battleSession.isCurrent()) {
+  if (!value && battleSession.status() === 'stale') {
     showTitle();
     toast('A newer battle is available. Choose Resume to continue it.');
     return;
@@ -353,7 +388,11 @@ function pause(value) {
 $('pause').onclick = () => pause(!paused);
 $('resume').onclick = () => pause(false);
 $('saveExit').onclick = () => {
-  if (!battleSession.isCurrent()) {
+  if (recoveryHold || profileGate) {
+    showRecoverySettings();
+    return;
+  }
+  if (battleSession.status() === 'stale') {
     showTitle();
     toast(
       'A newer battle is saved in another tab. Resume it here from the title screen.',
@@ -420,6 +459,11 @@ function start(
   restoredChallenge = null,
   restoredCampaign = null,
 ) {
+  syncProfileSafety();
+  if (recoveryHold || profileGate) {
+    showRecoverySettings();
+    return;
+  }
   const cid = restored
     ? restoredCampaign
     : mode === 'campaign'
@@ -451,6 +495,8 @@ function start(
       );
   }
   battleSession.claim();
+  padHud = false;
+  padPoint = { x: renderer.width / 2, y: renderer.height / 2 };
   started = true;
   paused = false;
   speed = 1;
@@ -514,6 +560,11 @@ function start(
 }
 $('start').onclick = () => start();
 function showTitle() {
+  if (recoveryHold || profileGate) {
+    showRecoverySettings();
+    return;
+  }
+  padHud = false;
   started = false;
   paused = false;
   cancel();
@@ -556,6 +607,10 @@ $('inspectBattle').onclick = () => {
   $('pause').onclick = showTitle;
 };
 function persistProgress() {
+  if (recoveryHold || profileGate || !profileSession.status().canWrite) {
+    progressDirty = true;
+    return false;
+  }
   campaignProgress = mergeCampaignProgress(
     campaignProgress,
     readCampaignProgress(storage),
@@ -586,6 +641,7 @@ function persistProgress() {
   return !progressDirty;
 }
 function save() {
+  if (recoveryHold || profileGate) return false;
   if (
     !started ||
     game.state.winner !== null ||
@@ -593,14 +649,11 @@ function save() {
     typeof game.serialize !== 'function'
   )
     return false;
-  if (!battleSession.isCurrent()) return false;
-  const ok = writeBattle(
-    battleSession,
-    SAVE,
-    game,
-    currentChallenge,
-    currentCampaign,
-  );
+  const saveStatus = battleSession.status();
+  if (saveStatus === 'stale') return false;
+  const ok =
+    saveStatus === 'current' &&
+    writeBattle(battleSession, SAVE, game, currentChallenge, currentCampaign);
   if (!ok && !saveWarning) {
     toast(
       'Autosave unavailable. Your battle is still running, but keep this page open.',
@@ -748,7 +801,9 @@ function finish() {
     built: game.state.stats.built[0],
     date: new Date().toISOString(),
   });
-  storage.set(HISTORY, JSON.stringify(history.slice(0, 30)));
+  knownHistory = history.slice(0, 30);
+  knownHistoryAvailable = true;
+  storage.set(HISTORY, JSON.stringify(knownHistory));
   if (trial && won) {
     const old = trialRecords[currentChallenge];
     trialRecords[currentChallenge] = {
@@ -822,6 +877,10 @@ $('battle').addEventListener('pointerup', (e) => {
   ui.dragging = false;
   $('battle').classList.remove('dragging');
   if (moved || !canInteract()) return;
+  activateBattlePoint(w);
+});
+function activateBattlePoint(w) {
+  if (!canInteract()) return;
   if (ui.build) {
     if (w.x < 180 || w.x > 1390 || w.y < 165 || w.y > 740) {
       toast('Build within your own frontier. Drag back toward your citadel.');
@@ -865,7 +924,7 @@ $('battle').addEventListener('pointerup', (e) => {
     requestAnimationFrame(updateSelection);
     if (ui.selected) sound('click');
   }
-});
+}
 $('battle').addEventListener('pointercancel', (e) => {
   activePointers.delete(e.pointerId);
   if (activePointers.size === 0) multiTouch = false;
@@ -896,12 +955,14 @@ $('minimap').addEventListener('pointerdown', (e) => {
 window.addEventListener('keydown', (e) => {
   if (e.repeat && e.code !== 'ArrowLeft' && e.code !== 'ArrowRight') return;
   if (e.code === 'Escape') {
-    if (!$('settingsModal').classList.contains('hidden')) hideSettings();
+    if (!$('backupModal').classList.contains('hidden')) hideBackup();
+    else if (!$('settingsModal').classList.contains('hidden')) hideSettings();
     else if (!$('helpModal').classList.contains('hidden')) hideHelp();
     else cancel();
   }
   if (
     !started ||
+    !$('backupModal').classList.contains('hidden') ||
     !$('settingsModal').classList.contains('hidden') ||
     !$('helpModal').classList.contains('hidden') ||
     !$('resultModal').classList.contains('hidden')
@@ -934,13 +995,25 @@ document.addEventListener('visibilitychange', () => {
   last = performance.now();
 });
 window.addEventListener('beforeunload', (e) => {
+  if (allowProfileReload) return;
+  const profile = profileSession.status();
+  if (
+    recoveryHold ||
+    profile.reloadRequired ||
+    profile.recoveryRequired ||
+    profile.phase === 'restoring'
+  ) {
+    e.preventDefault();
+    e.returnValue = '';
+    return;
+  }
   if (progressDirty) persistProgress();
   if (
     progressDirty ||
     (started &&
       game.state.winner === null &&
       !objectiveOutcome &&
-      battleSession.isCurrent() &&
+      battleSession.status() !== 'stale' &&
       !save())
   ) {
     e.preventDefault();
@@ -948,11 +1021,13 @@ window.addEventListener('beforeunload', (e) => {
   }
 });
 window.addEventListener('storage', (event) => {
+  syncProfileSafety();
+  if (event.key === PROFILE_MARKER_KEY || recoveryHold || profileGate) return;
   if (event.key === 'ironroot.campaign.v1') {
-    campaignProgress = mergeCampaignProgress(
-      campaignProgress,
-      readCampaignProgress(storage),
-    );
+    const latest = readCampaignProgress(storage);
+    campaignProgress = progressDirty
+      ? mergeCampaignProgress(campaignProgress, latest)
+      : latest;
     if (!started) renderCampaign();
     return;
   }
@@ -973,7 +1048,8 @@ window.addEventListener('storage', (event) => {
   if (!started) updateResume();
 });
 new ResizeObserver(() => renderer.resize()).observe($('battlefield'));
-let hudTimer = 0;
+let hudTimer = 0,
+  lastProfileCheck = 0;
 function updateHUD() {
   const s = game.state;
   $('gold').textContent = Math.floor(s.gold[0]);
@@ -1107,6 +1183,11 @@ function updateAudio() {
 }
 
 function frame(now) {
+  if (now - lastProfileCheck > 250) {
+    syncProfileSafety();
+    lastProfileCheck = now;
+  }
+  updateController(now);
   const dt = Math.min((now - last) / 1000, 0.1);
   last = now;
   if (started && !paused && game.state.winner === null && !objectiveOutcome) {
@@ -1323,6 +1404,11 @@ function showSettings() {
   $('settingsModal').classList.remove('hidden');
 }
 function hideSettings() {
+  if (recoveryHold || profileGate) {
+    updateRecoveryUI();
+    return;
+  }
+  invalidateImportRead();
   $('settingsModal').classList.add('hidden');
   if (started && game.state.winner === null && !objectiveOutcome)
     pause(settingsWasPaused);
@@ -1410,6 +1496,7 @@ const dialogLayers = [
   $('helpModal'),
   $('settingsModal'),
   $('resultModal'),
+  $('backupModal'),
 ];
 let activeDialog = null;
 const dialogFocus = new WeakMap();
@@ -1498,3 +1585,557 @@ document.addEventListener('keydown', (e) => {
 });
 syncDialogs();
 syncChoice();
+
+// Portable backups stay on the player's device. Nothing is uploaded.
+let pendingBackupText = null;
+let backupWriteAttempted = false;
+function invalidateImportRead() {
+  importGeneration++;
+  pendingBackupText = null;
+  $('backupFile').value = '';
+}
+function holdRecovery(message, reason = 'rollback') {
+  recoveryHold = { message, reason };
+  paused = true;
+  updateRecoveryUI();
+}
+function updateRecoveryUI() {
+  const status = profileSession.status(),
+    held = !!(recoveryHold || profileGate);
+  $('profileRecovery').classList.toggle('hidden', !held);
+  $('profileRecoveryMessage').textContent =
+    recoveryHold?.message || profileGate?.message || '';
+  $('profileReload').disabled = !status.canReload || !!pendingFinalizeOutcome;
+  $('retryProfileFinish').classList.toggle('hidden', !pendingFinalizeOutcome);
+  $('resumeRecovery').classList.toggle(
+    'hidden',
+    recoveryHold?.reason !== 'storage' ||
+      !!profileGate ||
+      !!pendingFinalizeOutcome,
+  );
+  $('resumeRecovery').disabled = !status.canWrite;
+  $('exportRecovery').classList.remove('hidden');
+  $('exportBackup').disabled = held || !status.canWrite;
+  $('settingsDone').disabled = held;
+  $('closeSettings').disabled = held;
+  const needsRecovery = ['restoring', 'failed', 'invalid'].includes(
+    status.phase,
+  );
+  $('backupRecoveryRow').classList.toggle('hidden', !needsRecovery);
+  $('confirmImport').disabled =
+    status.reloadRequired ||
+    (needsRecovery && !$('backupRecoveryConsent').checked);
+}
+function showRecoverySettings() {
+  paused = true;
+  $('resultModal').classList.add('hidden');
+  if ($('settingsModal').classList.contains('hidden')) showSettings();
+  updateRecoveryUI();
+}
+function syncProfileSafety() {
+  const status = profileSession.status();
+  profileGate =
+    status.reloadRequired ||
+    status.recoveryRequired ||
+    ['restoring', 'failed', 'invalid'].includes(status.phase)
+      ? status
+      : null;
+  if (profileGate) {
+    paused = true;
+    if ($('backupModal').classList.contains('hidden')) showRecoverySettings();
+  }
+  if (recoveryHold || profileGate) updateRecoveryUI();
+}
+function reloadProfile() {
+  if (!profileSession.status().canReload || pendingFinalizeOutcome) return;
+  allowProfileReload = true;
+  started = false;
+  progressDirty = false;
+  paused = true;
+  pendingBackupText = null;
+  location.reload();
+}
+$('profileReload').onclick = reloadProfile;
+$('resumeRecovery').onclick = () => {
+  const status = profileSession.status();
+  if (!status.canWrite || profileGate || pendingFinalizeOutcome) return;
+  if (started && battleSession.status() === 'stale') {
+    holdRecovery(
+      'The saved battle changed while storage was unavailable. Export this in-memory session before reloading the saved profile.',
+      'profile',
+    );
+    return;
+  }
+  recoveryHold = null;
+  updateRecoveryUI();
+  $('backupStatus').textContent =
+    'Storage is available again. Your retained session is still paused.';
+};
+function downloadBackup(text, suffix = '') {
+  if (location.protocol === 'ironroot:')
+    throw new Error(
+      'File export is not yet enabled in the desktop shell. Use the browser edition for portable backups.',
+    );
+  const url = URL.createObjectURL(
+      new Blob([text], { type: 'application/json' }),
+    ),
+    anchor = document.createElement('a');
+  anchor.href = url;
+  anchor.download = `ironroot${suffix}-backup-${new Date().toISOString().slice(0, 10)}.json`;
+  document.body.append(anchor);
+  anchor.click();
+  anchor.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 10000);
+}
+$('exportRecovery').onclick = () => {
+  try {
+    const battle =
+      started && game.state.winner === null && !objectiveOutcome
+        ? {
+            format: 'ironroot-save',
+            version: 2,
+            campaignId: currentCampaign,
+            challengeId: currentChallenge,
+            game: game.serialize(),
+          }
+        : null;
+    // Every domain is explicit, so unavailable/partly replaced local storage is never read.
+    const text = createBackup(
+      { getItem: () => null },
+      {
+        campaign: campaignProgress,
+        trials: trialRecords,
+        settings: preferences,
+        history: retainedHistory || knownHistory,
+        battle,
+      },
+    );
+    downloadBackup(text, '-retained-session');
+    $('backupStatus').textContent =
+      'Retained-session download started. It contains this tab’s known progress, settings and unfinished battle. ' +
+      (knownHistoryAvailable
+        ? 'History includes records available in this tab, which may omit newer results from other tabs.'
+        : 'History was unavailable and is omitted.');
+  } catch (error) {
+    $('backupStatus').textContent =
+      error.message ||
+      'The retained session could not be exported. Keep this page open.';
+  }
+};
+function hideBackup() {
+  invalidateImportRead();
+  $('backupModal').classList.add('hidden');
+  if (!backupWriteAttempted)
+    $('backupStatus').textContent =
+      'Import cancelled. Local saves were not changed.';
+  if (recoveryHold || profileGate) showRecoverySettings();
+}
+$('cancelImport').onclick = hideBackup;
+$('exportBackup').onclick = () => {
+  try {
+    const state = profileSession.status();
+    if (!state.canWrite || recoveryHold || profileGate)
+      throw new Error(
+        'Backup unavailable. ' +
+          (recoveryHold?.message || state.message) +
+          ' Use Export in-memory session to preserve the retained game.',
+      );
+    const includeBattle = $('backupIncludeBattle').checked,
+      options = { includeBattle };
+    if (progressDirty) {
+      options.campaign = campaignProgress;
+      options.trials = trialRecords;
+    }
+    if (
+      includeBattle &&
+      started &&
+      game.state.winner === null &&
+      !objectiveOutcome &&
+      battleSession.isCurrent()
+    )
+      options.battle = {
+        format: 'ironroot-save',
+        version: 2,
+        campaignId: currentCampaign,
+        challengeId: currentChallenge,
+        game: game.serialize(),
+      };
+    downloadBackup(createBackup(localStorage, options));
+    $('backupStatus').textContent =
+      'Backup download started. Keep the file somewhere safe.';
+  } catch (error) {
+    $('backupStatus').textContent =
+      error.message ||
+      'Backup could not be created. Your saves were not changed.';
+  }
+};
+$('importBackup').onclick = () => {
+  invalidateImportRead();
+  $('backupFile').click();
+};
+$('backupRecoveryConsent').onchange = updateRecoveryUI;
+$('backupFile').onchange = async () => {
+  const file = $('backupFile').files?.[0],
+    generation = ++importGeneration;
+  if (!file) return;
+  try {
+    if (file.size > MAX_BACKUP_BYTES)
+      throw new Error(
+        'This file is too large. Choose an Ironroot backup smaller than 1 MiB.',
+      );
+    const text = await file.text();
+    if (
+      generation !== importGeneration ||
+      $('settingsModal').classList.contains('hidden')
+    )
+      return;
+    const parsed = parseBackup(text),
+      overview = getCampaignOverview(parsed.data.campaign);
+    pendingBackupText = text;
+    backupWriteAttempted = false;
+    const battle = parsed.data.battle,
+      battleName = battle
+        ? battle.campaignId
+          ? CAMPAIGN_MISSIONS.find((m) => m.id === battle.campaignId).name
+          : battle.challengeId
+            ? CHALLENGES.find((c) => c.id === battle.challengeId).name
+            : 'Skirmish'
+        : null;
+    $('backupSummary').textContent =
+      `${overview.cleared}/12 campaign missions · ${overview.stars}/36 stars · ${Object.keys(parsed.data.trials).length}/5 trial records. ${battle ? `Saved battle: ${battleName} at ${timeText(battle.game.state.time)}.` : 'No battle in this file. Your current saved battle will be removed.'}`;
+    $('backupImportStatus').textContent = '';
+    $('backupRecoveryConsent').checked = false;
+    updateRecoveryUI();
+    $('backupModal').classList.remove('hidden');
+  } catch (error) {
+    if (generation !== importGeneration) return;
+    pendingBackupText = null;
+    $('backupStatus').textContent =
+      error.message ||
+      'This backup could not be read. Your saves were not changed.';
+    $('backupFile').value = '';
+  }
+};
+function finishProfileImport(outcome, originalMessage) {
+  pendingFinalizeOutcome = outcome;
+  const finalized = profileSession.finishImport({ outcome });
+  if (finalized.ok || finalized.code === 'import-ownership-lost')
+    pendingFinalizeOutcome = null;
+  if (finalized.ok && finalized.phase === 'ready') {
+    if (outcome === 'restored') {
+      recoveryHold = null;
+      profileGate = null;
+      reloadProfile();
+      return;
+    }
+    recoveryHold = null;
+    profileGate = null;
+    retainedHistory = null;
+    updateRecoveryUI();
+    $('backupImportStatus').textContent = originalMessage || finalized.message;
+    $('backupStatus').textContent = originalMessage || finalized.message;
+  } else {
+    const message = [originalMessage, finalized.message]
+      .filter(Boolean)
+      .join(' ');
+    holdRecovery(message, 'rollback');
+    $('backupImportStatus').textContent = message;
+    $('backupStatus').textContent = message;
+    syncProfileSafety();
+  }
+}
+$('retryProfileFinish').onclick = () => {
+  if (pendingFinalizeOutcome)
+    finishProfileImport(pendingFinalizeOutcome, recoveryHold?.message);
+};
+$('confirmImport').onclick = () => {
+  if (!pendingBackupText) return;
+  const state = profileSession.status(),
+    recover = ['restoring', 'failed', 'invalid'].includes(state.phase);
+  if (recover && !$('backupRecoveryConsent').checked) return;
+  if (state.canWrite && !recoveryHold) {
+    retainedHistory = readHistory(storage, HISTORY);
+    knownHistoryAvailable = storage.read(HISTORY).ok;
+  }
+  backupWriteAttempted = true;
+  const begin = profileSession.beginImport({ recover });
+  if (!begin.ok) {
+    holdRecovery(
+      begin.message,
+      begin.status.phase === 'unavailable' ? 'storage' : 'profile',
+    );
+    $('backupImportStatus').textContent = begin.message;
+    $('backupStatus').textContent = begin.message;
+    syncProfileSafety();
+    return;
+  }
+  const result = restoreBackup(profileSession.importStorage, pendingBackupText);
+  const originalSafe =
+    result.rollback?.complete === true ||
+    (result.rollback?.attempted === false && !result.changedKeys?.length);
+  const outcome = result.ok
+    ? 'restored'
+    : originalSafe
+      ? 'rolled-back'
+      : 'failed';
+  finishProfileImport(outcome, result.message);
+};
+
+// Experimental standard-controller adapter. Gameplay uses the same actions as touch.
+let padHud = false,
+  padActive = false,
+  padPoint = { x: renderer.width / 2, y: renderer.height / 2 };
+function controllerScope() {
+  if (document.hidden || !document.hasFocus())
+    return { mode: 'disabled', key: 'inactive', element: null };
+  const dialog = [...dialogLayers]
+    .reverse()
+    .find((layer) => !layer.classList.contains('hidden'));
+  if (dialog) return { mode: 'menu', key: dialog.id, element: dialog };
+  if (paused) return { mode: 'menu', key: 'pause', element: $('pauseVeil') };
+  if (padHud)
+    return {
+      mode: 'menu',
+      key: 'hud',
+      element: document.querySelector('.app'),
+    };
+  return {
+    mode: canInteract() ? 'gameplay' : 'menu',
+    key: canInteract() ? 'battle' : 'ended',
+    element: document.querySelector('.app'),
+  };
+}
+function padControls(scope) {
+  return [
+    ...(scope.element?.querySelectorAll(
+      'button:not([disabled]),a[href],input:not([type="file"]):not([disabled]),select:not([disabled]),summary',
+    ) || []),
+  ].filter(
+    (el) =>
+      !el.closest('.hidden,[inert]') &&
+      el.getClientRects().length &&
+      getComputedStyle(el).visibility !== 'hidden',
+  );
+}
+function focusPadControl(control) {
+  if (!control) return;
+  control.focus();
+  control.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+}
+function controllerNavigate(direction, scope) {
+  const controls = padControls(scope),
+    active = document.activeElement,
+    current = controls.indexOf(active);
+  if (
+    ['left', 'right'].includes(direction) &&
+    active?.matches('input[type="range"]')
+  ) {
+    active.value = Math.max(
+      Number(active.min),
+      Math.min(
+        Number(active.max),
+        Number(active.value) +
+          (direction === 'right' ? 1 : -1) * Number(active.step || 1),
+      ),
+    );
+    active.dispatchEvent(new Event('input', { bubbles: true }));
+    active.dispatchEvent(new Event('change', { bubbles: true }));
+    return;
+  }
+  if (['left', 'right'].includes(direction) && active?.matches('select')) {
+    active.selectedIndex = Math.max(
+      0,
+      Math.min(
+        active.options.length - 1,
+        active.selectedIndex + (direction === 'right' ? 1 : -1),
+      ),
+    );
+    active.dispatchEvent(new Event('change', { bubbles: true }));
+    return;
+  }
+  const items = controls.map((el) => ({ rect: el.getBoundingClientRect() }));
+  let next = spatialFocusIndex(items, current, direction);
+  if (next === current)
+    next = nextFocusIndex(
+      items,
+      current,
+      ['left', 'up'].includes(direction) ? -1 : 1,
+    );
+  focusPadControl(controls[next]);
+}
+function controllerBack(scope) {
+  if (scope.key === 'backupModal') hideBackup();
+  else if (scope.key === 'settingsModal') hideSettings();
+  else if (scope.key === 'helpModal') hideHelp();
+  else if (scope.key === 'pause') pause(false);
+  else if (scope.key === 'resultModal' || scope.key === 'ended') showTitle();
+  else if (scope.key === 'hud') {
+    padHud = false;
+    cancel();
+    $('battle').focus();
+  } else if (scope.mode === 'gameplay') cancel();
+}
+function handleControllerAction({ action }) {
+  const scope = controllerScope();
+  if (scope.mode === 'disabled') return;
+  const wasActive = padActive;
+  padActive = true;
+  document.body.classList.add('gamepad-active');
+  padPoint = moveCursor(
+    padPoint,
+    { x: 0, y: 0 },
+    0,
+    { width: renderer.width, height: renderer.height },
+    { padding: 20 },
+  );
+  if (scope.mode === 'gameplay' && action === 'confirm' && !wasActive) {
+    ui.pointer = renderer.screenToWorld(padPoint.x, padPoint.y);
+    toast('Controller cursor ready. Press A again to confirm here.');
+    return;
+  }
+  if (action === 'pause') {
+    if (scope.key === 'pause') pause(false);
+    else if (scope.key === 'battle' || scope.key === 'hud') pause(true);
+  } else if (action === 'cancel') controllerBack(scope);
+  else if (action === 'focus') {
+    if (scope.key === 'battle') {
+      padHud = true;
+      focusPadControl(document.querySelector('.build-card'));
+    } else if (scope.key === 'hud') {
+      padHud = false;
+      $('battle').focus();
+    }
+  } else if (['up', 'down', 'left', 'right'].includes(action)) {
+    if (scope.mode === 'gameplay') {
+      padHud = true;
+      focusPadControl(document.querySelector('.build-card'));
+    } else controllerNavigate(action, scope);
+  } else if (action === 'confirm') {
+    if (scope.mode === 'gameplay') {
+      ui.pointer = renderer.screenToWorld(padPoint.x, padPoint.y);
+      activateBattlePoint(ui.pointer);
+      if (ui.selected) {
+        updateSelection();
+        padHud = true;
+        focusPadControl(
+          $('upgrade').disabled ? $('closeSelection') : $('upgrade'),
+        );
+      }
+    } else {
+      const controls = padControls(scope);
+      if (!controls.includes(document.activeElement))
+        focusPadControl(controls[0]);
+      else {
+        const target = document.activeElement;
+        if (target.matches('select')) {
+          target.selectedIndex =
+            (target.selectedIndex + 1) % target.options.length;
+          target.dispatchEvent(new Event('change', { bubbles: true }));
+        } else target.click();
+        if (
+          scope.key === 'hud' &&
+          (target.dataset.type || target.id === 'rally') &&
+          (ui.build || ui.spell)
+        ) {
+          padHud = false;
+          $('battle').focus();
+        }
+      }
+    }
+  } else if (scope.mode === 'gameplay') {
+    if (action === 'rally') $('rally').click();
+    else if (action === 'home') $('home').click();
+    else if (action === 'frontline') $('front').click();
+    else if (action === 'previousCard' || action === 'nextCard') {
+      const types = Object.keys(BUILDINGS),
+        index = types.indexOf(ui.build);
+      const next = nextAffordableIndex(
+        types.map((type) => BUILDINGS[type]),
+        index,
+        action === 'nextCard' ? 1 : -1,
+        game.state.gold[0],
+      );
+      if (next < 0) toast('No other buildings are affordable yet.');
+      else selectBuild(types[next]);
+    }
+  } else if (action === 'previousCard' || action === 'nextCard') {
+    const controls = padControls(scope),
+      i = controls.indexOf(document.activeElement);
+    focusPadControl(
+      controls[nextFocusIndex(controls, i, action === 'nextCard' ? 1 : -1)],
+    );
+  }
+  if (controllerScope().key !== scope.key) controller.reset();
+}
+const controller = new GamepadInput({
+  onAction: handleControllerAction,
+  onConnection: ({ connected }) => {
+    if (connected)
+      toast('Controller connected. A confirms, B goes back, Start pauses.');
+    else {
+      padActive = false;
+      padHud = false;
+      if (canInteract()) {
+        pause(true);
+        toast('Controller disconnected. Battle paused.');
+      }
+    }
+  },
+});
+function updateController(now) {
+  const scope = controllerScope(),
+    frame = controller.update(now, scope);
+  $('controllerStatus').textContent = frame.connected
+    ? 'Standard controller connected. Input support is experimental; physical device validation is ongoing.'
+    : frame.unsupported.length
+      ? 'This controller uses a nonstandard mapping. Use keyboard/touch or a standard-mapped controller.'
+      : 'No controller connected. Connect a standard controller and press a button. Keyboard and touch always remain available.';
+  if (scope.mode === 'gameplay' && frame.connected) {
+    if (
+      Math.hypot(frame.cursor.x, frame.cursor.y) ||
+      Math.hypot(frame.camera.x, frame.camera.y)
+    )
+      padActive = true;
+    padPoint = moveCursor(
+      padPoint,
+      frame.cursor,
+      frame.dt,
+      { width: renderer.width, height: renderer.height },
+      { speed: 570, precision: frame.precision, padding: 20 },
+    );
+    if (frame.camera.x) {
+      renderer.pan(-frame.camera.x * 850 * frame.dt);
+      follow = false;
+    }
+    if (padActive) ui.pointer = renderer.screenToWorld(padPoint.x, padPoint.y);
+  }
+  document.body.classList.toggle(
+    'gamepad-active',
+    padActive && frame.connected,
+  );
+  const visible =
+    padActive && frame.connected && controllerScope().mode === 'gameplay';
+  $('controllerCursor').classList.toggle('hidden', !visible);
+  if (visible) {
+    $('controllerCursor').style.left = padPoint.x + 'px';
+    $('controllerCursor').style.top = padPoint.y + 'px';
+  }
+}
+document.addEventListener(
+  'pointerdown',
+  () => {
+    padActive = false;
+    document.body.classList.remove('gamepad-active');
+    padHud = false;
+    controller.reset();
+  },
+  true,
+);
+document.addEventListener('keydown', () => {
+  padActive = false;
+  document.body.classList.remove('gamepad-active');
+  padHud = false;
+  controller.reset();
+});
+
+syncProfileSafety();
