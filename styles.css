@@ -93,6 +93,7 @@ button:disabled {
   display: none !important;
 }
 .app {
+  height: 100vh;
   height: 100dvh;
   min-height: 420px;
   display: flex;
@@ -3440,7 +3441,7 @@ body.gamepad-active a:focus {
   --mobile-inset-bottom: env(safe-area-inset-bottom, 0px);
   --mobile-inset-left: env(safe-area-inset-left, 0px);
   --mobile-inset-right: env(safe-area-inset-right, 0px);
-  position: relative;
+  position: fixed;
   min-height: 0;
   display: grid;
   grid-template-columns: minmax(0, 1fr) var(--mobile-rail);
@@ -3620,3 +3621,86 @@ body.gamepad-active a:focus {
 .skirmish-rules-label { display: flex; align-items: center; justify-content: space-between; gap: 12px; font-size: 12px; }
 .skirmish-rules-label select { min-height: 44px; padding: 8px; max-width: 100%; background: #172a20; color: var(--ink); border: 1px solid #677754; font: inherit; }
 .rules-description { color: var(--muted); font-size: 12px; line-height: 1.4; margin: 6px 0 10px; }
+
+/* Short landscape keeps the entire world height. The same HUD, objective and
+   navigation nodes stack beside it; controls and units do not shrink. */
+.app.protected-mobile.protected-sidebar {
+  --mobile-header: 72px;
+  --mobile-dock: 104px;
+  --mobile-navigation: 96px;
+  --mobile-rail: 276px;
+  grid-template-columns: minmax(0, 1fr) var(--mobile-rail);
+  grid-template-rows: var(--mobile-header) minmax(var(--mobile-dock), 1fr) var(--mobile-navigation);
+}
+.app.protected-mobile.protected-sidebar.mobile-ordinary { --mobile-dock: 56px; }
+.protected-sidebar .battlefield { grid-column: 1; grid-row: 1 / -1; }
+.protected-sidebar .topbar { grid-column: 2; grid-row: 1; display: grid; grid-template-columns: minmax(0,1fr); grid-template-rows: 28px 40px; height: auto; gap: 3px; padding: 0 6px; }
+.protected-sidebar .resources { grid-row: 1; order: 0; margin: 0; height: 28px; width: 100%; justify-content: space-between; gap: 6px; }
+.protected-sidebar .army-block { padding-inline: 6px; }
+.protected-sidebar .battle-top { grid-row: 2; order: 0; position: static; height: 40px; min-width: 0; gap: 4px; }
+.protected-sidebar .base-status { width: 0; max-width: none; flex: 1 1 0; min-width: 0; height: 40px; padding: 6px; box-shadow: none; }
+.protected-sidebar .base-status span { font-size: 8px; letter-spacing: 0; margin-bottom: 4px; padding-right: 24px; }
+.protected-sidebar .base-status b { right: 4px; top: 6px; font-size: 12px; }
+.protected-sidebar .phase { flex: 0 0 52px; max-width: 52px; font-size: 9px; line-height: 1.1; letter-spacing: 0; }
+.protected-sidebar .phase small { margin-top: 2px; font-size: 8px; line-height: 1.1; letter-spacing: 0; }
+.protected-sidebar .protected-dock { grid-column: 2; grid-row: 2; }
+.protected-mobile.protected-sidebar .protected-dock .objective-hud.protect-hud,
+.protected-mobile.protected-sidebar.mobile-ordinary .protected-dock .objective-hud {
+  height: var(--mobile-dock); grid-template-columns: minmax(0,1fr) auto;
+  grid-template-rows: 14px 14px 44px; gap: 2px 6px; padding: 3px 6px 4px;
+}
+.protected-mobile.protected-sidebar .protected-dock .objective-hud.protect-hud { grid-template-rows: 14px 14px 64px; }
+.protected-mobile.protected-sidebar .objective-identity { grid-column: 1; grid-row: 1; }
+.protected-mobile.protected-sidebar #objectiveTime { grid-column: 2; grid-row: 1; }
+.protected-mobile.protected-sidebar #objectiveProgress { grid-column: 1 / -1; grid-row: 2; white-space: normal; }
+.protected-mobile.protected-sidebar .protected-targets { grid-column: 1 / -1; grid-row: 3; }
+.protected-sidebar .protected-target { min-height: 64px; padding: 5px 5px 8px; align-content: center; }
+.protected-sidebar .protected-target[data-state='critical'] .protected-health { grid-column: 1 / -1; }
+.protected-sidebar .protected-target[data-state='critical'] .protected-focus-hint { position: absolute; right: 5px; top: 5px; font-size: 0; }
+.protected-sidebar .protected-target[data-state='critical'] .protected-name { padding-right: 14px; }
+.protected-sidebar .protected-navigation { grid-column: 2; grid-row: 3; display: grid; grid-template-columns: 56px minmax(0,1fr); grid-template-rows: 44px 44px; gap: 4px; padding: 2px 6px; }
+.protected-mobile.protected-sidebar .protected-navigation .compact-build { grid-column: 1; grid-row: 1; width: 56px; height: 44px; }
+.protected-mobile.protected-sidebar .protected-navigation .toolbelt { grid-column: 2; grid-row: 1; position: static; transform: none; justify-self: end; display: grid; grid-template-columns: repeat(4,44px); gap: 4px; }
+.protected-mobile.protected-sidebar .protected-navigation .bottom-map { grid-column: 1 / -1; grid-row: 2; position: static; transform: none; width: 100%; grid-template-columns: 44px minmax(0,1fr) 44px; grid-template-rows: 44px; gap: 4px; }
+.protected-mobile.protected-sidebar #home { grid-column: 1; grid-row: 1; }
+.protected-mobile.protected-sidebar #minimap { grid-column: 2; grid-row: 1; }
+.protected-mobile.protected-sidebar #front { grid-column: 3; grid-row: 1; }
+.protected-mobile.protected-sidebar .command-deck { grid-area: 1 / 1 / -1 / -1; bottom: var(--mobile-inset-bottom); max-height: calc(100% - var(--mobile-inset-top) - var(--mobile-inset-bottom)); }
+/* Short portrait recovers only presentation space. Every actionable target
+   stays44px and the protected original names/health remain visible. */
+.app.protected-mobile.protected-short-portrait { --mobile-header: 48px; --mobile-dock: 60px; }
+.app.protected-mobile.protected-short-portrait.mobile-ordinary { --mobile-dock: 44px; }
+.protected-short-portrait .topbar { grid-template-rows: 20px 26px; gap: 1px; }
+.protected-short-portrait .resources { height: 20px; }
+.protected-short-portrait .resources > div { display: flex; align-items: center; gap: 4px; }
+.protected-short-portrait .resources b { font-size: 17px; line-height: 20px; }
+.protected-short-portrait .resources small { font-size: 8px; }
+.protected-short-portrait .battle-top, .protected-short-portrait .base-status { height: 26px; }
+.protected-short-portrait .base-status { padding: 2px 6px; }
+.protected-short-portrait .base-status span { margin-bottom: 2px; }
+.protected-short-portrait .base-status b { top: 2px; }
+.protected-short-portrait .phase { font-size: 9px; }
+.protected-short-portrait .phase small { display: none; }
+.protected-mobile.protected-short-portrait .protected-dock .objective-hud.protect-hud { grid-template-rows: 14px 44px; padding: 0 6px; gap: 1px 6px; }
+.protected-short-portrait .objective-identity { display: none; }
+.protected-short-portrait #objectiveProgress { grid-column: 1; grid-row: 1; line-height: 12px; }
+.protected-short-portrait #objectiveTime { grid-column: 2; grid-row: 1; line-height: 12px; }
+.protected-short-portrait .protected-targets { grid-column: 1 / -1; grid-row: 2; }
+.protected-mobile.protected-short-portrait.mobile-ordinary .protected-dock .objective-hud { grid-template-rows: minmax(0,1fr); padding: 4px 6px; align-items: center; }
+.protected-short-portrait.mobile-ordinary #objectiveProgress, .protected-short-portrait.mobile-ordinary #objectiveTime { grid-row: 1; }
+
+.protected-short-portrait .gold-block small { position: static; top: auto; left: auto; line-height: 20px; }
+.protected-short-portrait .coin, .protected-short-portrait .army-block > span { font-size: 16px; line-height: 20px; }
+.protected-short-portrait .clock-block { flex-direction: row; }
+.protected-short-portrait .clock-block small { display: none; }
+.protected-short-portrait .base-status span { line-height: 10px; }
+.protected-sidebar .gold-block small { position: static; top: auto; left: auto; line-height: 20px; }
+.protected-sidebar .resources b { font-size: 20px; line-height: 24px; }
+.protected-sidebar .resources small { font-size: 8px; }
+.protected-sidebar .clock-block small { display: none; }
+/* A lost original has no camera action. Release its unused second column so
+   the explicit loss text stays inside the same full-size health card. */
+.protected-mobile .protected-target[data-state='lost'] .protected-health { grid-column: 1 / -1; }
+.protected-mobile .protected-target[data-state='lost'] .protected-focus-hint { display: none; }
+.protected-mobile.protected-short-portrait.mobile-ordinary #objectiveProgress { grid-column: 1; }
+.protected-mobile.protected-short-portrait.mobile-ordinary #objectiveTime { grid-column: 2; }

@@ -1,5 +1,5 @@
 // Atomic, versioned offline shell. Bump VERSION with every public build.
-const VERSION = 'ironroot-v0.13.0';
+const VERSION = 'ironroot-v0.14.1';
 const FILES = [
   './battle-codec.js',
   './history-codec.js',
@@ -36,7 +36,7 @@ const FILES = [
   './campaign-flow.js',
   './scouting.js',
   './objectives.js',
-  './protected-objectives.js',
+  './protected-objectives.js', './objective-alerts.js', './combat-feedback.js',
   './mobile-battlefield.js',
   './persistence.js',
   './audio.js',

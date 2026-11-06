@@ -46,7 +46,7 @@
       <main class="battlefield" id="battlefield">
         <canvas
           id="battle"
-          aria-label="Battlefield. Select a building below, then tap a green build slot to place it. Drag to explore."
+          aria-label="Battlefield. Select a building below, then tap a green build slot to place it. Drag or middle mouse drag to explore. Right-click or Escape cancels placement. Arrow keys pan."
           tabindex="0"
         ></canvas>
         <div class="battle-top" id="battleTop">
@@ -305,7 +305,7 @@
         </button>
         <p class="save-status hidden" id="saveStatus" role="status"></p>
         <button id="exportUnreadableBattle" class="text-button hidden">Download original save</button>
-        <p class="welcome-foot">Campaign · Skirmish · Field trials · v0.13</p>
+        <p class="welcome-foot">Campaign · Skirmish · Field trials · v0.14.1</p>
         <div class="welcome-links">
           <a class="text-button training-link" id="welcomeTraining" href="./training.html" aria-label="Optional guided practice. Learn without changing your saved battle">Guided practice (optional) →</a>
           <button class="text-button" id="welcomeHelp">
@@ -377,11 +377,13 @@
           begin to crumble.
         </div>
         <p class="controls">
+          <b>Mouse:</b> Left-click to place or select · Drag or middle mouse drag to pan · Right-click to cancel placement<br />
           <b>Touch:</b> Tap to build · Drag to pan · Tap the minimap to jump<br /><b
             >Keyboard:</b
           >
           <span id="buildingKeyHelp">1–7 buildings</span> · R volley · Space pause · Esc cancel · Arrow keys pan
         </p>
+        <p class="controls">Fullscreen is in Preferences, available from the title screen or pause menu. Use Tab then Enter or Space to activate its button. Browser and device support varies; Esc exits fullscreen.</p>
         <p class="controls" id="controllerHelp">
           <b>Controller · experimental:</b> Left stick moves the cursor, right
           stick pans. A confirms, B cancels, LB/RB chooses buildings, X opens
@@ -437,6 +439,8 @@
         </button>
         <div class="eyebrow">GAME SETTINGS</div>
         <h2 id="settingsTitle">Preferences</h2>
+        <button id="settingsFullscreen" class="secondary-button" type="button" data-fullscreen aria-pressed="false" aria-describedby="fullscreenStatus">Enter fullscreen</button>
+        <p id="fullscreenStatus" class="controls" role="status">Fullscreen depends on your browser and device. Esc exits fullscreen.</p>
         <div class="settings-grid">
           <label class="setting-row"
             ><span>Enable audio<small>Music and sound effects</small></span

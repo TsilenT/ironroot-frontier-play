@@ -10,6 +10,37 @@ export function visibleViewportRect(width,height,visual) {
   const right=Math.min(width,left+(visual?.width ?? width)),bottom=Math.min(height,top+(visual?.height ?? height));
   return {left,top,right,bottom,width:Math.max(0,right-left),height:Math.max(0,bottom-top)};
 }
+// The fixed root includes OS safe-area padding. Grid overflow can stay inside
+// that root while entering the reserved notch/home-indicator band, so validate
+// controls against its content rectangle, not just the outer visual viewport.
+export function insetViewportRect(viewport, padding = {}) {
+  const inset = side => {
+    const value = Number.parseFloat(padding[`padding${side}`]);
+    return Number.isFinite(value) ? Math.max(0, value) : 0;
+  };
+  const left = Math.min(viewport.right, viewport.left + inset('Left'));
+  const top = Math.min(viewport.bottom, viewport.top + inset('Top'));
+  const right = Math.max(left, viewport.right - inset('Right'));
+  const bottom = Math.max(top, viewport.bottom - inset('Bottom'));
+  return {left, top, right, bottom, width:right-left, height:bottom-top};
+}
+// Fixed mobile roots and their guard must use the same CSS-pixel coordinate
+// space. Browser chrome, standalone safe areas and zoom can all make this
+// different from the layout viewport. Preserve zoom; do not inverse-scale it.
+const fittedMobileRoots = new WeakMap();
+export function fitMobileViewport(element, viewport, mobile = true) {
+  const values = mobile
+    ? {left:`${viewport.left}px`,top:`${viewport.top}px`,width:`${viewport.width}px`,height:`${viewport.height}px`}
+    : {left:'',top:'',width:'',height:''};
+  // CSSStyleDeclaration may serialize fractional dimensions at a different
+  // precision. Compare requested values, not its normalized text, or one
+  // fractional viewport can invalidate gestures on every animation frame.
+  const signature = JSON.stringify(values);
+  if (fittedMobileRoots.get(element) === signature) return false;
+  fittedMobileRoots.set(element, signature);
+  for (const [name,value] of Object.entries(values)) element.style[name] = value;
+  return true;
+}
 export function inspectMobileGeometry({viewport,canvas,regions=[],controls=[]}) {
   viewport=rect(viewport);canvas=rect(canvas);regions=regions.map(rect);controls=controls.map(rect);
   if (![viewport,canvas,...regions,...controls].every(finite)) return {safe:false,reason:'Waiting for the battlefield layout.'};

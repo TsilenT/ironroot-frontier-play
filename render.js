@@ -1,4 +1,5 @@
 import { drawRootwarden, drawWardenLodge } from './rootwarden-art.js';
+import { sampleCombatFeedback } from './combat-feedback.js';
 import { BattleVFX } from './vfx.js';
 import {
   BUILDINGS,
@@ -1247,7 +1248,10 @@ export class Renderer {
       c.restore();
       return;
     }
-    const moving = u.cooldown <= 0,
+    const feedback = battlefield ? sampleCombatFeedback(u, this.reducedMotion) : null,
+      contact = feedback?.contact || 0,
+      recoil = feedback?.recoil || 0,
+      moving = u.cooldown <= 0,
       walk = this.reducedMotion ? 0 : Math.sin(time * 11 + u.id) * 2;
     c.save();
     c.translate(u.x, u.y);
@@ -1270,9 +1274,17 @@ export class Renderer {
       c.shadowColor = '#fff3c9';
       c.shadowBlur = 9;
     }
+    if (u.type === 'gryphon') ellipse(c, 2, 5, 18, 7, '#243b302b');
+    if (recoil) {
+      // Art leans about its ground position. Markers, both shadows and health
+      // stay outside this transform; no unit coordinates or hit areas move.
+      c.save();
+      c.translate(0, 5);
+      c.rotate(-direction * (u.type === 'siege' ? 0.025 : 0.05) * recoil);
+      c.translate(0, -5);
+    }
     if (u.type === 'gryphon') {
       const flap = this.reducedMotion ? 0 : Math.sin(time * 8 + u.id) * 10;
-      ellipse(c, 2, 5, 18, 7, '#243b302b');
       c.translate(0, -30);
       c.scale(direction, 1);
       poly(
@@ -1297,6 +1309,7 @@ export class Renderer {
         '#a99e80', outline,
       );
       ellipse(c, 0, -3, 14, 8, co.cloth, outline);
+      if (contact) { c.save(); c.translate(2.5 * contact, contact); }
       ellipse(c, 12, -8, 8, 8, '#e4d9b5', outline);
       poly(
         c,
@@ -1309,6 +1322,7 @@ export class Renderer {
       );
       c.fillStyle = '#3e4c39';
       c.fillRect(14, -10, 2, 2);
+      if (contact) c.restore();
       line(
         c,
         [
@@ -1322,7 +1336,7 @@ export class Renderer {
         c,
         [
           [5, 5],
-          [7, 10],
+          [7 + 2 * contact, 10],
         ],
         '#dbb16c',
         2,
@@ -1331,7 +1345,7 @@ export class Renderer {
         c,
         [
           [-1, 5],
-          [-2, 11],
+          [-2 + 2 * contact, 11],
         ],
         '#dbb16c',
         2,
@@ -1367,6 +1381,10 @@ export class Renderer {
         ],
         '#8c75ad', outline,
       );
+      if (contact) {
+        c.save(); c.translate(direction * 12, 5);
+        c.rotate(direction * 0.16 * contact); c.translate(-direction * 12, -5);
+      }
       line(
         c,
         [
@@ -1378,6 +1396,7 @@ export class Renderer {
       );
       ellipse(c, direction * 12, -31, 5, 5, '#d8b8ff', outline);
       ellipse(c, direction * 12, -31, 9, 9, '#caa8fa22');
+      if (contact) c.restore();
     } else if (u.type === 'siege') {
       c.scale(direction, 1);
       c.fillStyle = '#5b5b42';
@@ -1396,6 +1415,9 @@ export class Renderer {
         ],
         '#a59160', outline,
       );
+      if (contact) {
+        c.save(); c.translate(-4, -14); c.rotate(0.32 * contact); c.translate(4, 14);
+      }
       line(
         c,
         [
@@ -1406,6 +1428,7 @@ export class Renderer {
         5,
       );
       ellipse(c, 18, -37, 7, 5, '#8b8360', outline);
+      if (contact) c.restore();
       c.fillStyle = co.cloth;
       c.fillRect(-17, -12, 5, 17);
     } else {
@@ -1449,8 +1472,8 @@ export class Renderer {
         c.fillStyle = '#55695c';
         c.fillRect(-7, -20 + bob, 14, 3);
         c.save();
-        c.translate(direction * 8, -5 + bob);
-        c.rotate((u.attack ? 0.5 : 0) * direction);
+        c.translate(direction * (8 + 1.5 * contact), -5 + bob);
+        c.rotate((battlefield ? 0.32 * contact - 0.12 * recoil : u.attack ? 0.5 : 0) * direction);
         poly(
           c,
           [
@@ -1485,7 +1508,7 @@ export class Renderer {
           c,
           [
             [direction * -8, -6 + bob],
-            [direction * (u.attack ? 22 : -16), -24 + bob],
+            [direction * (battlefield ? -16 + 38 * contact : u.attack ? 22 : -16), -24 + bob],
           ],
           '#ddd9b6',
           3,
@@ -1501,6 +1524,12 @@ export class Renderer {
           ],
           co.dark, outline,
         );
+        if (contact) {
+          c.save(); c.translate(direction * 2 * contact, 0);
+          c.translate(direction * 9, -9 + bob);
+          c.rotate(direction * 0.09 * contact);
+          c.translate(-direction * 9, 9 - bob);
+        }
         c.strokeStyle = '#d6b77c';
         c.lineWidth = 2;
         c.beginPath();
@@ -1521,8 +1550,10 @@ export class Renderer {
           '#d8dab7',
           1,
         );
+        if (contact) c.restore();
       }
     }
+    if (recoil) c.restore();
     if (battlefield) c.restore();
     if (u.hp < u.maxHp) {
       const width = battlefield ? Math.max(26 * modelScale, 18 / this.scale) : 26;

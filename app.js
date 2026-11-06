@@ -1,4 +1,4 @@
-import { createViewportPause, inspectMobileGeometry, visibleViewportRect, protectedToastTop } from './mobile-battlefield.js';
+import { createViewportPause, inspectMobileGeometry, visibleViewportRect, insetViewportRect, fitMobileViewport, protectedToastTop } from './mobile-battlefield.js';
 import { createProfileSession, PROFILE_MARKER_KEY } from './profile-session.js';
 import { createInputScopeGuard } from './input-scope.js';
 import {
@@ -59,6 +59,7 @@ import { GameAudio } from './audio.js';
 import { advanceObjectiveBattle } from './objectives.js';
 import { campaignBuildChoices, campaignCoach, drawCampaignGuidance, guidancePointVisible } from './campaign-flow.js';
 import { createProtectedObjectiveMonitor, protectedLossDetails } from './protected-objectives.js';
+import { createObjectiveAlertPolicy } from './objective-alerts.js';
 import {
   ALL_CAMPAIGN_CHAPTERS as CAMPAIGN_CHAPTERS,
   ALL_CAMPAIGN_MISSIONS as CAMPAIGN_MISSIONS,
@@ -138,6 +139,7 @@ populateFieldGuide();
 const viewportPause = createViewportPause();
 let mobileLayout = 'ordinary';
 let protectedMonitor = null;
+let protectedAlerts = null;
 const protectedControls = new Map();
 let armedProtectedControl = null;
 let battleJournal = null, lastBattleReport = null, hasLastResult = false, reportFault = false;
@@ -933,6 +935,9 @@ function beginProtectedObjectives() {
   $('resultProtectedLoss').textContent = '';
   $('resultProtectedLoss').classList.add('hidden');
   const targets = protectedMonitor?.read() || [];
+  protectedAlerts = protectedMonitor && targets.length
+    ? createObjectiveAlertPolicy({battleKey:protectedMonitor,targetIds:targets.map(target=>target.originalId)}) : null;
+  protectedAlerts?.observe(targets,{battleKey:protectedMonitor});
   // Reserve real layout space rather than covering the target being focused.
   // Reparent only at battle start, never while a gesture/focus is active.
   if (targets.length) $('protectedDock').append($('objectiveHUD'));
@@ -989,16 +994,22 @@ function syncProtectedLayout() {
   const protect = protectedControls.size > 0;
   const landscape = !!window.matchMedia?.('(max-height: 500px) and (orientation: landscape)').matches;
   const portrait = !!window.matchMedia?.('(max-width: 700px) and (orientation: portrait)').matches;
-  const next = landscape ? 'landscape' : portrait ? 'portrait' : 'ordinary';
+  const viewport = visibleViewportRect(window.innerWidth, window.innerHeight, window.visualViewport);
+  const sidebar = landscape && viewport.height < 360;
+  const shortPortrait = portrait && viewport.height < 560;
+  const next = sidebar ? 'sidebar' : shortPortrait ? 'portrait-short' : landscape ? 'landscape' : portrait ? 'portrait' : 'ordinary';
+  const fitted = fitMobileViewport($('app'), viewport, landscape || portrait);
   const changed = mobileLayout !== next;
   const focused = document.activeElement;
-  if (changed) {
+  if (changed || fitted) {
     interruptMobileInput();
     setCompactBuildOpen(false);
   }
   mobileLayout = next;
   $('app').classList.toggle('protected-landscape', landscape);
   $('app').classList.toggle('protected-portrait', portrait);
+  $('app').classList.toggle('protected-sidebar', sidebar);
+  $('app').classList.toggle('protected-short-portrait', shortPortrait);
   $('app').classList.toggle('protected-mobile', landscape || portrait);
   $('app').classList.toggle('mobile-ordinary', !protect);
   $('app').classList.toggle('protected-compact', landscape || portrait);
@@ -1015,13 +1026,14 @@ function syncProtectedLayout() {
   move('battleTop', landscape || portrait ? 'topbar' : 'battlefield');
   move('battleTools', landscape || portrait ? 'protectedNavigation' : 'battlefield');
   move('mapControls', landscape || portrait ? 'protectedNavigation' : 'battlefield');
-  const buildParent = portrait ? $('protectedNavigation') : $('objectiveHUD');
-  const buildNext = portrait ? $('battleTools') : $('protectedTargets');
+  const buildParent = portrait || sidebar ? $('protectedNavigation') : $('objectiveHUD');
+  const buildNext = portrait || sidebar ? $('battleTools') : $('protectedTargets');
   if ($('compactBuild').parentNode !== buildParent || $('compactBuild').nextSibling !== buildNext)
     buildParent.insertBefore($('compactBuild'), buildNext);
   move('selectionPanel', landscape || portrait ? 'commandDeck' : 'battlefield');
   updateCompactBuildControl();
-  if (changed) {
+  if (changed || fitted) {
+    renderer.resize();
     syncInputScope();
     if (focused?.isConnected && !focused.closest('.hidden,[inert]') && focused.getClientRects().length) focused.focus({preventScroll:true});
   }
@@ -1106,11 +1118,27 @@ function updateProtectedObjectives() {
     control.fill.style.width = `${target.percent ?? 0}%`;
     control.button.dataset.state = target.status;
     control.button.disabled = !enabled || target.status === 'lost';
-    if (control.status !== target.status && ['critical', 'lost'].includes(target.status))
-      announcements.push(`${target.label}: ${target.status === 'lost' ? 'original structure lost' : 'critical health'}.`);
+    if (control.status !== target.status && target.status === 'lost')
+      announcements.push(`${target.label}: original structure lost.`);
     control.status = target.status;
   }
   if (announcements.length) $('protectedAlert').textContent = announcements.join(' ');
+}
+function flushProtectedWarnings(now) {
+  if (!protectedAlerts) return;
+  protectedAlerts.observe(protectedMonitor.read(),{battleKey:protectedMonitor});
+  const alert = protectedAlerts.flush({
+    battleKey:protectedMonitor,
+    active:canFocusProtectedObjective() && !document.hidden,
+    ended:!started || game.state.winner !== null || !!objectiveOutcome,
+    stale:battleSession.status() === 'stale',
+    now,
+  });
+  if (!alert) return;
+  // Reuse the named live status and existing red/HP objective controls. Never
+  // steal focus or replace a paid-action toast just to deliver a warning.
+  $('protectedAlert').textContent = alert.message;
+  if (alert.sound) sound(alert.sound,{volume:.65});
 }
 function finishProtectedObjectives() {
   const details = protectedLossDetails(protectedMonitor?.observe() || []);
@@ -1378,7 +1406,7 @@ function updateResume() {
       : cid
         ? `TRIAL · ${CHALLENGES.find((c) => c.id === cid).name.toUpperCase()}`
         : valid.map.id === 'classic' ? 'BATTLE' : valid.map.name.toUpperCase();
-    const ruleLabel = valid.schemaVersion === 3 ? ` · ${valid.ruleset.endgame.name.toUpperCase()}` : '';
+    const ruleLabel = !mid && !cid && valid.schemaVersion === 3 ? ` · ${valid.ruleset.endgame.name.toUpperCase()}` : '';
     button.textContent = `RESUME ${name}${ruleLabel} · ${timeText(valid.state.time)}`;
     button.onclick = () => start(valid, cid, mid);
     if (valid.limitReason) button.textContent = `VIEW PAUSED ${name}${ruleLabel} · ${timeText(valid.state.time)}`;
@@ -1508,28 +1536,62 @@ function finish() {
 let pointer = null;
 const activePointers = new Set();
 let multiTouch = false;
+function cancelBattlePlacement() {
+  // A secondary press may arrive while the primary button is still held.
+  // Retire that gesture too, so its later release cannot select or buy.
+  resetBattleGesture();
+  if (canInteract() && (ui.build || ui.spell)) cancel();
+}
 function localPoint(e) {
   const r = $('battle').getBoundingClientRect();
   return { x: e.clientX - r.left, y: e.clientY - r.top };
 }
 $('battle').addEventListener('pointerdown', (e) => {
-  if (e.button !== 0 && e.pointerType === 'mouse') return;
+  const panOnly = e.pointerType === 'mouse' && e.button === 1;
+  if (e.pointerType === 'mouse' && e.button !== 0 && !panOnly) return;
+  if (panOnly) e.preventDefault();
   activePointers.add(e.pointerId);
   if (activePointers.size > 1) {
     multiTouch = true;
     pointer = null;
     ui.dragging = false;
+    $('battle').classList.remove('dragging');
     return;
   }
   const p = localPoint(e);
-  pointer = { id: e.pointerId, x: p.x, y: p.y, lastX: p.x, moved: false };
+  pointer = { id: e.pointerId, x: p.x, y: p.y, lastX: p.x, moved: false,
+    button: e.button, panOnly };
   $('battle').setPointerCapture(e.pointerId);
   ui.pointer = renderer.screenToWorld(p.x, p.y);
+  if (panOnly) {
+    ui.dragging = true;
+    $('battle').classList.add('dragging');
+  }
+});
+// Mouse button chords do not produce another pointerdown. Handle the native
+// secondary mousedown as well as contextmenu (including macOS Control-click).
+$('battle').addEventListener('mousedown', (e) => {
+  if (e.button === 1) e.preventDefault(); // No native middle-button autoscroll.
+  if (e.button === 2) {
+    e.preventDefault();
+    cancelBattlePlacement();
+  } else if (pointer && e.button !== pointer.button) resetBattleGesture();
+});
+$('battle').addEventListener('contextmenu', (e) => {
+  e.preventDefault();
+  if (e.pointerType !== 'touch') cancelBattlePlacement();
+});
+$('battle').addEventListener('auxclick', (e) => {
+  if (e.button === 1) e.preventDefault();
 });
 $('battle').addEventListener('pointermove', (e) => {
   const p = localPoint(e);
   ui.pointer = renderer.screenToWorld(p.x, p.y);
   if (!pointer || pointer.id !== e.pointerId) return;
+  if (e.pointerType === 'mouse' && e.buttons !== (pointer.panOnly ? 4 : 1)) {
+    resetBattleGesture();
+    return;
+  }
   if (Math.hypot(p.x - pointer.x, p.y - pointer.y) > 8) pointer.moved = true;
   if (pointer.moved) {
     renderer.pan(p.x - pointer.lastX);
@@ -1551,12 +1613,16 @@ $('battle').addEventListener('pointerup', (e) => {
   if (!pointer || pointer.id !== e.pointerId) return;
   const p = localPoint(e),
     w = renderer.screenToWorld(p.x, p.y);
-  const moved = pointer.moved;
+  const moved = pointer.moved, panOnly = pointer.panOnly;
   pointer = null;
   ui.dragging = false;
   $('battle').classList.remove('dragging');
-  if (moved || !canInteract()) return;
+  if (panOnly || moved || !canInteract()) return;
   activateBattlePoint(w);
+});
+$('battle').addEventListener('mouseup', (e) => {
+  // pointerup only fires after the final button in a chord is released.
+  if (pointer?.button === e.button) resetBattleGesture();
 });
 function activateBattlePoint(w) {
   if (!canInteract() || $('app').classList.contains('compact-build-open')) return;
@@ -1614,11 +1680,14 @@ function activateBattlePoint(w) {
   }
 }
 function resetBattleGesture() {
+  const captured = pointer?.id;
   activePointers.clear();
   multiTouch = false;
   pointer = null;
   ui.dragging = false;
   $('battle').classList.remove('dragging');
+  if (captured !== undefined && $('battle').hasPointerCapture(captured))
+    $('battle').releasePointerCapture(captured);
 }
 $('battle').addEventListener('pointercancel', (e) => {
   activePointers.delete(e.pointerId);
@@ -1923,7 +1992,8 @@ function frame(now) {
         (g) => {
           // Observe each actual fixed-step evaluation, including the initial
           // state. This does not change the authored outcome or simulation.
-          protectedMonitor?.observe(g);
+          const snapshot = protectedMonitor?.observe(g);
+          if (snapshot) protectedAlerts?.observe(snapshot,{battleKey:protectedMonitor});
           return currentCampaign
             ? evaluateCampaignMission(g, currentCampaign)
             : evaluateChallenge(g, currentChallenge);
@@ -1969,6 +2039,7 @@ function frame(now) {
     updateHUD();
     hudTimer = 0;
   }
+  flushProtectedWarnings(now / 1000);
   if (toastTimer > 0) {
     toastTimer -= dt;
     if (toastTimer <= 0) $('toast').classList.remove('show');
@@ -2235,6 +2306,77 @@ $('welcomeSettings').onclick = showSettings;
 $('pauseSettings').onclick = showSettings;
 $('closeSettings').onclick = hideSettings;
 $('settingsDone').onclick = hideSettings;
+// Fullscreen must start synchronously inside the button's user gesture. Target
+// the document root so sibling dialogs, pause controls and status remain visible.
+const fullscreenRoot = document.documentElement;
+const fullscreenButtons = [...document.querySelectorAll('[data-fullscreen]')];
+let fullscreenPending = false;
+function fullscreenElement() {
+  return document.fullscreenElement || document.webkitFullscreenElement;
+}
+function fullscreenAPI() {
+  if (typeof fullscreenRoot.requestFullscreen === 'function') return {
+    enabled: document.fullscreenEnabled === true,
+    enter: () => fullscreenRoot.requestFullscreen(),
+    exit: () => document.exitFullscreen(),
+  };
+  if (typeof fullscreenRoot.webkitRequestFullscreen === 'function') return {
+    enabled: document.webkitFullscreenEnabled === true,
+    enter: () => fullscreenRoot.webkitRequestFullscreen(),
+    exit: () => document.webkitExitFullscreen(),
+  };
+  return { enabled: false };
+}
+function syncFullscreenControls() {
+  const active = !!fullscreenElement(), available = fullscreenAPI().enabled;
+  const label = active ? 'Exit fullscreen' : 'Enter fullscreen';
+  for (const button of fullscreenButtons) {
+    // Keep keyboard focus during an asynchronous request. Native disabled
+    // would blur the button and let dialog focus restoration choose another.
+    button.disabled = !available;
+    button.setAttribute('aria-disabled', String(fullscreenPending || !available));
+    button.setAttribute('aria-pressed', String(active));
+    button.setAttribute('aria-label', label);
+    button.title = label;
+    if (button === $('settingsFullscreen')) button.textContent = label;
+  }
+  if (!available) $('fullscreenStatus').textContent =
+    'Fullscreen is unavailable in this browser or embedded view. Keep playing in this window, or use your browser’s fullscreen option if available.';
+}
+function fullscreenFailed() {
+  const message = fullscreenElement()
+    ? 'Could not leave fullscreen. Use your browser’s exit fullscreen control.'
+    : 'Could not enter fullscreen. Try again or keep playing in this window.';
+  $('fullscreenStatus').textContent = message;
+  if ($('settingsModal').classList.contains('hidden')) toast(message);
+}
+for (const button of fullscreenButtons) button.addEventListener('click', async () => {
+  const api = fullscreenAPI();
+  if (fullscreenPending || !api.enabled) return;
+  fullscreenPending = true;
+  syncFullscreenControls();
+  try {
+    // No await before the API call: transient user activation must survive.
+    await (fullscreenElement() ? api.exit() : api.enter());
+    $('fullscreenStatus').textContent = fullscreenElement()
+      ? 'Fullscreen is on. Esc or Exit fullscreen returns to the window.'
+      : 'Fullscreen is off. You can keep playing in this window.';
+  } catch {
+    fullscreenFailed();
+  } finally {
+    fullscreenPending = false;
+    syncFullscreenControls();
+  }
+});
+for (const name of ['fullscreenchange', 'webkitfullscreenchange']) document.addEventListener(name, () => {
+  resetBattleGesture();
+  syncFullscreenControls();
+  $('fullscreenStatus').textContent = fullscreenElement()
+    ? 'Fullscreen is on. Esc or Exit fullscreen returns to the window.'
+    : 'Fullscreen is off. You can keep playing in this window.';
+});
+for (const name of ['fullscreenerror', 'webkitfullscreenerror']) document.addEventListener(name, fullscreenFailed);
+syncFullscreenControls();
 $('audioEnabled').onchange = () => {
   soundOn = $('audioEnabled').checked;
   if (soundOn) initAudio();
@@ -2463,6 +2605,13 @@ function syncViewportSafety() {
   if (!relevant) return;
   const mobile = $('app').classList.contains('protected-mobile');
   const viewport = visibleViewportRect(window.innerWidth, window.innerHeight, window.visualViewport);
+  // Fit before measuring. A safe viewport move still invalidates held gestures:
+  // their old canvas-local coordinates must never place or pan in the new rect.
+  if (fitMobileViewport($('app'), viewport, mobile)) {
+    interruptMobileInput();
+    syncProtectedLayout();
+    renderer.resize();
+  }
   const panel = $('viewportModal');
   panel.style.left = `${viewport.left}px`; panel.style.top = `${viewport.top}px`;
   panel.style.width = `${viewport.width}px`; panel.style.height = `${viewport.height}px`;
@@ -2472,7 +2621,8 @@ function syncViewportSafety() {
       ...[...protectedControls.values()].map(c => c.button.id)].filter(Boolean).map(id => $(id).getBoundingClientRect());
     // Protected buttons use stable authored IDs in data attributes, not DOM IDs.
     for (const {button} of protectedControls.values()) if (!button.id) controls.push(button.getBoundingClientRect());
-    geometry = inspectMobileGeometry({viewport,canvas:$('battle').getBoundingClientRect(),
+    const safeContent = insetViewportRect(viewport, getComputedStyle($('app')));
+    geometry = inspectMobileGeometry({viewport:safeContent,canvas:$('battle').getBoundingClientRect(),
       regions:['topbar','protectedDock','protectedNavigation'].map(id => $(id).getBoundingClientRect()),controls});
   }
   const wasActive = viewportPause.active;
