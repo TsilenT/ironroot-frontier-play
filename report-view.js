@@ -4,9 +4,9 @@
 const LIMITS = Object.freeze({ samples: 256, objectives: 32, targets: 64, composition: 16, limitations: 24, text: 512 });
 const SIDES = ['You', 'Enemy'];
 const METRICS = [
-  { key: 'gold', title: 'Gold on hand', unit: 'gold', detail: 'A balance at each sample, not gold earned or net profit.' },
+  { key: 'gold', title: 'Gold on hand', unit: 'gold', detail: 'Gold available at each sample. This does not show total earnings or profit.' },
   { key: 'income', title: 'Income rate', unit: 'gold / sec', detail: 'The income rate at each sample, not total income earned.' },
-  { key: 'armyCount', title: 'Living army', unit: 'units', detail: 'Living units at each sample. This does not measure units recruited or losses.' },
+  { key: 'armyCount', title: 'Living army', unit: 'units', detail: 'Troops alive at each sample. Total recruitment and losses are not shown.' },
   { key: 'baseHp', title: 'Citadel health', unit: 'HP', detail: 'Citadel health at each sample.' },
 ];
 const object = value => value !== null && typeof value === 'object' && !Array.isArray(value);
@@ -58,8 +58,24 @@ function snapshot(value, field) {
 }
 
 function validate(report) {
-  if (!object(report) || report.format !== 'ironroot-battle-report' || report.version !== 1) fail('format');
+  if (!object(report) || report.format !== 'ironroot-battle-report' || ![1, 2].includes(report.version)) fail('format');
   if (!object(report.context) || !object(report.map) || !object(report.outcome) || !object(report.scope) || !object(report.sampling) || !object(report.objectives)) fail('sections');
+  if (report.version === 2) {
+    if (!object(report.identity) || !object(report.rules) || !object(report.rules.endgame)) fail('rules identity');
+    for (const key of ['ruleset', 'map', 'scenario']) {
+      const ref = report.identity[key];
+      if (!object(ref) || typeof ref.id !== 'string' || !ref.id.length || !Number.isSafeInteger(ref.revision) || ref.revision < 1) fail(`identity.${key}`);
+    }
+    if (!['skirmish', 'campaign', 'trial', 'lesson'].includes(report.identity.scenario.kind)) fail('identity.scenario.kind');
+    if (report.identity.map.id !== report.map.id || report.identity.map.revision !== report.map.revision) fail('identity.map');
+    text(report.rules.name, 'rules.name');
+    const policy = report.rules.endgame;
+    text(policy.name, 'rules.endgame.name');
+    if (typeof policy.forcedDecay !== 'boolean') fail('rules.endgame.forcedDecay');
+    for (const key of ['escalationAt', 'productionMultiplier', 'structureDamageMultiplier', 'baseDamage', 'escalatedBaseDamage']) number(policy[key], `rules.endgame.${key}`);
+    if (policy.forcedDecay) number(policy.decayAt, 'rules.endgame.decayAt');
+    else if (policy.decayAt !== null) fail('rules.endgame.decayAt');
+  }
   text(report.context.name, 'context.name'); text(report.map.name, 'map.name'); text(report.outcome.label, 'outcome.label');
   if (!['victory', 'defeat', 'draw'].includes(report.outcome.result)) fail('outcome.result');
   for (const key of ['startedAt', 'endedAt', 'observedDuration', 'missingBefore']) number(report.scope[key], `scope.${key}`);
@@ -109,16 +125,25 @@ function coverage(report) {
   const begin = scope.resumed ? 'Recording began when this battle was resumed on this page' : 'Recording began on this page';
   const before = scope.missingBefore > 0
     ? `Earlier play from 0:00 to ${time(scope.startedAt)} is not in these charts. Battle totals above still include that earlier play.`
-    : 'The charts cover this page’s battle from its opening sample; they are not continuous tracking.';
+    : 'The charts start with this page’s opening sample. Changes between samples may be missed.';
   const thinning = sampling.thinned
-    ? `The journal was thinned to ${format(sampling.retainedPoints)} retained samples from ${format(sampling.observationCount)} captured samples. Short peaks and changes may not appear in the charts.`
+    ? `The charts keep ${format(sampling.retainedPoints)} of ${format(sampling.observationCount)} recorded samples. Short peaks and changes may not appear in the charts.`
     : `${format(sampling.retainedPoints)} retained sample${sampling.retainedPoints === 1 ? '' : 's'}. Changes between samples may not appear.`;
   return `<aside class="report-scope" aria-label="Recording coverage"><strong>What this report covers</strong><p>${begin}, at ${time(scope.startedAt)}. Recording ends at ${time(scope.endedAt)}.</p><p>${before}</p><p>${thinning}</p></aside>`;
 }
 
 function totals(report) {
   const rows = [['kills', 'Units defeated'], ['built', 'Buildings placed'], ['damage', 'Damage dealt (HP)']];
-  return `<section class="report-section"><h3>Battle totals</h3><table class="report-table"><caption>Both sides · the whole battle, including play before a resume</caption><thead><tr><th scope="col">Recorded total</th><th scope="col" class="report-side-label">You</th><th scope="col" class="report-side-label">Enemy</th></tr></thead><tbody>${rows.map(([key, label]) => `<tr><th scope="row">${label}</th>${report.cumulativeStats.map(side => `<td>${format(side[key])}</td>`).join('')}</tr>`).join('')}</tbody></table><p class="report-note">Buildings placed includes buildings each side started with. Upgrades do not count as new placements.</p><p class="report-note">Damage dealt counts health removed from units, buildings and citadels by each side. Health that citadels lose automatically during overtime is not counted for either side.</p></section>`;
+  return `<section class="report-section"><h3>Battle totals</h3><table class="report-table"><caption>Both sides · the whole battle, including play before a resume</caption><thead><tr><th scope="col">Recorded total</th><th scope="col" class="report-side-label">You</th><th scope="col" class="report-side-label">Enemy</th></tr></thead><tbody>${rows.map(([key, label]) => `<tr><th scope="row">${label}</th>${report.cumulativeStats.map(side => `<td>${format(side[key])}</td>`).join('')}</tr>`).join('')}</tbody></table><p class="report-note">Buildings placed includes buildings each side started with. Upgrades do not count as new placements.</p><p class="report-note">Damage dealt counts health removed from units, buildings and citadels by each side. ${report.version === 1 || report.rules.endgame.forcedDecay ? 'Health that citadels lose automatically during overtime is not counted for either side.' : 'This open-ended battle has no automatic citadel decay.'}</p></section>`;
+}
+
+function rulesSummary(report) {
+  if (report.version === 1) return '';
+  const { identity, rules } = report, policy = rules.endgame;
+  const endgame = policy.forcedDecay
+    ? `Both citadels begin losing health automatically after ${time(policy.decayAt)}.`
+    : 'No automatic citadel decay or forced time-limit winner.';
+  return `<section class="report-section report-rules"><h3>Battle rules</h3><p>${escape(rules.name)} · ${escape(identity.ruleset.id)} @ ${identity.ruleset.revision}</p><p>${escape(identity.scenario.kind)} · ${escape(identity.scenario.id)} @ ${identity.scenario.revision}. ${escape(report.map.name)} @ ${identity.map.revision}.</p><p>At ${time(policy.escalationAt)}, production runs at ${format(policy.productionMultiplier)}× and troop damage to structures at ${format(policy.structureDamageMultiplier)}×. Citadel retaliation changes from ${format(policy.baseDamage)} to ${format(policy.escalatedBaseDamage)} damage. ${endgame}</p><p class="report-note">These are the selected rules, not a claim about what caused the result.</p></section>`;
 }
 
 function lineChart(report, metric) {
@@ -136,7 +161,7 @@ function lineChart(report, metric) {
     const marker = side === 0 ? `<circle cx="${x.toFixed(2)}" cy="${y.toFixed(2)}" r="3.3"/>` : `<path d="M ${x.toFixed(2)} ${(y - 4).toFixed(2)} l 4 4 -4 4 -4 -4 Z"/>`;
     return `<g class="report-line report-line-${side}"><path class="report-trace" d="${path}" fill="none" stroke="${side ? '#e9a48d' : '#d8c488'}" stroke-width="2.5"${side ? ' stroke-dasharray="7 5"' : ''}/>${marker}</g>`;
   }).join('');
-  const summary = values.map((series, side) => `${SIDES[side]}: first ${format(series[0])}, last ${format(series.at(-1))}, retained-sample range ${format(Math.min(...series))} to ${format(Math.max(...series))} ${metric.unit}.`).join(' ');
+  const summary = values.map((series, side) => `${SIDES[side]}: first ${format(series[0])}, last ${format(series.at(-1))}, sampled range ${format(Math.min(...series))} to ${format(Math.max(...series))} ${metric.unit}.`).join(' ');
   const description = `${metric.title}. ${metric.unit} on the vertical axis; elapsed battle time on the horizontal axis, ${time(first)} to ${time(last)}. Your series is a solid line with a circle; the enemy series is dashed with a diamond. ${summary}`;
   return `<figure class="report-chart"><figcaption><strong>${metric.title}</strong><span>${metric.unit}</span></figcaption><div class="report-chart-grid"><div class="report-y-axis" aria-hidden="true"><span>${axisNumber(ceiling)}</span><span>${axisNumber(ceiling / 2)}</span><span>0</span></div><svg class="report-graph" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 240 120" preserveAspectRatio="none" role="img" aria-label="${escape(description)}" focusable="false"><title>${metric.title}</title><desc>${escape(description)}</desc><path class="report-gridline" d="M6 6 H234 M6 58 H234 M6 110 H234" fill="none"/>${lines}</svg><div class="report-x-axis" aria-hidden="true">${elapsed ? `<span>${time(first)}</span><span>${time(last)}</span>` : `<span>${time(first)} · one moment recorded</span>`}</div></div><p class="report-axis-label">Elapsed battle time · m:ss${displaySeconds(last) >= 3600 ? ' / h:mm:ss' : ''}</p><table class="report-chart-values report-table"><caption>${metric.title}: numeric chart summary (${metric.unit})</caption><thead><tr><th scope="col">Side</th><th scope="col">First</th><th scope="col">Last</th><th scope="col">Sample range</th></tr></thead><tbody>${values.map((series, side) => `<tr><th scope="row" class="report-side-label">${SIDES[side]}</th><td>${format(series[0])}</td><td>${format(series.at(-1))}</td><td>${format(Math.min(...series))}–${format(Math.max(...series))}</td></tr>`).join('')}</tbody></table><p class="report-note">${metric.detail}</p></figure>`;
 }
@@ -145,7 +170,7 @@ function roster(report) {
   const units = new Map();
   for (const side of report.final.sides) for (const item of side.unitComposition) if (!units.has(item.type)) units.set(item.type, item.name);
   const rows = [...units].map(([type, name]) => `<tr><th scope="row">${escape(name)}</th>${report.final.sides.map(side => `<td>${format(side.unitComposition.find(item => item.type === type)?.count || 0)}</td>`).join('')}</tr>`).join('');
-  return `<section class="report-section"><h3>At the final bell</h3><table class="report-table"><caption>Living unit roster at ${time(report.final.time)} · not total production</caption><thead><tr><th scope="col">Unit</th><th scope="col" class="report-side-label">You</th><th scope="col" class="report-side-label">Enemy</th></tr></thead><tbody>${rows}<tr class="report-total-row"><th scope="row">Living units</th>${report.final.sides.map(side => `<td>${format(side.armyCount)}</td>`).join('')}</tr><tr><th scope="row">Standing buildings</th>${report.final.sides.map(side => `<td>${format(side.buildingCount)}</td>`).join('')}</tr><tr><th scope="row">Citadel HP</th>${report.final.sides.map(side => `<td>${format(side.baseHp)}<small> / ${format(side.baseMaxHp)}</small></td>`).join('')}</tr></tbody></table></section>`;
+  return `<section class="report-section"><h3>At battle’s end</h3><table class="report-table"><caption>Living unit roster at ${time(report.final.time)} · not total production</caption><thead><tr><th scope="col">Unit</th><th scope="col" class="report-side-label">You</th><th scope="col" class="report-side-label">Enemy</th></tr></thead><tbody>${rows}<tr class="report-total-row"><th scope="row">Living units</th>${report.final.sides.map(side => `<td>${format(side.armyCount)}</td>`).join('')}</tr><tr><th scope="row">Standing buildings</th>${report.final.sides.map(side => `<td>${format(side.buildingCount)}</td>`).join('')}</tr><tr><th scope="row">Citadel HP</th>${report.final.sides.map(side => `<td>${format(side.baseHp)}<small> / ${format(side.baseMaxHp)}</small></td>`).join('')}</tr></tbody></table></section>`;
 }
 
 function objectives(report) {
@@ -161,7 +186,7 @@ function objectives(report) {
 }
 
 function sampleTables(report) {
-  return `<details class="report-subdetails report-samples"><summary>View retained sample data (${report.timeline.length})</summary><p class="report-note">The same retained points used by all four charts. Each side has its own table. Times use the battle clock’s whole-second display; values use at most two decimals. JSON keeps full precision. Tables scroll horizontally on small screens.</p>${[0, 1].map(side => `<div class="report-table-scroll" tabindex="0" role="region" aria-label="${SIDES[side]} retained samples, horizontally scrollable"><table class="report-table"><caption>${SIDES[side]} · retained samples</caption><thead><tr><th scope="col">Battle time</th><th scope="col">Gold</th><th scope="col">Gold / sec</th><th scope="col">Living units</th><th scope="col">Citadel HP</th></tr></thead><tbody>${report.timeline.map(sample => `<tr><th scope="row">${time(sample.time)}</th><td>${format(sample.sides[side].gold)}</td><td>${format(sample.sides[side].income)}</td><td>${format(sample.sides[side].armyCount)}</td><td>${format(sample.sides[side].baseHp)}</td></tr>`).join('')}</tbody></table></div>`).join('')}</details>`;
+  return `<details class="report-subdetails report-samples"><summary>View retained sample data (${report.timeline.length})</summary><p class="report-note">These are the samples used in all four charts. Each side has its own table. Times use the battle clock’s whole-second display; values use at most two decimals. JSON keeps full precision. Tables scroll horizontally on small screens.</p>${[0, 1].map(side => `<div class="report-table-scroll" tabindex="0" role="region" aria-label="${SIDES[side]} retained samples, horizontally scrollable"><table class="report-table"><caption>${SIDES[side]} · retained samples</caption><thead><tr><th scope="col">Battle time</th><th scope="col">Gold</th><th scope="col">Gold / sec</th><th scope="col">Living units</th><th scope="col">Citadel HP</th></tr></thead><tbody>${report.timeline.map(sample => `<tr><th scope="row">${time(sample.time)}</th><td>${format(sample.sides[side].gold)}</td><td>${format(sample.sides[side].income)}</td><td>${format(sample.sides[side].armyCount)}</td><td>${format(sample.sides[side].baseHp)}</td></tr>`).join('')}</tbody></table></div>`).join('')}</details>`;
 }
 
 /** One initially collapsed native disclosure. Mount inside the result dialog,
@@ -170,5 +195,5 @@ function sampleTables(report) {
 export function renderBattleReport(input) {
   const report = validate(input);
   const result = { victory: 'Victory', defeat: 'Defeat', draw: 'Draw' }[report.outcome.result];
-  return `<details class="battle-report"><summary><span class="report-summary-title">Battle report</span><span class="report-summary-subtitle">Forces, economy &amp; objectives</span></summary><div class="report-body" role="region" aria-label="Battle report"><header class="report-header"><span class="report-kicker">FIELD RECORD</span><h3>${escape(report.context.name)}</h3><p>${escape(report.map.name)} <span aria-hidden="true">·</span> ${time(report.scope.endedAt)} battle time</p><span class="report-result">${result}</span></header>${totals(report)}${coverage(report)}<section class="report-section report-history"><h3>Recorded battle history</h3><p class="report-note">Snapshots of both sides, joined in time order. Lines connect recorded points; they do not reconstruct events between samples.</p><p class="report-legend"><span><i class="report-key report-key-you" aria-hidden="true"></i>You · solid / circle</span><span><i class="report-key report-key-enemy" aria-hidden="true"></i>Enemy · dashed / diamond</span></p>${METRICS.map(metric => lineChart(report, metric)).join('')}${sampleTables(report)}</section>${roster(report)}${objectives(report)}<div class="report-download"><p class="report-note">Available in this tab until a new battle or page reload. Not included in saved games, history or backups.</p><button type="button" data-report-download>Download report data (JSON)</button><p class="report-note">A local data record, not a playable replay.</p><p class="report-download-status" data-report-status role="status" aria-live="polite"></p></div>${report.limitations.length ? `<details class="report-subdetails report-limitations"><summary>About these records</summary><ul>${report.limitations.map(item => `<li>${escape(item)}</li>`).join('')}</ul></details>` : ''}</div></details>`;
+  return `<details class="battle-report"><summary><span class="report-summary-title">Battle report</span><span class="report-summary-subtitle">Forces, economy &amp; objectives</span></summary><div class="report-body" role="region" aria-label="Battle report"><header class="report-header"><span class="report-kicker">FIELD RECORD</span><h3>${escape(report.context.name)}</h3><p>${escape(report.map.name)} <span aria-hidden="true">·</span> ${time(report.scope.endedAt)} battle time</p><span class="report-result">${result}</span></header>${rulesSummary(report)}${totals(report)}${coverage(report)}<section class="report-section report-history"><h3>Recorded battle history</h3><p class="report-note">Each point records both armies at one moment. Lines join those points. Events between samples may be missed.</p><p class="report-legend"><span><i class="report-key report-key-you" aria-hidden="true"></i>You · solid / circle</span><span><i class="report-key report-key-enemy" aria-hidden="true"></i>Enemy · dashed / diamond</span></p>${METRICS.map(metric => lineChart(report, metric)).join('')}${sampleTables(report)}</section>${roster(report)}${objectives(report)}<div class="report-download"><p class="report-note">Available in this tab until a new battle or page reload. Not included in saved games, history or backups.</p><button type="button" data-report-download>Download report data (JSON)</button><p class="report-note">Contains report data. It cannot replay the battle.</p><p class="report-download-status" data-report-status role="status" aria-live="polite"></p></div>${report.limitations.length ? `<details class="report-subdetails report-limitations"><summary>About these records</summary><ul>${report.limitations.map(item => `<li>${escape(item)}</li>`).join('')}</ul></details>` : ''}</div></details>`;
 }

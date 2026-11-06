@@ -1,7 +1,8 @@
-import { BUILDINGS, buildBounds, getMap } from './engine.js';
+import { buildBounds, getMap } from './engine.js';
+
+import { getRuleset } from './rulesets.js';
 
 /** Read-only briefings from authored deployments, never from a running battle. */
-const rosterOrder = Object.keys(BUILDINGS);
 const LEGEND = 'Squares: your army on the left. Diamonds: enemy army on the right. Shield outline: protect. Dashed ring: destroy.';
 const object = value => value !== null && typeof value === 'object' && !Array.isArray(value);
 const key = ({ type, x, lane }) => `${type}/${x}/${lane}`;
@@ -27,31 +28,32 @@ function list(value, field) {
   return value;
 }
 
-function location(type, x, lane, map, field) {
-  if (typeof type !== 'string' || !Object.hasOwn(BUILDINGS, type)) throw new TypeError(`Scouting ${field} has an unknown building type.`);
+function location(type, x, lane, map, field, buildings) {
+  if (typeof type !== 'string' || !Object.hasOwn(buildings, type)) throw new TypeError(`Scouting ${field} has an unknown building type.`);
   if (!Number.isFinite(x) || x < 0 || x > map.width) throw new RangeError(`Scouting ${field} has an invalid world position.`);
   if (!Number.isInteger(lane) || lane < 0 || lane >= map.lanes.length) throw new RangeError(`Scouting ${field} has an invalid road.`);
 }
 
-function placements(value, side, map, field) {
+function placements(value, side, map, field, definitions) {
+  const rosterOrder = Object.keys(definitions);
   const occupied = new Set();
   return Array.from(list(value, field), (tuple, index) => {
     if (!Array.isArray(tuple) || tuple.length < 3 || tuple.length > 4) throw new TypeError(`Scouting ${field}[${index}] must be [type, x, lane, level?].`);
     const [type, x, lane, level = 1] = tuple;
-    location(type, x, lane, map, field);
+    location(type, x, lane, map, field, definitions);
     if (!Number.isInteger(level) || level < 1 || level > 3) throw new RangeError(`Scouting ${field} has an invalid building level.`);
     const position = `${x}/${lane}`;
     if (occupied.has(position)) throw new RangeError(`Scouting ${field} repeats a building position.`);
     occupied.add(position);
-    return { type, name: BUILDINGS[type].name, side, x, y: map.lanes[lane], lane, roadName: roadName(lane, map.lanes.length), level, targetKind: null };
+    return { type, name: definitions[type].name, side, x, y: map.lanes[lane], lane, roadName: roadName(lane, map.lanes.length), level, targetKind: null };
   }).sort((a, b) => a.lane - b.lane || a.x - b.x || rosterOrder.indexOf(a.type) - rosterOrder.indexOf(b.type));
 }
 
-function markTargets(value, buildings, kind, map, field) {
+function markTargets(value, buildings, kind, map, field, definitions) {
   const targets = new Set();
   for (const target of list(value, field)) {
     if (!object(target)) throw new TypeError(`Scouting ${field} must contain target objects.`);
-    location(target.type, target.x, target.lane, map, field);
+    location(target.type, target.x, target.lane, map, field, definitions);
     const building = buildings.find(candidate => key(candidate) === key(target));
     if (!building) throw new RangeError(`Scouting ${field} does not match a starting ${kind === 'protect' ? 'allied' : 'enemy'} building.`);
     building.targetKind = kind;
@@ -60,11 +62,12 @@ function markTargets(value, buildings, kind, map, field) {
   return targets.size;
 }
 
-function groupsFor(buildings) {
+function groupsFor(buildings, definitions) {
+  const rosterOrder = Object.keys(definitions);
   return rosterOrder.flatMap(type => {
     const own = buildings.filter(building => building.type === type);
     if (!own.length) return [];
-    return [{ type, name: BUILDINGS[type].name, count: own.length, levels: [1, 2, 3].flatMap(level => {
+    return [{ type, name: definitions[type].name, count: own.length, levels: [1, 2, 3].flatMap(level => {
       const count = own.filter(building => building.level === level).length;
       return count ? [{ level, count }] : [];
     }) }];
@@ -73,13 +76,14 @@ function groupsFor(buildings) {
 
 const groupText = group => `${group.count} × ${group.name} (${group.levels.length === 1 ? `level ${group.levels[0].level}` : group.levels.map(({ level, count }) => `${count} at level ${level}`).join(', ')})`;
 
-function armyFor(buildings, side, map) {
-  const groups = groupsFor(buildings);
+function armyFor(buildings, side, map, definitions) {
+  const rosterOrder = Object.keys(definitions);
+  const groups = groupsFor(buildings, definitions);
   const roads = map.lanes.map((y, lane) => {
     const own = buildings.filter(building => building.lane === lane);
     const items = rosterOrder.flatMap(type => [1, 2, 3].flatMap(level => [null, 'protect', 'destroy'].flatMap(targetKind => {
       const count = own.filter(building => building.type === type && building.level === level && building.targetKind === targetKind).length;
-      return count ? [`${count} × ${BUILDINGS[type].name} (level ${level}${targetKind ? `, ${targetKind}` : ''})`] : [];
+      return count ? [`${count} × ${definitions[type].name} (level ${level}${targetKind ? `, ${targetKind}` : ''})`] : [];
     })));
     return { lane, y, name: roadName(lane, map.lanes.length), count: own.length, summary: items.length ? `${items.join('; ')}.` : 'No starting buildings.' };
   });
@@ -95,14 +99,18 @@ function armyFor(buildings, side, map) {
  * omitted mapId means Classic. Other malformed data throws, rather than showing
  * a plausible but false briefing. Raw report strings are TEXT, not safe HTML.
  */
-export function getMissionScouting(mission) {
+export function getMissionScouting(mission, context = null) {
   if (!object(mission)) throw new TypeError('Scouting requires a mission object.');
   if (mission.name !== undefined && typeof mission.name !== 'string') throw new TypeError('Scouting mission name must be text.');
-  const sourceMap = getMap(mission.mapId);
-  const left = placements(mission.playerBuildings, 0, sourceMap, 'playerBuildings');
-  const right = placements(mission.enemyBuildings, 1, sourceMap, 'enemyBuildings');
-  const protectedCount = markTargets(mission.protectedTargets, left, 'protect', sourceMap, 'protectedTargets');
-  const markedCount = markTargets(mission.markedTargets, right, 'destroy', sourceMap, 'markedTargets');
+  const suppliedRuleset = context?.ruleset || context;
+  const ruleset = suppliedRuleset ? getRuleset(suppliedRuleset.id, suppliedRuleset.revision) : getRuleset(mission.rulesetId, mission.rulesetRevision);
+  if (mission.rulesetId !== undefined && (mission.rulesetId !== ruleset.id || (mission.rulesetRevision ?? 1) !== ruleset.revision)) throw new TypeError('Scouting ruleset does not match the mission.');
+  const definitions = ruleset.buildings;
+  const sourceMap = getMap(mission.mapId, mission.mapRevision);
+  const left = placements(mission.playerBuildings, 0, sourceMap, 'playerBuildings', definitions);
+  const right = placements(mission.enemyBuildings, 1, sourceMap, 'enemyBuildings', definitions);
+  const protectedCount = markTargets(mission.protectedTargets, left, 'protect', sourceMap, 'protectedTargets', definitions);
+  const markedCount = markTargets(mission.markedTargets, right, 'destroy', sourceMap, 'markedTargets', definitions);
   const map = {
     id: sourceMap.id, name: sourceMap.name, width: sourceMap.width, height: sourceMap.height,
     lanes: [...sourceMap.lanes], roadCount: sourceMap.lanes.length, siteLimit: sourceMap.buildLimit,
@@ -110,7 +118,7 @@ export function getMissionScouting(mission) {
     territories: [0, 1].map(side => ({ side, ...buildBounds(sourceMap, side) })),
     summary: `${sourceMap.name} · ${sourceMap.width} × ${sourceMap.height} world units · ${sourceMap.lanes.length} roads · ${sourceMap.buildLimit}-building limit per side`,
   };
-  const armies = [armyFor(left, 0, sourceMap), armyFor(right, 1, sourceMap)];
+  const armies = [armyFor(left, 0, sourceMap, definitions), armyFor(right, 1, sourceMap, definitions)];
   const objectives = {
     protectedCount, markedCount,
     summary: `${protectedCount} allied structure${protectedCount === 1 ? '' : 's'} to protect; ${markedCount} enemy destruction target${markedCount === 1 ? '' : 's'}.`,
@@ -124,7 +132,7 @@ export function getMissionScouting(mission) {
 function svgFor(report) {
   const { map } = report;
   const title = `${report.missionName}: starting deployment`;
-  const description = `${report.summary} North is at the top. ${report.legend} Positions follow the authored battlefield; symbols are enlarged for readability. Full building names, levels and roads follow the map.`;
+  const description = `${report.summary} North is at the top. ${report.legend} Symbols show starting positions and are enlarged for readability. Building names, levels and roads are listed below the map.`;
   const territories = map.territories.map(bounds => `<rect x="${bounds.minX}" y="${bounds.minY}" width="${bounds.maxX - bounds.minX}" height="${bounds.maxY - bounds.minY}" rx="45" fill="${bounds.side === 0 ? '#9abc86' : '#d9856f'}" fill-opacity=".07"/>`).join('');
   const roads = map.lanes.map((y, lane) => `<g class="scouting-road" data-lane="${lane}"><path d="M 0 ${y} H ${map.width}" stroke="#666e5e" stroke-width="32"/><path d="M 0 ${y} H ${map.width}" stroke="#9fae9c" stroke-opacity=".65" stroke-width="4" stroke-dasharray="20 28"/></g>`).join('');
   const buildings = report.armies.flatMap(army => army.buildings.map(building => {
@@ -144,16 +152,16 @@ function svgFor(report) {
 }
 
 /** Standalone safe SVG. Accepts a mission, not an unchecked report or HTML. */
-export function renderScoutingSvg(mission) {
-  return svgFor(getMissionScouting(mission));
+export function renderScoutingSvg(mission, context = null) {
+  return svgFor(getMissionScouting(mission, context));
 }
 
 /**
  * Safe HTML body for the parent's collapsed <details>. All interpolated text
  * is escaped. This helper neither mounts DOM nor adds controls or a disclosure.
  */
-export function renderMissionScouting(mission) {
-  const report = getMissionScouting(mission);
+export function renderMissionScouting(mission, context = null) {
+  const report = getMissionScouting(mission, context);
   const armies = report.armies.map(army => `<section class="scouting-army scouting-army-${army.position}" aria-label="${escape(army.label)}"><p class="scouting-army-title"><strong>${escape(army.label)}</strong> · ${army.buildingCount} starting building${army.buildingCount === 1 ? '' : 's'}</p><p class="scouting-roster">${escape(army.summary)}</p><ul class="scouting-roads">${army.roads.map(road => `<li><strong>${escape(road.name)}:</strong> ${escape(road.summary)}</li>`).join('')}</ul></section>`).join('');
-  return `<div class="mission-scouting"><p class="scouting-map-facts">${escape(report.map.summary)}.</p>${svgFor(report)}<p class="scouting-legend">${escape(report.legend)}</p><p class="scouting-objectives">${escape(report.objectives.summary)}</p><div class="scouting-armies">${armies}</div><p class="scouting-note">Starting buildings only. Symbols are enlarged; this is an overview, not a prediction of the battle.</p></div>`;
+  return `<div class="mission-scouting"><p class="scouting-map-facts">${escape(report.map.summary)}.</p>${svgFor(report)}<p class="scouting-legend">${escape(report.legend)}</p><p class="scouting-objectives">${escape(report.objectives.summary)}</p><div class="scouting-armies">${armies}</div><p class="scouting-note">Shows starting buildings. Symbols are enlarged for readability. The map does not predict how the battle will unfold.</p></div>`;
 }

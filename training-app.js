@@ -65,7 +65,7 @@ export function createTrainingChoices(session) {
     },
     select(id) {
       const building = session.game.state.buildings.find((b) => b.id === id && b.side === 0 && b.hp > 0);
-      if (!building) return { ok:false, reason:'Choose one of your living buildings.' };
+      if (!building) return { ok:false, reason:'Choose one of your standing buildings.' };
       build = null; selected = id;
       return { ok:true };
     },
@@ -99,7 +99,7 @@ export function trainingFeedback(snapshot, localFeedback = '') {
     if (snapshot.paused)
       return snapshot.recovering ? 'Income wait paused. Resume when ready.' : 'Observation paused. Resume when ready.';
     return snapshot.recovering
-      ? 'Waiting for real income. Combat also runs; practice pauses as soon as the action is affordable.'
+      ? 'Waiting for gold. Combat continues until you can afford the action, then time pauses.'
       : 'Observation running at normal speed.';
   }
   return snapshot.feedback || '';
@@ -309,11 +309,11 @@ export function bootTraining(doc = document) {
     $('stepCount').textContent = step.id ? `STEP ${snapshot.stepIndex + 1}` : '';
     $('lessonName').textContent = finished ? 'Your practice review' : lesson.name || 'Guided practice';
     $('lessonSubtitle').textContent = finished ? `${snapshot.summary.completed} completed · ${snapshot.summary.skipped} skipped · ${snapshot.summary.failed} failed. Replay any lesson, or return to your game.` : lesson.subtitle || lesson.description || '';
-    $('setupSummary').textContent = `Authored practice setup · ${lesson.startingGold} starting gold · no enemy AI`;
+    $('setupSummary').textContent = `Practice setup · ${lesson.startingGold} starting gold · enemy builds nothing new`;
     $('setupBriefing').innerHTML = (lesson.briefing || []).map((line) => `<li>${esc(line)}</li>`).join('');
     $('stepKind').textContent = finished ? 'SESSION REVIEW' : failed ? 'TRY AGAIN' : complete ? 'WELL DONE' : snapshot.shouldRun ? 'WATCH THE BATTLE' : snapshot.paused && snapshot.status === 'active' ? 'OBSERVATION PAUSED' : 'YOUR TURN · TIME STOPPED';
     $('stepTitle').textContent = finished ? 'Training never changes your saved game.' : failed ? 'Restart for another attempt' : step.title || 'Lesson complete';
-    $('stepPrompt').textContent = finished ? 'This review describes this page session only. Skipped lessons are not completions. Replay a lesson from the menu, or return to your unchanged game. No rewards or progress were saved.' : step.prompt || lesson.briefing || '';
+    $('stepPrompt').textContent = finished ? 'These results cover this practice session. Skipped lessons do not count as completed. Choose a lesson to replay, or return to your game. No rewards or progress were saved.' : step.prompt || lesson.briefing || '';
     const objective = typeof snapshot.objective === 'string' ? snapshot.objective : snapshot.objective?.text || snapshot.objective?.description || '';
     $('objective').textContent = finished || objective === step.prompt ? '' : objective;
     $('reviewResults').hidden = !finished;
@@ -337,7 +337,7 @@ export function bootTraining(doc = document) {
     for (const button of $('siteActions').querySelectorAll('button')) button.disabled = !actionsAllowed || !choices.build;
     for (const button of $('buildingActions').querySelectorAll('button')) button.disabled = !actionsAllowed;
     $('cancelChoice').disabled = !choices.build && choices.selected === null;
-    $('choiceHint').textContent = choices.build ? `${BUILDINGS[choices.build].name} selected. Tap the highlighted site or use its button below. Dragging never places it.` : choices.selected !== null ? 'Owned building selected. Upgrade spends the displayed gold.' : 'Choose a building, then a marked site. Nothing is placed for you.';
+    $('choiceHint').textContent = choices.build ? `${BUILDINGS[choices.build].name} selected. Tap the highlighted site or use its button below. Dragging never places it.` : choices.selected !== null ? 'Building selected. Select Upgrade to pay the shown cost.' : 'Choose a building, then a marked site.';
     const selected = session.game.state.buildings.find((b) => b.id === choices.selected && b.side === 0 && b.hp > 0);
     $('selectionPanel').hidden = !selected;
     if (selected) {

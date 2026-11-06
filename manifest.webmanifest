@@ -2,7 +2,7 @@
   "id": "./",
   "name": "Ironroot Frontier",
   "short_name": "Ironroot",
-  "description": "Build your frontier and turn the tide in a real-time strategy tug-of-war.",
+  "description": "Build an army, defend your citadel and fight across the frontier in this real-time strategy game.",
   "start_url": "./",
   "scope": "./",
   "display": "standalone",

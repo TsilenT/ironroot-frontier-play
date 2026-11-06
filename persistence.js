@@ -1,3 +1,5 @@
+import { encodeBattle, scenarioForBattle, battleByteLength } from './battle-codec.js';
+import { validateHistoryRow } from './history-codec.js';
 /** Storage may be absent, denied or full. Never report an unwritten save as saved. */
 export function createStorage(getBackend) {
   return {
@@ -42,6 +44,7 @@ export function readHistoryState(storage, key) {
     const rows = read.value === null ? [] : JSON.parse(read.value);
     if (!Array.isArray(rows) || rows.some(row => !row || typeof row !== 'object' || Array.isArray(row)))
       throw Error('Malformed history');
+    for (const row of rows) if (Object.hasOwn(row, 'identity')) validateHistoryRow(row);
     return { ok: true, reason: 'ready', rows: rows.slice(0, 30), raw: read.value };
   } catch { return { ok: false, reason: 'malformed', rows: [], raw: read.value }; }
 }
@@ -57,7 +60,7 @@ export function readHistory(storage, key) {
 const resultKey = row => JSON.stringify([
   row.date, row.won, row.draw ?? false, row.challengeId ?? null,
   row.campaignId ?? null, row.difficulty, row.mapId ?? 'classic',
-  row.time, row.kills, row.built,
+  row.time, row.kills, row.built, row.identity ?? null,
 ]);
 
 /** Page-local outbox, using the existing history schema. Never substitute cached
@@ -85,6 +88,7 @@ export function createHistorySession(storage, key, { canWrite = () => true } = {
     view: (rows = latest.rows) => merge(rows),
     retain(row, { ownership = () => 'current', onSaved = () => {} } = {}) {
       // JSON snapshots cannot be changed by a later battle or caller mutation.
+      if (Object.hasOwn(row, 'identity')) validateHistoryRow(row);
       const copy = JSON.parse(JSON.stringify(row)), identity = resultKey(copy);
       if (!pending.some(entry => resultKey(entry.row) === identity)) pending.unshift({ row: copy, ownership, onSaved });
       pending = pending.slice(0, 30); // Same latest-30 policy as persisted history.
@@ -115,7 +119,9 @@ export function createHistorySession(storage, key, { canWrite = () => true } = {
         if (!allowed()) return fail('blocked');
         return settled();
       }
-      const desired = JSON.stringify(merge(current.rows, ready));
+      const candidate = merge(current.rows, ready);
+      try { for (const row of candidate) if (Object.hasOwn(row, 'identity')) validateHistoryRow(row); } catch { return fail('invalid-data'); }
+      const desired = JSON.stringify(candidate);
       const checked = readValue(storage, key);
       if (!checked.ok) return fail('unavailable');
       if (checked.value !== current.raw) return fail('changed');
@@ -167,26 +173,24 @@ export function createPreferenceSession(storage, key, { canWrite = () => true } 
     },
   };
 }
-export function writeBattle(
-  storage,
-  key,
-  game,
-  challengeId = null,
-  campaignId = null,
-) {
+const battleWriteFailures=new WeakMap();
+export const getBattleWriteFailure=storage=>battleWriteFailures.get(storage)??null;
+export function writeBattle(storage,key,game,challengeId=null,campaignId=null,options={}) {
+  let value;
   try {
-    return storage.set(
-      key,
-      JSON.stringify({
-        format: 'ironroot-save',
-        version: 2,
-        challengeId,
-        campaignId,
-        game: game.serialize(),
-      }),
-    );
-  } catch {
+    value=JSON.stringify(encodeBattle(game,scenarioForBattle(challengeId,campaignId),options));
+    battleByteLength(value);
+  } catch(error) {
+    battleWriteFailures.set(storage,{code:'invalid-battle',message:error.message||'This battle cannot be saved safely.'});
     return false;
+  }
+  try {
+    const wrote=storage.set(key,value);
+    const verified=storage.read?storage.read(key):typeof storage.get==='function'?{ok:true,value:storage.get(key)}:null;
+    if(wrote!==true||(verified&&(!verified.ok||verified.value!==value)))throw new Error('The saved battle could not be verified.');
+    battleWriteFailures.delete(storage);return true;
+  } catch(error) {
+    battleWriteFailures.set(storage,{code:'storage-unavailable',message:error.message||'The saved battle could not be verified.'});return false;
   }
 }
 export function nativeSpaceTarget(target) {
@@ -213,6 +217,8 @@ export function createSaveSession(storage, key) {
     }
   };
   return {
+    read(target) { return target===key?read():{ok:false,value:null}; },
+    get(target) { return this.read(target).value; },
     claim() {
       const current = read();
       expected = current.value;
@@ -266,7 +272,9 @@ export function createSaveSession(storage, key) {
     set(target, value) {
       if (target !== key || !this.isCurrent()) return false;
       if (value === expected) return true;
-      if (!storage.set(key, value)) return false;
+      try { storage.set(key, value); } catch { /* Readback verifies uncertain adapters. */ }
+      const verified=read();
+      if (!verified.ok || verified.value !== value) return false;
       expected = value;
       return true;
     },

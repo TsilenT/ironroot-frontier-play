@@ -1,3 +1,4 @@
+import { createViewportPause, inspectMobileGeometry, visibleViewportRect, protectedToastTop } from './mobile-battlefield.js';
 import { createProfileSession, PROFILE_MARKER_KEY } from './profile-session.js';
 import { createInputScopeGuard } from './input-scope.js';
 import {
@@ -19,6 +20,8 @@ import {
   UNITS,
   MAPS,
   getMap,
+  getRuleset,
+  DEFAULT_SKIRMISH_RULESET_ID,
   buildBounds,
   SPELL,
   upgradeCost,
@@ -28,6 +31,7 @@ import { renderMissionScouting } from './scouting.js';
 import { createBattleJournal, exportBattleReport } from './battle-report.js';
 import { renderBattleReport } from './report-view.js';
 import {
+  createCodex,
   UNIT_CODEX,
   STRUCTURE_CODEX,
   ECONOMY_GUIDE,
@@ -47,13 +51,18 @@ import {
   createHistorySession,
   createPreferenceSession,
   writeBattle,
+  getBattleWriteFailure,
   nativeSpaceTarget,
 } from './persistence.js';
+import { decodeBattle, encodeBattle, scenarioForBattle, identityOf } from './battle-codec.js';
 import { GameAudio } from './audio.js';
 import { advanceObjectiveBattle } from './objectives.js';
+import { campaignBuildChoices, campaignCoach, drawCampaignGuidance, guidancePointVisible } from './campaign-flow.js';
+import { createProtectedObjectiveMonitor, protectedLossDetails } from './protected-objectives.js';
 import {
-  CAMPAIGN_CHAPTERS,
-  CAMPAIGN_MISSIONS,
+  ALL_CAMPAIGN_CHAPTERS as CAMPAIGN_CHAPTERS,
+  ALL_CAMPAIGN_MISSIONS as CAMPAIGN_MISSIONS,
+  isIntroMission,
   createCampaignMission,
   evaluateCampaignMission,
   getCampaignTargets,
@@ -68,7 +77,8 @@ const $ = (id) => document.getElementById(id);
 const renderer = new Renderer($('battle'), $('minimap'));
 
 // Read-only field reference. Text is authored data; escape it before markup.
-function populateFieldGuide() {
+function populateFieldGuide(context = null) {
+  const { UNIT_CODEX, STRUCTURE_CODEX, ECONOMY_GUIDE } = createCodex(context);
   const esc = (value) =>
     String(value).replace(
       /[&<>"']/g,
@@ -98,7 +108,7 @@ function populateFieldGuide() {
         ['Cooldown', formatSeconds(u.baseStats.attackTime)],
         ['Range', n(u.baseStats.range)],
         ['Speed', `${n(u.baseStats.speed)} /s`],
-        ['Repeat spawn', formatSeconds(u.production.spawnTime)],
+        ['Training interval', formatSeconds(u.production.spawnTime)],
       ])}
       <p><b>${esc(u.production.name)}</b> · ${n(u.production.cost)} gold<br>Upgrades: ${u.production.upgradeCosts.map(n).join(' / ')} gold</p>
       <p><b>Use it for:</b> ${esc(u.advantages)}</p>
@@ -107,7 +117,7 @@ function populateFieldGuide() {
     </div></details>`,
   ).join('');
   for (const canvas of $('unitCodex').querySelectorAll('[data-portrait]'))
-    drawUnitPortrait(canvas, canvas.dataset.portrait);
+    drawUnitPortrait(canvas, canvas.dataset.portrait, 0, context);
   $('structureCodex').innerHTML = STRUCTURE_CODEX.map(
     (
       b,
@@ -121,12 +131,19 @@ function populateFieldGuide() {
     ['Citadel health', n(ECONOMY_GUIDE.citadelHp)],
     ['Mine cap', n(ECONOMY_GUIDE.mineCap)],
   ])}
-    <h3>Build an economy you can defend</h3>${list(ECONOMY_GUIDE.notes)}<h3>Invest in survivors</h3>${list(ECONOMY_GUIDE.upgrades)}<h3>When the war runs long</h3><p>${esc(ECONOMY_GUIDE.overtime.description)}</p>`;
+    <h3>Build an economy you can defend</h3>${list(ECONOMY_GUIDE.notes)}<h3>Upgrades</h3>${list(ECONOMY_GUIDE.upgrades)}<h3>Overtime</h3><p>${esc(ECONOMY_GUIDE.overtime.description)}</p>`;
 }
 populateFieldGuide();
 
+const viewportPause = createViewportPause();
+let mobileLayout = 'ordinary';
+let protectedMonitor = null;
+const protectedControls = new Map();
+let armedProtectedControl = null;
 let battleJournal = null, lastBattleReport = null, hasLastResult = false, reportFault = false;
 let selectedMap = 'classic';
+let selectedRuleset = DEFAULT_SKIRMISH_RULESET_ID;
+let battleSafetyReason = null, resumeProblem = null;
 let difficulty = 'easy',
   game = new Game({ difficulty }),
   started = false,
@@ -145,13 +162,14 @@ const ui = {
   pointer: null,
   dragging: false,
 };
-let mode = 'skirmish',
+let mode = 'campaign',
   selectedChallenge = CHALLENGES[0].id,
   currentChallenge = null,
   currentCampaign = null,
   objectiveOutcome = null,
   selectedCampaign = CAMPAIGN_MISSIONS[0].id,
   selectedChapter = CAMPAIGN_CHAPTERS[0].id;
+let expandedBuilds = false, resumedBattle = false, coachEnabled = true;
 const labels = {
   barracks: ['Barracks', 'Shielded warriors', '9s / wave'],
   archery: ['Archery', 'Ranged support', '10s / wave'],
@@ -161,7 +179,7 @@ const labels = {
   sanctum: ['Sanctum', 'Magic & splash', '14s / wave'],
   aerie: ['Aerie', 'Flying raiders', '15s / wave'],
 };
-const profileSession = createProfileSession(() => localStorage, { requiredProtocolVersion: 2 });
+const profileSession = createProfileSession(() => localStorage, { requiredProtocolVersion: 3 });
 const storage = createStorage(() => profileSession.storage);
 let recoveryHold = null,
   profileGate = null,
@@ -182,7 +200,9 @@ let knownHistory = historySession.snapshot().rows,
   knownHistoryAvailable = historySession.snapshot().ok;
 let campaignProgress = readCampaignProgress(storage),
   progressDirty = false;
-const nextCampaign = getCampaignOverview(campaignProgress).nextMissionId;
+const initialOverview = getCampaignOverview(campaignProgress);
+const nextCampaign = initialOverview.introduction.recommended
+  ? initialOverview.introduction.nextMissionId : initialOverview.nextMissionId;
 if (nextCampaign) {
   selectedCampaign = nextCampaign;
   selectedChapter = CAMPAIGN_MISSIONS.find(
@@ -249,7 +269,7 @@ function updatePreferenceSaveStatus() {
   $('preferenceSaveWarning').classList.toggle('hidden', !dirty);
   $('retryPreferences').classList.toggle('hidden', !dirty);
   $('preferenceSaveWarning').textContent = dirty
-    ? 'These preferences apply only to this page and are not verified saved. ' +
+    ? 'These preferences apply only to this page. Saving could not be confirmed. ' +
       (['changed', 'initial-unavailable', 'blocked'].includes(preferenceSession.reason())
         ? 'The saved profile or preferences cannot be safely replaced by this tab. Export this session before reloading.'
         : 'Keep this page open, restore storage access or space, then retry saving.')
@@ -306,8 +326,27 @@ function timeText(t) {
     .padStart(2, '0')}:${(sec % 60).toString().padStart(2, '0')}`;
 }
 function positionToast() {
-  const objective = $('objectiveHUD');
-  $('toast').style.top = objective.classList.contains('hidden')
+  const objective = $('objectiveHUD'), toast = $('toast');
+  if ($('app').classList.contains('protected-mobile')) {
+    const field = $('battle').getBoundingClientRect();
+    const obstacles = (protectedMonitor?.read() || []).filter(t => t.status !== 'lost').map(t => {
+      const p = renderer.worldToScreen(t.x, t.y);
+      return {top:p.y-112*renderer.scale,bottom:p.y+50*renderer.scale};
+    });
+    toast.style.top = `${protectedToastTop(field.height, toast.offsetHeight, obstacles)}px`;
+    return;
+  }
+  if ($('app').classList.contains('protected-landscape')) {
+    const field = $('battle').getBoundingClientRect();
+    const mapTop = $('mapControls').getBoundingClientRect().top - field.top;
+    // The protected dock sits outside the field. Keep feedback in its free
+    // middle band rather than using the dock's offset or covering the minimap.
+    const limit = $('app').classList.contains('protected-compact') ? field.height : mapTop;
+    const lastTop = Math.max(8, limit - toast.offsetHeight - 8);
+    toast.style.top = `${Math.max(8, Math.min(lastTop, (field.height - toast.offsetHeight) / 2))}px`;
+    return;
+  }
+  toast.style.top = objective.classList.contains('hidden') || objective.closest?.('#protectedDock')
     ? ''
     : `${objective.offsetTop + objective.offsetHeight + 8}px`;
 }
@@ -332,10 +371,13 @@ function setSound() {
 }
 
 setSound();
-for (const [type, d] of Object.entries(BUILDINGS)) {
+function populateBuildCards() {
+  $('buildCards').textContent = '';
+  $('buildingKeyHelp').textContent = `1–${Object.keys(game.buildings || BUILDINGS).length} buildings`;
+for (const [type, d] of Object.entries(game.buildings || BUILDINGS)) {
   const label = labels[type] || [
     d.name,
-    d.unit ? 'Auto-spawning troops' : 'Frontier building',
+    d.unit ? 'Trains troops automatically' : 'Frontier building',
     '',
   ];
   const btn = document.createElement('button');
@@ -343,24 +385,32 @@ for (const [type, d] of Object.entries(BUILDINGS)) {
   btn.dataset.type = type;
   btn.title = `${d.name} · ${d.cost} gold. ${d.description}`;
   btn.setAttribute('aria-label', `${d.name}, ${d.cost} gold. ${d.description}`);
-  btn.innerHTML = `<span class="hotkey">${Object.keys(BUILDINGS).indexOf(type) + 1}</span><div class="card-top"><span class="building-symbol">${iconSVG(type)}</span><div><h3>${label[0]}</h3><span class="role">${label[1]}</span></div></div><span class="cost">◆ ${d.cost}<small>${label[2]}</small></span>`;
+  btn.innerHTML = `<span class="hotkey">${Object.keys(game.buildings || BUILDINGS).indexOf(type) + 1}</span><div class="card-top"><span class="building-symbol">${iconSVG(type)}</span><div><h3>${label[0]}</h3><span class="role">${label[1]}</span></div></div><span class="cost">◆ ${d.cost}<small>${label[2]}</small></span>`;
   btn.addEventListener('click', () => selectBuild(type));
   $('buildCards').append(btn);
 }
+}
+populateBuildCards();
 function canInteract() {
   return (
     started &&
     !paused &&
     !recoveryHold &&
     !profileGate &&
+    !battleSafetyReason &&
+    !game.limitReason &&
     game.state.winner === null &&
     !objectiveOutcome
   );
 }
 function selectBuild(type) {
   if (!canInteract()) return;
-  if (game.state.gold[0] < BUILDINGS[type].cost) {
-    toast(`Need ${BUILDINGS[type].cost} gold for ${BUILDINGS[type].name}.`);
+  if (!campaignBuildChoices(currentCampaign, { expanded: expandedBuilds, resumed: resumedBattle, buildings: game.buildings || BUILDINGS }).includes(type)) {
+    toast('Choose All buildings in the build bar to use this building.');
+    return;
+  }
+  if (game.state.gold[0] < (game.buildings || BUILDINGS)[type].cost) {
+    toast(`Need ${(game.buildings || BUILDINGS)[type].cost} gold for ${(game.buildings || BUILDINGS)[type].name}.`);
     sound('error');
     return;
   }
@@ -370,6 +420,7 @@ function selectBuild(type) {
   follow = false;
   updateSelection();
   syncChoice();
+  setCompactBuildOpen(false);
   sound('click');
 }
 function cancel() {
@@ -379,8 +430,10 @@ function cancel() {
   ui.pointer = null;
   updateSelection();
   syncChoice();
+  setCompactBuildOpen(false);
 }
 function syncChoice() {
+  updateCampaignDeck();
   document
     .querySelectorAll('.build-card')
     .forEach((b) => b.classList.toggle('active', b.dataset.type === ui.build));
@@ -388,33 +441,102 @@ function syncChoice() {
   $('battle').classList.toggle('placing', !!ui.build || ui.spell);
   $('cancelBuild').classList.toggle('hidden', !ui.build && !ui.spell);
   $('buildPrompt').textContent = ui.build
-    ? `PLACE ${BUILDINGS[ui.build].name.toUpperCase()} · ◆ ${BUILDINGS[ui.build].cost}`
+    ? `PLACE ${(game.buildings || BUILDINGS)[ui.build].name.toUpperCase()} · ◆ ${(game.buildings || BUILDINGS)[ui.build].cost}`
     : ui.spell
-      ? 'RALLY STRIKE · TAP ENEMY TROOPS'
+      ? 'ARROW VOLLEY · TAP ENEMY TROOPS'
       : 'BUILD YOUR FRONTIER';
   $('buildHelp').textContent = ui.build
-    ? BUILDINGS[ui.build].description
+    ? (game.buildings || BUILDINGS)[ui.build].description
     : ui.spell
-      ? 'Deals damage to enemies in a wide area.'
+      ? 'Damages enemy troops in a wide area.'
       : $('buildCards').scrollWidth > $('buildCards').clientWidth + 2
         ? 'Scroll for more buildings. Choose one, then tap a green slot.'
         : 'Choose a building, then place it in your territory.';
+  updateCompactBuildControl();
+}
+function updateCampaignDeck() {
+  const choices = campaignBuildChoices(currentCampaign, { expanded: expandedBuilds, resumed: resumedBattle, buildings: game.buildings || BUILDINGS });
+  const canSimplify = started && !resumedBattle && campaignBuildChoices(currentCampaign, { buildings: game.buildings || BUILDINGS }).length < Object.keys(game.buildings || BUILDINGS).length;
+  $('allBuildings').classList.toggle('hidden', !canSimplify);
+  $('allBuildings').textContent = expandedBuilds ? 'Fewer buildings' : 'All buildings';
+  $('allBuildings').setAttribute('aria-expanded', String(expandedBuilds));
+  for (const card of document.querySelectorAll('.build-card'))
+    card.classList.toggle('hidden', started && !choices.includes(card.dataset.type));
+  const hint = started && !objectiveOutcome && game.state.winner === null ? campaignCoach(game, currentCampaign, ui) : null;
+  const show = coachEnabled && !!hint && canInteract() && !dialogLayers.some(layer => !layer.classList.contains('hidden'));
+  const compact = $('app').classList.contains('protected-compact');
+  const open = $('app').classList.contains('compact-build-open');
+  $('campaignCoach').classList.toggle('hidden', !show);
+  $('toggleCoach').classList.toggle('hidden', !hint);
+  $('toggleCoach').textContent = coachEnabled ? 'Hide hints' : 'Show hints';
+  $('toggleCoach').setAttribute('aria-pressed', String(coachEnabled));
+  let highlighted = show ? document.querySelector(hint.control) : null;
+  let text = hint?.text || '';
+  if (show && compact && !open && hint.control.startsWith('[data-type=') && !ui.build) {
+    highlighted = $('compactBuild');
+    text = 'Open Build, then ' + text.charAt(0).toLowerCase() + text.slice(1);
+  }
+  const point = hint?.site || game.state.buildings.find(b => b.id === hint?.buildingId && b.hp > 0);
+  if (show && point && !guidancePointVisible(renderer, game, point) && !open) {
+    highlighted = $('home');
+    text = 'Use Home to return to your buildings. ' + text;
+  }
+  if (!coachControlVisible(highlighted)) highlighted = null;
+  for (const element of document.querySelectorAll('.coach-highlight'))
+    if (element !== highlighted) element.classList.remove('coach-highlight');
+  ui.coachSite = show ? hint.site : null;
+  ui.coachBuilding = show ? hint.buildingId : null;
+  if (show) {
+    if ($('coachTitle').textContent !== hint.title) $('coachTitle').textContent = hint.title;
+    if ($('coachText').textContent !== text) $('coachText').textContent = text;
+    highlighted?.classList.add('coach-highlight');
+  }
+}
+$('allBuildings').onclick = () => {
+  if (!canInteract()) return;
+  const open = $('app').classList.contains('compact-build-open');
+  inputScope.interrupt();
+  expandedBuilds = !expandedBuilds;
+  // Collapsing the roster cancels a selection before it becomes hidden.
+  cancel();
+  setCompactBuildOpen(open);
+  $('allBuildings').focus({ preventScroll: true });
+};
+$('toggleCoach').onclick = () => {
+  if (!canInteract()) return;
+  coachEnabled = !coachEnabled;
+  updateCampaignDeck();
+};
+function coachControlVisible(element) {
+  if (!element || !controlIsVisible(element)) return false;
+  const rect = element.getBoundingClientRect();
+  const viewport = visibleViewportRect(window.innerWidth, window.innerHeight, window.visualViewport);
+  if (rect.width <= 0 || rect.height <= 0 || rect.left < viewport.left || rect.top < viewport.top ||
+      rect.right > viewport.right || rect.bottom > viewport.bottom) return false;
+  // A layout rectangle alone does not mean a scrolled card is on screen.
+  for (let parent = element.parentElement; parent && parent !== document.body; parent = parent.parentElement) {
+    const style = getComputedStyle(parent), clip = parent.getBoundingClientRect();
+    if (/(auto|scroll|hidden|clip)/.test(style.overflowX) && (rect.left < clip.left || rect.right > clip.right)) return false;
+    if (/(auto|scroll|hidden|clip)/.test(style.overflowY) && (rect.top < clip.top || rect.bottom > clip.bottom)) return false;
+  }
+  return true;
 }
 function updateSelection() {
   const b = game.state.buildings.find(
     (x) => x.id === ui.selected && x.side === 0,
   );
   $('selectionPanel').classList.toggle('hidden', !b);
+  $('commandDeck').classList.toggle('inspecting-building', !!b && $('app').classList.contains('protected-mobile'));
   if (!b) return;
-  const d = BUILDINGS[b.type];
+  const d = (game.buildings || BUILDINGS)[b.type];
   $('selectionIcon').innerHTML = iconSVG(b.type);
   $('selectionTitle').textContent = d.name;
   $('selectionDetail').textContent =
-    `Level ${b.level} · ${d.unit ? UNITS[d.unit].name + ' production' : d.range ? 'Defensive structure' : 'Economy'}`;
+    `Level ${b.level} · ${d.unit ? (game.units || UNITS)[d.unit].name + ' production' : d.range ? 'Defensive structure' : 'Economy'}`;
   $('selectionStats').innerHTML =
     `<span>♥ ${Math.ceil(b.hp)} / ${Math.ceil(b.maxHp)}</span><span>${d.unit ? `${(d.spawnTime / (1 + 0.22 * (b.level - 1)) / (game.state.overtime ? 1.65 : 1)).toFixed(1)}s / wave` : d.range ? `Range ${d.range}` : `+${(2.5 * (1 + 0.5 * (b.level - 1))).toFixed(1)} gold /s`}</span>`;
   $('selectionDescription').textContent = d.description;
-  const cost = upgradeCost(b);
+  const cost = game.upgradeCost ? game.upgradeCost(b) : upgradeCost(b);
   $('upgrade').textContent = b.level < 3 ? `Upgrade · ◆ ${cost}` : 'Max level';
   $('upgrade').disabled =
     b.level >= 3 ||
@@ -428,7 +550,7 @@ function updateSelection() {
   if (ui.protectedTargets?.includes(b.id)) {
     $('sell').textContent = 'Protected objective';
     $('selectionDescription').textContent =
-      'Keep this objective alive. ' + d.description;
+      'Keep this building standing. ' + d.description;
   }
 }
 $('upgrade').onclick = () => {
@@ -437,7 +559,7 @@ $('upgrade').onclick = () => {
     sound('upgrade');
     const b = r.building;
     toast(
-      BUILDINGS[b.type].unit
+      (game.buildings || BUILDINGS)[b.type].unit
         ? 'Upgraded: tougher troops and faster waves.'
         : b.type === 'mint'
           ? 'Upgraded: more gold per second.'
@@ -467,13 +589,14 @@ $('closeSelection').onclick = (e) => {
   closeSelectionArmed = false;
   ui.selected = null;
   updateSelection();
+  setCompactBuildOpen(false);
 };
 $('cancelBuild').onclick = cancel;
 $('rally').onclick = () => {
   if (!canInteract()) return;
   if (game.state.spellCooldown[0] > 0) {
     toast(
-      `Rally strike ready in ${Math.ceil(game.state.spellCooldown[0])} seconds.`,
+      `Arrow volley ready in ${Math.ceil(game.state.spellCooldown[0])} seconds.`,
     );
     return;
   }
@@ -486,6 +609,7 @@ $('rally').onclick = () => {
   ui.selected = null;
   updateSelection();
   syncChoice();
+  setCompactBuildOpen(false);
   sound('click');
 };
 function pauseControl(mode = 'pause') {
@@ -512,7 +636,7 @@ function pauseControl(mode = 'pause') {
         : 'Return to title';
 }
 pauseControl();
-function pause(value) {
+function pause(value, { explicit = false } = {}) {
   if (!value && (recoveryHold || profileGate)) {
     showRecoverySettings();
     return;
@@ -523,13 +647,26 @@ function pause(value) {
     toast('A newer battle is available. Choose Resume to continue it.');
     return;
   }
+  if (!value && (battleSafetyReason || game.limitReason)) {
+    holdBattleSafety(battleSafetyReason || game.limitReason);
+    return;
+  }
+  if (!value && viewportPause.active) {
+    syncViewportSafety();
+    if (viewportPause.blocked || !explicit) return;
+    viewportPause.clear();
+    $('viewportModal').classList.add('hidden');
+    interruptMobileInput();
+  }
+  if (value) setCompactBuildOpen(false);
   paused = value;
   $('pauseVeil').classList.toggle('hidden', !paused);
   pauseControl(paused ? 'resume' : 'pause');
   if (paused) save();
+  syncDialogs();
 }
-$('pause').onclick = () => pause(!paused);
-$('resume').onclick = () => pause(false);
+$('pause').onclick = () => pause(!paused, { explicit: true });
+$('resume').onclick = () => pause(false, { explicit: true });
 $('saveExit').onclick = () => {
   if (recoveryHold || profileGate) {
     showRecoverySettings();
@@ -543,13 +680,16 @@ $('saveExit').onclick = () => {
     return;
   }
   if (!save() || (progressDirty && !persistProgress())) {
+    if (viewportPause.active || battleSafetyReason) $('viewportSaveStatus').textContent = 'Saving failed. This battle remains paused on this page. Keep it open and try again.';
     toast(
       'Could not save on this browser. Keep this battle open or free some storage, then try again.',
     );
     return;
   }
-  showTitle();
+  showTitle({ focusResume: true });
 };
+$('viewportExit').onclick = $('saveExit').onclick;
+$('viewportResume').onclick = () => pause(false, { explicit: true });
 $('speed').onclick = () => {
   speed = speed === 1 ? 1.5 : speed === 1.5 ? 2 : 1;
   $('speed').textContent = `${speed}×`;
@@ -575,6 +715,7 @@ $('front').onclick = () => {
 function showHelp() {
   helpWasPaused = paused;
   if (started && game.state.winner === null) {
+    setCompactBuildOpen(false);
     paused = true;
     $('pauseVeil').classList.add('hidden');
   }
@@ -592,11 +733,11 @@ $('guideDone').onclick = hideHelp;
 
 const mapDescriptions = {
   classic:
-    'Three roads, 24 building sites per side. The original frontier, used by every campaign mission and field trial.',
+    'Three roads, 24 building sites per side. Used by campaign chapters 1–4 and all field trials.',
   'long-march':
     'Three roads with a longer neutral crossing, 24 sites per side. Reinforcements take longer to arrive. Troop and income rules are unchanged.',
   'twin-span':
-    'Two roads, 16 building sites per side. Fewer fronts and less construction space concentrate the battle. Troop and income rules are unchanged.',
+    'Two roads, 16 building sites per side. Each side has less room to build. Troop and income rules are unchanged.',
 };
 function renderMapSelection() {
   $('selectedMapName').textContent = getMap(selectedMap).name;
@@ -634,6 +775,25 @@ for (const btn of document.querySelectorAll('[data-difficulty]'))
       .forEach((b) => b.classList.toggle('active', b === btn));
     sound('click');
   };
+function holdBattleSafety(reason) {
+  if (!reason || !started || game.state.winner !== null || objectiveOutcome) return;
+  const first = !battleSafetyReason;
+  battleSafetyReason = reason;
+  setCompactBuildOpen(false);
+  paused = true;
+  ui.build = null; ui.spell = false;
+  $('battleLimitWarning').textContent = reason;
+  $('battleLimitWarning').classList.remove('hidden');
+  $('pauseVeil').classList.remove('hidden');
+  $('resume').disabled = true;
+  $('viewportResume').disabled = true;
+  $('viewportTitle').textContent = 'Battle paused safely';
+  $('viewportReason').textContent = reason;
+  $('viewportModal').classList.remove('hidden');
+  pauseControl('resume');
+  if (first) { interruptMobileInput(); save(); }
+  syncDialogs();
+}
 function start(
   restored = null,
   restoredChallenge = null,
@@ -642,6 +802,11 @@ function start(
   syncProfileSafety();
   if (recoveryHold || profileGate) {
     showRecoverySettings();
+    return;
+  }
+  if (resumeProblem && !restored) {
+    showSettings();
+    $('backupStatus').textContent = 'The original saved battle is unchanged. Download it from the title screen, or restore a compatible backup before starting a new battle.';
     return;
   }
   const cid = restored
@@ -653,7 +818,13 @@ function start(
     toast('Complete the preceding missions to unlock this one.');
     return;
   }
+  battleSafetyReason = null;
+  $('battleLimitWarning').classList.add('hidden');
+  $('resume').disabled = false;
   currentCampaign = cid;
+  expandedBuilds = !!campaignProgress.missions[cid]?.completed;
+  resumedBattle = !!restored;
+  coachEnabled = !campaignProgress.missions[cid]?.completed;
   currentChallenge = restored
     ? restoredChallenge
     : mode === 'challenges'
@@ -665,7 +836,9 @@ function start(
       ? createCampaignMission(currentCampaign)
       : currentChallenge
         ? createChallenge(currentChallenge)
-        : new Game({ difficulty, seed: Date.now() >>> 0, mapId: selectedMap }));
+        : new Game({ difficulty, seed: Date.now() >>> 0, mapId: selectedMap, mapRevision: 1, rulesetId: selectedRuleset, rulesetRevision: 1 }));
+  populateBuildCards();
+  populateFieldGuide(game);
   if (!currentChallenge && !currentCampaign) {
     selectedMap = game.map.id;
     renderMapSelection();
@@ -676,6 +849,9 @@ function start(
         b.classList.toggle('active', b.dataset.difficulty === difficulty),
       );
   }
+  viewportPause.clear();
+  $('viewportModal').classList.add('hidden');
+  beginProtectedObjectives();
   beginBattleReport(!!restored);
   battleSession.claim();
   padHud = false;
@@ -725,22 +901,227 @@ function start(
   );
   $('speed').textContent = '1×';
   pauseControl();
-  $('pause').onclick = () => pause(!paused);
+  $('pause').onclick = () => pause(!paused, { explicit: true });
   renderer.camera = restored ? game.state.frontline : 450;
   renderer.clampCamera();
   initAudio();
   sound('build');
-  toast(
+  $('toast').classList.remove('show');
+  if (!mission || !coachEnabled || !campaignCoach(game, mission.id, ui)) toast(
     restored
-      ? 'Battle resumed. Your frontier awaits.'
+      ? 'Battle resumed.'
       : mission
         ? mission.objective
         : currentChallenge
           ? CHALLENGES.find((c) => c.id === currentChallenge).objective
-          : 'Choose a building, then tap a green slot to raise it.',
+          : 'Choose a building, then tap a green slot to place it.',
   );
   $('battle').focus();
+  // Reveal and populate the real HUD before measuring its target controls.
+  updateHUD();
+  syncViewportSafety();
+  if (game.limitReason) holdBattleSafety(game.limitReason);
   save();
+}
+function beginProtectedObjectives() {
+  protectedMonitor = currentCampaign
+    ? createProtectedObjectiveMonitor(game, currentCampaign) : null;
+  protectedControls.clear();
+  armedProtectedControl = null;
+  $('protectedTargets').textContent = '';
+  $('protectedAlert').textContent = '';
+  $('resultProtectedLoss').textContent = '';
+  $('resultProtectedLoss').classList.add('hidden');
+  const targets = protectedMonitor?.read() || [];
+  // Reserve real layout space rather than covering the target being focused.
+  // Reparent only at battle start, never while a gesture/focus is active.
+  if (targets.length) $('protectedDock').append($('objectiveHUD'));
+  else $('battlefield').append($('objectiveHUD'));
+  $('protectedDock').classList.toggle('hidden', !targets.length);
+  $('battlefield').classList.toggle('protected-battle', !!targets.length);
+  $('objectiveHUD').classList.toggle('protect-hud', !!targets.length);
+  $('protectedTargets').classList.toggle('hidden', !targets.length);
+  $('objectiveIdentity').classList.toggle('hidden', !targets.length);
+  $('objectiveIdentity').textContent = targets.length ? `${game.difficulty.toUpperCase()} · PROTECT` : '';
+  for (const target of targets) {
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = 'protected-target';
+    button.dataset.protectedId = String(target.originalId);
+    button.setAttribute('aria-label', `Focus ${target.label}`);
+    button.setAttribute('aria-describedby', `protected-health-${target.originalId}`);
+    button.title = `Show ${target.label} on the battlefield. Cancels placement.`;
+    const name = document.createElement('span');
+    name.className = 'protected-name';
+    name.textContent = target.label;
+    const health = document.createElement('span');
+    health.className = 'protected-health';
+    health.id = `protected-health-${target.originalId}`;
+    const meter = document.createElement('span');
+    meter.className = 'protected-meter';
+    meter.setAttribute('aria-hidden', 'true');
+    const fill = document.createElement('i');
+    meter.append(fill);
+    const hint = document.createElement('span');
+    hint.className = 'protected-focus-hint';
+    hint.textContent = 'Focus';
+    const focusIcon = document.createElement('span');
+    focusIcon.className = 'protected-focus-icon';
+    hint.append(focusIcon);
+    hint.setAttribute('aria-hidden', 'true');
+    button.append(name, health, meter, hint);
+    button.addEventListener('click', event => {
+      // A physical release must belong to a fresh press on this exact control.
+      // Keyboard / assistive activation retains native Space/Enter behavior;
+      // the global input-scope guard rejects held keys from another scope.
+      if (event.detail !== 0 && (armedProtectedControl?.button !== button ||
+        (Number.isFinite(event.pointerId) && event.pointerId >= 0 &&
+          armedProtectedControl.pointerId !== event.pointerId))) return;
+      armedProtectedControl = null;
+      focusProtectedObjective(target.originalId);
+    });
+    protectedControls.set(target.originalId, { button, health, fill, status: null });
+    $('protectedTargets').append(button);
+  }
+  syncProtectedLayout();
+}
+function syncProtectedLayout() {
+  const protect = protectedControls.size > 0;
+  const landscape = !!window.matchMedia?.('(max-height: 500px) and (orientation: landscape)').matches;
+  const portrait = !!window.matchMedia?.('(max-width: 700px) and (orientation: portrait)').matches;
+  const next = landscape ? 'landscape' : portrait ? 'portrait' : 'ordinary';
+  const changed = mobileLayout !== next;
+  const focused = document.activeElement;
+  if (changed) {
+    interruptMobileInput();
+    setCompactBuildOpen(false);
+  }
+  mobileLayout = next;
+  $('app').classList.toggle('protected-landscape', landscape);
+  $('app').classList.toggle('protected-portrait', portrait);
+  $('app').classList.toggle('protected-mobile', landscape || portrait);
+  $('app').classList.toggle('mobile-ordinary', !protect);
+  $('app').classList.toggle('protected-compact', landscape || portrait);
+  $('protectedNavigation').classList.toggle('hidden', !landscape && !portrait);
+  const move = (id, parent) => { if ($(id).parentNode !== $(parent)) $(parent).append($(id)); };
+  move('objectiveHUD', protect || landscape || portrait ? 'protectedDock' : 'battlefield');
+  $('protectedDock').classList.toggle('hidden', !protect && !landscape && !portrait);
+  // On mobile every mode uses the same dock and Build control. Ordinary battles
+  // show their own objective summary, never invented protected targets.
+  $('objectiveHUD').classList.toggle('hidden', !currentCampaign && !currentChallenge && !landscape && !portrait);
+  $('objectiveIdentity').classList.toggle('hidden', !protect && !landscape && !portrait);
+  if (!protect) $('objectiveIdentity').textContent = landscape || portrait
+    ? `${game.difficulty.toUpperCase()} · ${currentCampaign ? 'MISSION' : currentChallenge ? 'FIELD TRIAL' : 'SKIRMISH'}` : '';
+  move('battleTop', landscape || portrait ? 'topbar' : 'battlefield');
+  move('battleTools', landscape || portrait ? 'protectedNavigation' : 'battlefield');
+  move('mapControls', landscape || portrait ? 'protectedNavigation' : 'battlefield');
+  const buildParent = portrait ? $('protectedNavigation') : $('objectiveHUD');
+  const buildNext = portrait ? $('battleTools') : $('protectedTargets');
+  if ($('compactBuild').parentNode !== buildParent || $('compactBuild').nextSibling !== buildNext)
+    buildParent.insertBefore($('compactBuild'), buildNext);
+  move('selectionPanel', landscape || portrait ? 'commandDeck' : 'battlefield');
+  updateCompactBuildControl();
+  if (changed) {
+    syncInputScope();
+    if (focused?.isConnected && !focused.closest('.hidden,[inert]') && focused.getClientRects().length) focused.focus({preventScroll:true});
+  }
+  positionToast();
+}
+window.addEventListener('resize', () => { syncProtectedLayout(); syncViewportSafety(); });
+function updateCompactBuildControl() {
+  const button = $('compactBuild'), open = $('app').classList.contains('compact-build-open');
+  const armed = !!(ui.build || ui.spell);
+  button.textContent = armed ? 'Cancel' : open ? 'Close' : 'Build';
+  button.setAttribute('aria-expanded', String(open));
+  button.setAttribute('aria-label', armed ? 'Cancel placement'
+    : open ? 'Close building controls' : 'Open building controls');
+  button.disabled = !canInteract();
+}
+function setCompactBuildOpen(open) {
+  const next = !!open && $('app').classList.contains('protected-compact');
+  const changed = $('app').classList.contains('compact-build-open') !== next;
+  const returnFocus = !next && changed && $('app').classList.contains('protected-compact') &&
+    $('commandDeck').contains(document.activeElement);
+  $('app').classList.toggle('compact-build-open', next);
+  if (returnFocus) $('compactBuild').focus({ preventScroll: true });
+  updateCompactBuildControl();
+  if (changed) {
+    syncInputScope();
+    if (next && coachEnabled) {
+      const hint = campaignCoach(game, currentCampaign, ui);
+      const target = hint && document.querySelector(hint.control);
+      if (target && $('commandDeck').contains(target)) target.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+    }
+    updateCampaignDeck();
+  }
+}
+$('compactBuild').onclick = () => {
+  if (!canInteract()) return;
+  if (ui.build || ui.spell) cancel();
+  else {
+    const open = $('app').classList.contains('compact-build-open');
+    if (!open && ui.selected) { ui.selected = null; updateSelection(); }
+    setCompactBuildOpen(!open);
+  }
+};
+function canFocusProtectedObjective() {
+  return canInteract() && !$('objectiveHUD').closest('[inert]') &&
+    !dialogLayers.some(layer => !layer.classList.contains('hidden'));
+}
+function focusProtectedObjective(originalId) {
+  if (!canFocusProtectedObjective()) return;
+  const target = protectedMonitor?.observe().find(item => item.originalId === originalId);
+  if (!target || target.status === 'lost') return;
+  cancel();
+  setCompactBuildOpen(false);
+  resetBattleGesture();
+  renderer.camera = target.x;
+  renderer.clampCamera();
+  follow = false;
+  $('front').style.borderColor = '';
+  toast(`Showing ${target.label}.`);
+}
+document.addEventListener('pointerdown', event => {
+  const button = event.target.closest?.('[data-protected-id]');
+  armedProtectedControl = button && $('protectedTargets').contains(button) &&
+    (event.pointerType !== 'mouse' || event.button === 0) ? { button, pointerId: event.pointerId } : null;
+}, true);
+document.addEventListener('pointercancel', () => { armedProtectedControl = null; }, true);
+window.addEventListener('blur', () => { armedProtectedControl = null; });
+function updateProtectedObjectives() {
+  const targets = protectedMonitor?.read() || [];
+  if (!targets.length) return;
+  const enabled = canFocusProtectedObjective();
+  const announcements = [];
+  for (const target of targets) {
+    const control = protectedControls.get(target.originalId);
+    if (!control) continue;
+    // Keep these exact nodes mounted: damage must not steal focus or change a
+    // held touch's target. Announce status transitions, never every HP tick.
+    const health = target.status === 'lost' ? 'Original missing'
+      : `${target.percent}% HP${target.status === 'critical' ? ' · Critical' : ''}`;
+    if (control.health.textContent !== health) control.health.textContent = health;
+    control.health.setAttribute('aria-label', target.status === 'lost' ? 'Original structure missing; health unavailable.'
+      : `${Math.ceil(target.hp)} of ${Math.ceil(target.maxHp)} health. ${target.status}.`);
+    control.fill.style.width = `${target.percent ?? 0}%`;
+    control.button.dataset.state = target.status;
+    control.button.disabled = !enabled || target.status === 'lost';
+    if (control.status !== target.status && ['critical', 'lost'].includes(target.status))
+      announcements.push(`${target.label}: ${target.status === 'lost' ? 'original structure lost' : 'critical health'}.`);
+    control.status = target.status;
+  }
+  if (announcements.length) $('protectedAlert').textContent = announcements.join(' ');
+}
+function finishProtectedObjectives() {
+  const details = protectedLossDetails(protectedMonitor?.observe() || []);
+  const list = $('resultProtectedLoss');
+  list.textContent = '';
+  for (const detail of details) {
+    const item = document.createElement('li');
+    item.textContent = detail;
+    list.append(item);
+  }
+  list.classList.toggle('hidden', !details.length);
 }
 function beginBattleReport(resumed) {
   battleJournal = null;
@@ -757,6 +1138,7 @@ function beginBattleReport(resumed) {
   try {
     battleJournal = createBattleJournal(game, {
       resumed,
+      identity: identityOf(game, scenarioForBattle(currentChallenge, currentCampaign)),
       mode: currentCampaign ? 'campaign' : currentChallenge ? 'challenge' : 'skirmish',
       id: currentCampaign || currentChallenge,
       name: authored?.name || `${game.map.name} skirmish`,
@@ -837,11 +1219,13 @@ $('resultReport').addEventListener('click', (event) => {
   }
 });
 $('start').onclick = () => start();
-function showTitle() {
+function showTitle({ focusStart = false, focusResume = false } = {}) {
   if (recoveryHold || profileGate) {
     showRecoverySettings();
     return;
   }
+  viewportPause.clear();
+  $('viewportModal').classList.add('hidden');
   padHud = false;
   started = false;
   paused = false;
@@ -852,6 +1236,12 @@ function showTitle() {
   $('welcome').classList.remove('hidden');
   setMode(mode);
   updateResume();
+  syncDialogs();
+  if (focusStart || focusResume) requestAnimationFrame(() => {
+    if (started || activeDialog !== $('welcome')) return;
+    const resume = $('resumeSaved');
+    (focusResume && !resume.classList.contains('hidden') ? resume : $('start')).focus();
+  });
 }
 $('playAgain').onclick = () => {
   if (currentCampaign && objectiveOutcome?.failed) {
@@ -869,18 +1259,25 @@ $('playAgain').onclick = () => {
   if (currentCampaign) {
     mode = 'campaign';
     const overview = getCampaignOverview(campaignProgress);
-    selectedCampaign = overview.nextMissionId || currentCampaign;
+    selectedCampaign = (isIntroMission(currentCampaign) ? overview.introduction.nextMissionId : null)
+      || overview.nextMissionId || currentCampaign;
     selectedChapter = CAMPAIGN_MISSIONS.find(
       (m) => m.id === selectedCampaign,
     ).chapterId;
   } else if (currentChallenge) mode = 'challenges';
   battleSession.remove();
-  showTitle();
+  showTitle({ focusStart: !!currentCampaign });
 };
-$('resultMenu').onclick = showTitle;
+$('replayMission').onclick = () => {
+  if (!currentCampaign || !objectiveOutcome?.completed || objectiveOutcome.stars >= 3) return;
+  mode = 'campaign';
+  selectedCampaign = currentCampaign;
+  start();
+};
+$('resultMenu').onclick = () => showTitle({ focusStart: true });
 $('inspectBattle').onclick = () => {
   $('resultModal').classList.add('hidden');
-  toast('Battle ended. Open the field guide or return to the menu.');
+  toast('Battle ended. Open the field guide or return to title.');
   pauseControl('menu');
   $('pause').onclick = showTitle;
 };
@@ -931,10 +1328,16 @@ function save() {
   if (saveStatus === 'stale') return false;
   const ok =
     saveStatus === 'current' &&
-    writeBattle(battleSession, SAVE, game, currentChallenge, currentCampaign);
+    writeBattle(battleSession, SAVE, game, currentChallenge, currentCampaign, { campaignProgress });
+  const failure = !ok && getBattleWriteFailure(battleSession);
+  if (failure?.code === 'invalid-battle') {
+    holdRecovery('This battle could not be saved safely. The previous checkpoint is unchanged. ' + failure.message, 'battle');
+    showRecoverySettings();
+    return false;
+  }
   if (!ok && !saveWarning) {
     toast(
-      'Autosave unavailable. Your battle is still running, but keep this page open.',
+      paused ? 'Saving unavailable. Your battle remains paused on this page; keep it open.' : 'Autosave unavailable. Your battle is still running, but keep this page open.',
     );
     saveWarning = true;
   }
@@ -949,42 +1352,25 @@ function updateResume() {
     button.className = 'resume-saved';
     $('start').after(button);
   }
-  let valid = null,
-    cid = null,
-    mid = null,
-    error = false;
+  let valid = null, cid = null, mid = null, error = false, original = null;
+  resumeProblem = null;
   try {
-    const raw = storage.get(SAVE);
-    if (raw && typeof Game.restore === 'function') {
-      const data = JSON.parse(raw);
-      if (data.format === 'ironroot-save') {
-        if (![1, 2].includes(data.version)) throw Error('Invalid version');
-        cid = data.challengeId ?? null;
-        mid = data.campaignId ?? null;
-        if (
-          (cid && mid) ||
-          (cid !== null && !CHALLENGES.some((c) => c.id === cid)) ||
-          (mid !== null && !CAMPAIGN_MISSIONS.some((m) => m.id === mid)) ||
-          (mid && !isMissionUnlocked(campaignProgress, mid))
-        )
-          throw Error('Invalid mission');
-        valid = Game.restore(data.game);
-      } else valid = Game.restore(data);
-      const authored = mid
-        ? CAMPAIGN_MISSIONS.find((m) => m.id === mid)
-        : cid ? CHALLENGES.find((c) => c.id === cid) : null;
-      if (authored && valid.map.id !== (authored.mapId || 'classic'))
-        throw Error('Saved mission battlefield does not match its briefing');
-      if (valid.state.winner !== null) throw Error('Battle ended');
+    original = storage.get(SAVE);
+    if (original) {
+      const decoded = decodeBattle(original, { campaignProgress });
+      valid = decoded.game; cid = decoded.challengeId; mid = decoded.campaignId;
     }
-  } catch {
-    valid = null;
-    error = true;
+  } catch (cause) {
+    valid = null; error = true;
+    resumeProblem = { code: cause.code || 'invalid-battle', message: cause.message };
   }
   $('saveStatus').classList.toggle('hidden', !error);
   $('saveStatus').textContent = error
-    ? 'The saved battle could not be loaded. Starting a new battle will replace it.'
-    : '';
+    ? 'The saved battle could not be loaded and has not been changed. Download the original save, then open Preferences to restore a compatible backup.' : '';
+  $('exportUnreadableBattle').classList.toggle('hidden', !error);
+  $('exportUnreadableBattle').onclick = () => {
+    if (original !== null) downloadBackup(original, '-original-battle');
+  };
   button.classList.toggle('hidden', !valid);
   if (valid) {
     const name = mid
@@ -992,8 +1378,10 @@ function updateResume() {
       : cid
         ? `TRIAL · ${CHALLENGES.find((c) => c.id === cid).name.toUpperCase()}`
         : valid.map.id === 'classic' ? 'BATTLE' : valid.map.name.toUpperCase();
-    button.textContent = `RESUME ${name} · ${timeText(valid.state.time)}`;
+    const ruleLabel = valid.schemaVersion === 3 ? ` · ${valid.ruleset.endgame.name.toUpperCase()}` : '';
+    button.textContent = `RESUME ${name}${ruleLabel} · ${timeText(valid.state.time)}`;
     button.onclick = () => start(valid, cid, mid);
+    if (valid.limitReason) button.textContent = `VIEW PAUSED ${name}${ruleLabel} · ${timeText(valid.state.time)}`;
   }
 }
 
@@ -1012,17 +1400,17 @@ function finish() {
       currentChallenge && CHALLENGES.find((c) => c.id === currentChallenge);
   $('resultEyebrow').textContent = mission
     ? won
-      ? 'A WATCHFIRE BURNS BRIGHTER'
-      : 'THE ROAD IS NOT LOST'
+      ? 'MISSION WON'
+      : 'TRY THE MISSION AGAIN'
     : trial
       ? won
         ? 'FIELD TRIAL COMPLETE'
-        : 'ADAPT AND TRY AGAIN'
+        : 'TRY THE TRIAL AGAIN'
       : draw
         ? 'NO CITADEL LEFT STANDING'
         : won
-          ? 'THE FRONTIER IS YOURS'
-          : 'EVERY DEFEAT IS A LESSON';
+          ? 'BATTLE WON'
+          : 'TRY ANOTHER STRATEGY';
   $('resultTitle').textContent = mission
     ? won
       ? 'MISSION COMPLETE'
@@ -1050,7 +1438,8 @@ function finish() {
         ? 'Both citadels fell together. Neither commander claims the frontier.'
         : won
           ? 'Your army broke the enemy citadel.'
-          : 'Your citadel has fallen. Rebuild, adapt, return.';
+          : 'Your citadel fell. Try a different army or defend another lane.';
+  finishProtectedObjectives();
   $('resultTime').textContent = timeText(game.state.time);
   $('resultKills').textContent = game.state.stats.kills[0];
   $('resultBuilt').textContent = game.state.stats.built[0];
@@ -1074,7 +1463,9 @@ function finish() {
     ? (won ? 'CONTINUE CAMPAIGN' : 'RETRY MISSION') + ' <span>→</span>'
     : trial
       ? (won ? 'MORE FIELD TRIALS' : 'RETRY FIELD TRIAL') + ' <span>→</span>'
-      : 'FIGHT ANOTHER DAY <span>→</span>';
+      : 'NEW SKIRMISH <span>→</span>';
+  $('replayMission').classList.toggle('hidden', !mission || !won || objectiveOutcome.stars >= 3);
+  $('resultMenu').textContent = mission ? 'Campaign missions' : 'Return to title';
   $('resultModal').classList.remove('hidden');
   const completion = battleSession.captureResult();
   completion.remove();
@@ -1082,10 +1473,10 @@ function finish() {
   historySession.retain({
     won,
     draw,
-    challengeId: currentChallenge,
-    campaignId: currentCampaign,
+    ...(game.schemaVersion === 3
+      ? { identity: identityOf(game, scenarioForBattle(currentChallenge, currentCampaign)) }
+      : { challengeId: currentChallenge, campaignId: currentCampaign, ...(game.map.id !== 'classic' ? { mapId: game.map.id } : {}) }),
     difficulty: game.difficulty,
-    ...(game.map.id !== 'classic' ? { mapId: game.map.id } : {}),
     time: game.state.time,
     kills: game.state.stats.kills[0],
     built: game.state.stats.built[0],
@@ -1168,7 +1559,7 @@ $('battle').addEventListener('pointerup', (e) => {
   activateBattlePoint(w);
 });
 function activateBattlePoint(w) {
-  if (!canInteract()) return;
+  if (!canInteract() || $('app').classList.contains('compact-build-open')) return;
   if (ui.build) {
     const bounds = buildBounds(game.map, 0);
     if (
@@ -1177,7 +1568,7 @@ function activateBattlePoint(w) {
       w.y < bounds.minY - 15 ||
       w.y > bounds.maxY + 20
     ) {
-      toast('Build within your own frontier. Drag back toward your citadel.');
+      toast('Build in your territory. Drag back toward your citadel.');
       sound('error');
       return;
     }
@@ -1186,9 +1577,9 @@ function activateBattlePoint(w) {
     if (result.ok) {
       sound('build');
       toast(
-        `${BUILDINGS[ui.build].name} raised. ${BUILDINGS[ui.build].unit ? 'First troops in a moment.' : 'Your frontier grows.'}`,
+        `${(game.buildings || BUILDINGS)[ui.build].name} raised. ${(game.buildings || BUILDINGS)[ui.build].unit ? 'First troops in a moment.' : 'Your frontier grows.'}`,
       );
-      if (game.state.gold[0] < BUILDINGS[ui.build].cost) {
+      if (game.state.gold[0] < (game.buildings || BUILDINGS)[ui.build].cost) {
         ui.build = null;
         syncChoice();
       }
@@ -1202,7 +1593,7 @@ function activateBattlePoint(w) {
       sound('strike');
       ui.spell = false;
       syncChoice();
-      toast('Rally strike unleashed.');
+      toast('Arrow volley fired.');
     } else {
       toast(result.reason);
       sound('error');
@@ -1216,7 +1607,10 @@ function activateBattlePoint(w) {
       )[0];
     ui.selected = b && Math.hypot(b.x - w.x, b.y - w.y) < 95 ? b.id : null;
     requestAnimationFrame(updateSelection);
-    if (ui.selected) sound('click');
+    if (ui.selected) {
+      if ($('app').classList.contains('protected-mobile')) setCompactBuildOpen(true);
+      sound('click');
+    }
   }
 }
 function resetBattleGesture() {
@@ -1276,12 +1670,13 @@ window.addEventListener('keydown', (e) => {
     !$('backupModal').classList.contains('hidden') ||
     !$('settingsModal').classList.contains('hidden') ||
     !$('helpModal').classList.contains('hidden') ||
-    !$('resultModal').classList.contains('hidden')
+    !$('resultModal').classList.contains('hidden') ||
+    !$('viewportModal').classList.contains('hidden')
   )
     return;
   if (e.code === 'Space' && !nativeSpaceTarget(e.target)) {
     e.preventDefault();
-    pause(!paused);
+    pause(!paused, { explicit: true });
   }
   if (e.code === 'ArrowLeft') {
     e.preventDefault();
@@ -1294,8 +1689,8 @@ window.addEventListener('keydown', (e) => {
     follow = false;
   }
   if (e.code === 'KeyR') $('rally').click();
-  if (/^Digit[1-7]$/.test(e.code)) {
-    const key = Object.keys(BUILDINGS)[Number(e.code.slice(-1)) - 1];
+  if (/^Digit[1-9]$/.test(e.code)) {
+    const key = Object.keys(game.buildings || BUILDINGS)[Number(e.code.slice(-1)) - 1];
     if (key) selectBuild(key);
   }
 });
@@ -1353,6 +1748,7 @@ window.addEventListener('storage', (event) => {
     game.state.winner === null &&
     !objectiveOutcome
   ) {
+    setCompactBuildOpen(false);
     paused = true;
     $('pauseVeil').classList.remove('hidden');
     pauseControl('resume');
@@ -1362,7 +1758,7 @@ window.addEventListener('storage', (event) => {
   }
   if (!started) updateResume();
 });
-new ResizeObserver(() => renderer.resize()).observe($('battlefield'));
+new ResizeObserver(() => { renderer.resize(); positionToast(); syncViewportSafety(); }).observe($('battle'));
 new ResizeObserver(positionToast).observe($('objectiveHUD'));
 new ResizeObserver(() => syncChoice()).observe($('buildCards'));
 let hudTimer = 0,
@@ -1385,17 +1781,17 @@ function updateHUD() {
     $(prefix + 'HpText').textContent = hp + '%';
   }
   $('phase').innerHTML =
-    s.time > 420
+    s.time > 420 && game.ruleset?.endgame?.forcedDecay !== false
       ? 'CITADELS CRUMBLING<small>BREAK THE ENEMY FIRST</small>'
       : s.overtime
-        ? 'OVERTIME<small>FASTER WAVES · STRONGER SIEGE</small>'
-        : `${game.map.id === 'classic' ? 'THE LONG REACH' : game.map.name.toUpperCase()}<small>${game.map.lanes.length === 2 ? 'TWO' : 'THREE'} LANES · ${game.map.buildLimit} SITES</small>`;
+        ? 'OVERTIME<small>FASTER WAVES · MORE STRUCTURE DAMAGE</small>'
+        : `${game.map.id === 'classic' ? 'THE LONG REACH' : game.map.name.toUpperCase()}<small>${['ZERO', 'ONE', 'TWO', 'THREE'][game.map.lanes.length] || game.map.lanes.length} ${game.map.lanes.length === 1 ? 'LANE' : 'LANES'} · ${game.map.buildLimit} SITES</small>`;
   document
     .querySelectorAll('.build-card')
     .forEach((b) =>
       b.classList.toggle(
         'unaffordable',
-        s.gold[0] < BUILDINGS[b.dataset.type].cost,
+        s.gold[0] < (game.buildings || BUILDINGS)[b.dataset.type].cost,
       ),
     );
   $('rallyCost').innerHTML =
@@ -1405,7 +1801,7 @@ function updateHUD() {
   $('rally').style.opacity = s.spellCooldown[0] > 0 ? '.55' : '1';
   $('objectiveHUD').classList.toggle(
     'hidden',
-    !currentChallenge && !currentCampaign,
+    !currentChallenge && !currentCampaign && !$('app').classList.contains('protected-mobile'),
   );
   if (currentChallenge || currentCampaign) {
     const authored = currentCampaign
@@ -1441,7 +1837,14 @@ function updateHUD() {
     $('objectiveTime').textContent =
       `${timeText(Math.ceil(Math.max(0, authored.timeLimit - s.time)))} remaining`;
   }
+  updateProtectedObjectives();
+  updateCompactBuildControl();
+  if (!currentCampaign && !currentChallenge && $('app').classList.contains('protected-mobile')) {
+    $('objectiveProgress').textContent = 'Destroy the enemy citadel.';
+    $('objectiveTime').textContent = `${game.map.lanes.length} ${game.map.lanes.length === 1 ? 'road' : 'roads'}`;
+  }
   updateSelection();
+  updateCampaignDeck();
 }
 let heardEffects = new WeakSet(),
   heardProjectiles = new WeakSet();
@@ -1500,6 +1903,8 @@ function updateAudio() {
 }
 
 function frame(now) {
+  syncViewportSafety();
+  if (started && game.limitReason) holdBattleSafety(game.limitReason);
   if (now - lastProfileCheck > 250) {
     syncProfileSafety();
     lastProfileCheck = now;
@@ -1515,14 +1920,21 @@ function frame(now) {
       const outcome = advanceObjectiveBattle(
         game,
         dt * speed,
-        (g) =>
-          currentCampaign
+        (g) => {
+          // Observe each actual fixed-step evaluation, including the initial
+          // state. This does not change the authored outcome or simulation.
+          protectedMonitor?.observe(g);
+          return currentCampaign
             ? evaluateCampaignMission(g, currentCampaign)
-            : evaluateChallenge(g, currentChallenge),
+            : evaluateChallenge(g, currentChallenge);
+        },
         authored.timeLimit,
       );
       if (outcome.completed || outcome.failed) objectiveOutcome = outcome;
-    } else game.update(dt * speed);
+    } else {
+      const step = game.update(dt * speed);
+      if (step?.code === 'save-safety-limit') holdBattleSafety(step.reason);
+    }
     sampleBattleReport();
     if (follow)
       renderer.camera +=
@@ -1551,6 +1963,7 @@ function frame(now) {
     .filter((t) => t.kind === 'protect' && t.building)
     .map((t) => t.building.id);
   renderer.draw(game, ui, dt);
+  if (started && !paused && !objectiveOutcome) drawCampaignGuidance(renderer, game, ui);
   hudTimer += dt;
   if (hudTimer > 0.1) {
     updateHUD();
@@ -1606,9 +2019,13 @@ function renderChallenge() {
 }
 function setMode(value) {
   mode = value;
+  if (!started) populateFieldGuide(mode === 'skirmish' ? getRuleset(selectedRuleset, 1) : null);
   document
     .querySelectorAll('[data-mode]')
-    .forEach((b) => b.classList.toggle('active', b.dataset.mode === mode));
+    .forEach((b) => {
+      b.classList.toggle('active', b.dataset.mode === mode);
+      b.setAttribute('aria-pressed', String(b.dataset.mode === mode));
+    });
   $('skirmishConfig').classList.toggle('hidden', mode !== 'skirmish');
   $('challengeConfig').classList.toggle('hidden', mode !== 'challenges');
   $('campaignConfig').classList.toggle('hidden', mode !== 'campaign');
@@ -1624,10 +2041,25 @@ function setMode(value) {
       ? 'BEGIN MISSION <span>→</span>'
       : mode === 'challenges'
         ? 'START FIELD TRIAL <span>→</span>'
-        : 'ENTER THE FRONTIER <span>→</span>';
+        : 'BEGIN SKIRMISH <span>→</span>';
   renderChallenge();
   renderCampaign();
 }
+function updateSkirmishRules() {
+  const rules = getRuleset(selectedRuleset, 1);
+  $('skirmishRules').value = selectedRuleset;
+  $('skirmishRulesDescription').textContent = rules.endgame.forcedDecay
+    ? 'Rootwardens join the roster. Production and structure damage increase at 5:00; citadels begin losing health at 7:00.'
+    : 'Rootwardens join the roster. Production and structure damage increase at 5:00. Citadels never lose health just because time passes.';
+  if (!started && mode === 'skirmish') populateFieldGuide(rules);
+}
+$('skirmishRules').onchange = () => {
+  const value = $('skirmishRules').value;
+  if (!['frontier-rootwarden-open', 'frontier-rootwarden-timed'].includes(value)) return;
+  selectedRuleset = value;
+  updateSkirmishRules();
+};
+updateSkirmishRules();
 for (const button of document.querySelectorAll('[data-mode]'))
   button.onclick = () => {
     setMode(button.dataset.mode);
@@ -1643,6 +2075,8 @@ function revealCampaignChapter() {
 }
 function renderCampaign() {
   const overview = getCampaignOverview(campaignProgress),
+    chapters = [overview.introduction.chapter, ...overview.chapters],
+    missions = [...overview.introduction.missions, ...overview.missions],
     mission =
       CAMPAIGN_MISSIONS.find((m) => m.id === selectedCampaign) ||
       CAMPAIGN_MISSIONS[0],
@@ -1653,14 +2087,16 @@ function renderCampaign() {
     `${overview.cleared}/${overview.total} missions · ${overview.stars}/${overview.maxStars} stars`;
   $('campaignCount').textContent = String(overview.total);
   $('campaignChapters').textContent = '';
-  for (const c of overview.chapters) {
+  $('campaignIntroProgressText').textContent = `Optional opening missions: ${overview.introduction.cleared}/${overview.introduction.total} · ${overview.introduction.stars}/${overview.introduction.maxStars} stars`;
+  $('skipIntroduction').classList.toggle('hidden', !isIntroMission(mission.id));
+  for (const c of chapters) {
     const button = document.createElement('button');
     button.dataset.chapter = c.id;
     button.className = c.id === chapter.id ? 'active' : '';
-    button.innerHTML = `<span>CHAPTER ${c.number} · ${c.stars}/${c.maxStars} ★</span><b>${c.name}</b>`;
+    button.innerHTML = `<span>${c.optional ? 'START HERE' : 'CHAPTER ' + c.number} · ${c.stars}/${c.maxStars} ★</span><b>${c.name}</b>`;
     button.onclick = () => {
       selectedChapter = c.id;
-      const candidates = overview.missions.filter((m) => m.chapterId === c.id);
+      const candidates = missions.filter((m) => m.chapterId === c.id);
       selectedCampaign = (
         candidates.find((m) => m.unlocked && !m.completed) || candidates[0]
       ).id;
@@ -1670,13 +2106,13 @@ function renderCampaign() {
     $('campaignChapters').append(button);
   }
   $('campaignChapterTitle').textContent = chapter.subtitle;
-  $('campaignChapterStory').textContent = overview.chapters.find(
+  $('campaignChapterStory').textContent = chapters.find(
     (c) => c.id === chapter.id,
   ).completed
     ? chapter.epilogue
     : chapter.description;
   $('campaignMissions').textContent = '';
-  for (const m of overview.missions.filter((m) => m.chapterId === chapter.id)) {
+  for (const m of missions.filter((m) => m.chapterId === chapter.id)) {
     const button = document.createElement('button');
     button.dataset.mission = m.id;
     button.className = [
@@ -1721,13 +2157,20 @@ function renderCampaign() {
     requestAnimationFrame(revealCampaignChapter);
   }
 }
-renderChallenge();
-renderCampaign();
+$('skipIntroduction').onclick = () => {
+  const overview = getCampaignOverview(campaignProgress);
+  selectedCampaign = overview.nextMissionId || overview.missions[0].id;
+  selectedChapter = CAMPAIGN_MISSIONS.find(mission => mission.id === selectedCampaign).chapterId;
+  renderCampaign();
+  $('start').focus();
+};
+setMode(mode);
 new ResizeObserver(revealCampaignChapter).observe($('campaignChapters'));
 let settingsWasPaused = false;
 function showSettings() {
   settingsWasPaused = paused;
   if (started && game.state.winner === null && !objectiveOutcome) {
+    setCompactBuildOpen(false);
     paused = true;
     $('pauseVeil').classList.add('hidden');
   }
@@ -1760,7 +2203,7 @@ function syncSettings() {
   $('battleHistory').textContent = '';
   if (!rows.length) {
     const p = document.createElement('p');
-    p.textContent = history.ok ? 'Your completed battles will appear here.' : 'No previously verified history is available in this tab.';
+    p.textContent = history.ok ? 'Completed battles appear here.' : 'No previously verified history is available in this tab.';
     $('battleHistory').append(p);
   }
   if (!history.ok && rows.length) {
@@ -1768,7 +2211,11 @@ function syncSettings() {
     notice.textContent = 'Showing this tab’s retained results; stored history could not be checked.';
     $('battleHistory').append(notice);
   }
-  for (const row of rows) {
+  for (const storedRow of rows) {
+    const row = storedRow.identity ? { ...storedRow,
+      campaignId: storedRow.identity.scenario.kind === 'campaign' ? storedRow.identity.scenario.id : null,
+      challengeId: storedRow.identity.scenario.kind === 'trial' ? storedRow.identity.scenario.id : null,
+      mapId: storedRow.identity.map.id } : storedRow;
     const p = document.createElement('p');
     const label = row.campaignId
       ? CAMPAIGN_MISSIONS.find((m) => m.id === row.campaignId)?.name ||
@@ -1834,6 +2281,7 @@ $('effectQuality').onchange = () => {
 };
 // Dialog focus never escapes into a live battlefield behind the overlay.
 const dialogLayers = [
+  $('viewportModal'),
   $('welcome'),
   $('helpModal'),
   $('settingsModal'),
@@ -1845,12 +2293,15 @@ const dialogFocus = new WeakMap();
 const inputScope = createInputScopeGuard();
 function syncInputScope() {
   const dialog = dialogLayers.findLast((layer) => !layer.classList.contains('hidden'));
-  const next = dialog || (!$('pauseVeil').classList.contains('hidden')
+  const next = (dialog?.id === 'viewportModal' ? viewportScope() : dialog) || (!$('pauseVeil').classList.contains('hidden')
     ? 'pause'
-    : game.state.winner !== null || objectiveOutcome ? 'ended' : 'battle');
+    : game.state.winner !== null || objectiveOutcome ? 'ended'
+      : $('app').classList.contains('compact-build-open') ? 'compact-build'
+        : $('app').classList.contains('protected-compact') ? `compact-battle:${mobileLayout}` : 'battle');
   if (inputScope.setScope(next)) resetBattleGesture();
 }
 function guardInput(event, check) {
+  syncViewportSafety();
   // Read the DOM too: a scope can change during the same event turn, before
   // the MutationObserver has restored focus/inert state.
   syncInputScope();
@@ -1859,6 +2310,7 @@ function guardInput(event, check) {
   event.stopImmediatePropagation();
 }
 document.addEventListener('pointerdown', (event) => {
+  syncViewportSafety();
   syncInputScope();
   inputScope.pointerDown(event);
 }, true);
@@ -1996,6 +2448,53 @@ document.addEventListener('keydown', (e) => {
 syncDialogs();
 syncChoice();
 
+// A viewport interruption is a pause reason, never a saved game field.
+function viewportScope() { return battleSafetyReason ? 'battle-safety' : viewportPause.blocked ? 'viewport-blocked' : 'viewport-ready'; }
+function interruptMobileInput() {
+  inputScope.interrupt();
+  resetBattleGesture();
+  armedProtectedControl = null;
+  closeSelectionArmed = false;
+  controller.reset();
+  padHud = false;
+}
+function syncViewportSafety() {
+  const relevant = started && game.state.winner === null && !objectiveOutcome;
+  if (!relevant) return;
+  const mobile = $('app').classList.contains('protected-mobile');
+  const viewport = visibleViewportRect(window.innerWidth, window.innerHeight, window.visualViewport);
+  const panel = $('viewportModal');
+  panel.style.left = `${viewport.left}px`; panel.style.top = `${viewport.top}px`;
+  panel.style.width = `${viewport.width}px`; panel.style.height = `${viewport.height}px`;
+  let geometry = {safe:true,reason:''};
+  if (mobile) {
+    const controls = ['pause','speed','sound','settings','home','front','minimap','compactBuild',
+      ...[...protectedControls.values()].map(c => c.button.id)].filter(Boolean).map(id => $(id).getBoundingClientRect());
+    // Protected buttons use stable authored IDs in data attributes, not DOM IDs.
+    for (const {button} of protectedControls.values()) if (!button.id) controls.push(button.getBoundingClientRect());
+    geometry = inspectMobileGeometry({viewport,canvas:$('battle').getBoundingClientRect(),
+      regions:['topbar','protectedDock','protectedNavigation'].map(id => $(id).getBoundingClientRect()),controls});
+  }
+  const wasActive = viewportPause.active;
+  const changed = viewportPause.measure(!geometry.safe);
+  if (!changed) return;
+  interruptMobileInput();
+  if (!wasActive && viewportPause.active) {
+    cancel();
+    $('viewportSaveStatus').textContent = '';
+    pause(true);
+  }
+  panel.classList.toggle('hidden', !viewportPause.active);
+  $('viewportResume').disabled = viewportPause.blocked || !!battleSafetyReason || !!game.limitReason;
+  $('viewportTitle').textContent = viewportPause.blocked ? 'Battle paused for screen size' : 'Battle ready to resume';
+  $('viewportReason').textContent = battleSafetyReason || game.limitReason || (viewportPause.blocked
+    ? `${geometry.reason} Rotate your device or enlarge the window. Your battle stays paused.`
+    : 'The battlefield fits again. Resume when you are ready.');
+  syncDialogs();
+}
+window.visualViewport?.addEventListener('resize', () => { syncProtectedLayout(); syncViewportSafety(); });
+window.visualViewport?.addEventListener('scroll', syncViewportSafety);
+
 // Portable backups stay on the player's device. Nothing is uploaded.
 let pendingBackupText = null;
 let backupWriteAttempted = false;
@@ -2006,6 +2505,7 @@ function invalidateImportRead() {
 }
 function holdRecovery(message, reason = 'rollback') {
   recoveryHold = { message, reason };
+  setCompactBuildOpen(false);
   paused = true;
   updateRecoveryUI();
 }
@@ -2037,6 +2537,7 @@ function updateRecoveryUI() {
     (needsRecovery && !$('backupRecoveryConsent').checked);
 }
 function showRecoverySettings() {
+  setCompactBuildOpen(false);
   paused = true;
   $('resultModal').classList.add('hidden');
   if ($('settingsModal').classList.contains('hidden')) showSettings();
@@ -2051,6 +2552,7 @@ function syncProfileSafety() {
       ? status
       : null;
   if (profileGate) {
+    setCompactBuildOpen(false);
     paused = true;
     if ($('backupModal').classList.contains('hidden')) showRecoverySettings();
   }
@@ -2061,6 +2563,7 @@ function reloadProfile() {
   allowProfileReload = true;
   started = false;
   progressDirty = false;
+  setCompactBuildOpen(false);
   paused = true;
   pendingBackupText = null;
   location.reload();
@@ -2101,13 +2604,7 @@ $('exportRecovery').onclick = () => {
   try {
     const battle =
       started && game.state.winner === null && !objectiveOutcome
-        ? {
-            format: 'ironroot-save',
-            version: 2,
-            campaignId: currentCampaign,
-            challengeId: currentChallenge,
-            game: game.serialize(),
-          }
+        ? encodeBattle(game, scenarioForBattle(currentChallenge, currentCampaign), { campaignProgress })
         : null;
     // Every domain is explicit, so unavailable/partly replaced local storage is never read.
     const text = createBackup(
@@ -2210,16 +2707,12 @@ $('backupFile').onchange = async () => {
       overview = getCampaignOverview(parsed.data.campaign);
     pendingBackupText = text;
     backupWriteAttempted = false;
-    const battle = parsed.data.battle,
-      battleName = battle
-        ? battle.campaignId
-          ? CAMPAIGN_MISSIONS.find((m) => m.id === battle.campaignId).name
-          : battle.challengeId
-            ? CHALLENGES.find((c) => c.id === battle.challengeId).name
-            : battle.game.mapId
-              ? `Skirmish · ${getMap(battle.game.mapId).name}`
-              : 'Skirmish'
-        : null;
+    const battle = parsed.data.battle;
+    const admitted = battle ? decodeBattle(battle, { campaignProgress: parsed.data.campaign }) : null;
+    const battleName = admitted
+      ? admitted.campaignId ? CAMPAIGN_MISSIONS.find(m => m.id === admitted.campaignId).name
+        : admitted.challengeId ? CHALLENGES.find(c => c.id === admitted.challengeId).name
+          : `Skirmish · ${admitted.game.map.name}` : null;
     $('backupSummary').textContent =
       `${overview.cleared}/${overview.total} campaign missions · ${overview.stars}/${overview.maxStars} stars · ${Object.keys(parsed.data.trials).length}/5 trial records. ${battle ? `Saved battle: ${battleName} at ${timeText(battle.game.state.time)}.` : 'No battle in this file. Your current saved battle will be removed.'}`;
     $('backupImportStatus').textContent = '';
@@ -2310,9 +2803,9 @@ function controllerScope() {
   const dialog = [...dialogLayers]
     .reverse()
     .find((layer) => !layer.classList.contains('hidden'));
-  if (dialog) return { mode: 'menu', key: dialog.id, element: dialog };
+  if (dialog) return { mode: 'menu', key: dialog.id === 'viewportModal' ? viewportScope() : dialog.id, element: dialog };
   if (paused) return { mode: 'menu', key: 'pause', element: $('pauseVeil') };
-  if (padHud)
+  if (padHud || $('app').classList.contains('compact-build-open'))
     return {
       mode: 'menu',
       key: 'hud',
@@ -2333,6 +2826,10 @@ function padControls(scope) {
 }
 function focusPadControl(control) {
   if (!control) return;
+  if (control.closest?.('#commandDeck')) {
+    if (control.matches?.('.build-card, #rally') && ui.selected) { ui.selected = null; updateSelection(); }
+    setCompactBuildOpen(true);
+  }
   control.focus();
   control.scrollIntoView({ block: 'nearest', inline: 'nearest' });
 }
@@ -2381,7 +2878,7 @@ function controllerBack(scope) {
   if (scope.key === 'backupModal') hideBackup();
   else if (scope.key === 'settingsModal') hideSettings();
   else if (scope.key === 'helpModal') hideHelp();
-  else if (scope.key === 'pause') pause(false);
+  else if (scope.key === 'pause') pause(false, { explicit: true });
   else if (scope.key === 'resultModal' || scope.key === 'ended') showTitle();
   else if (scope.key === 'hud') {
     padHud = false;
@@ -2408,7 +2905,7 @@ function handleControllerAction({ action }) {
     return;
   }
   if (action === 'pause') {
-    if (scope.key === 'pause') pause(false);
+    if (scope.key === 'pause') pause(false, { explicit: true });
     else if (scope.key === 'battle' || scope.key === 'hud') pause(true);
   } else if (action === 'cancel') controllerBack(scope);
   else if (action === 'focus') {
@@ -2416,6 +2913,7 @@ function handleControllerAction({ action }) {
       padHud = true;
       focusPadControl(document.querySelector('.build-card'));
     } else if (scope.key === 'hud') {
+      setCompactBuildOpen(false);
       padHud = false;
       $('battle').focus();
     }
@@ -2461,10 +2959,10 @@ function handleControllerAction({ action }) {
     else if (action === 'home') $('home').click();
     else if (action === 'frontline') $('front').click();
     else if (action === 'previousCard' || action === 'nextCard') {
-      const types = Object.keys(BUILDINGS),
+      const types = campaignBuildChoices(currentCampaign, { expanded: expandedBuilds, resumed: resumedBattle, buildings: game.buildings || BUILDINGS }),
         index = types.indexOf(ui.build);
       const next = nextAffordableIndex(
-        types.map((type) => BUILDINGS[type]),
+        types.map((type) => (game.buildings || BUILDINGS)[type]),
         index,
         action === 'nextCard' ? 1 : -1,
         game.state.gold[0],

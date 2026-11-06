@@ -1,12 +1,11 @@
-import { BUILDINGS, UNITS, getMap } from './engine.js';
+import { getMap, getRuleset } from './engine.js';
+import { identityOf, scenarioForBattle, validateBattleIdentity } from './battle-codec.js';
 
 /** Read-only, current-session observations. This module never drives the game. */
 const INTERVAL = 2;
 const MAX_POINTS = 256;
 const EPSILON = 1e-7;
 const completedReports = new WeakSet();
-const unitTypes = Object.keys(UNITS);
-const buildingTypes = Object.keys(BUILDINGS);
 const peakFields = ['gold', 'income', 'armyCount', 'buildingCount'];
 const fail = message => { throw new TypeError(`Battle report: ${message}`); };
 const object = value => value !== null && typeof value === 'object' && !Array.isArray(value);
@@ -49,13 +48,13 @@ function readTime(game) {
 }
 function readMap(game) {
   if (!object(game.map)) fail('a battlefield descriptor is required.');
-  const map = getMap(game.map.id);
+  const map = getMap(game.map.id, game.map.revision);
   if (game.map.revision !== map.revision) fail('unsupported battlefield revision.');
   return freeze({ id: map.id, revision: map.revision, name: map.name, width: map.width, height: map.height, lanes: [...map.lanes], laneCount: map.lanes.length });
 }
 function liveEntities(value, definitions, field, max) {
   return array(value, field, max).filter(entity => {
-    if (!object(entity) || !Object.hasOwn(definitions, entity.type)) fail(`${field} contains an unknown entity.`);
+    if (!object(entity) || typeof entity.type !== 'string' || !Object.hasOwn(definitions, entity.type)) fail(`${field} contains an unknown entity.`);
     side(entity.side, `${field} side`);
     number(entity.hp, `${field} health`);
     if (field === 'buildings') {
@@ -67,7 +66,9 @@ function liveEntities(value, definitions, field, max) {
 function composition(entities, owner, types, definitions) {
   return types.map(type => ({ type, name: definitions[type].name, count: entities.filter(entity => entity.side === owner && entity.type === type).length }));
 }
-function snapshot(game, map) {
+function snapshot(game, map, roster) {
+  const { units: UNITS, buildings: BUILDINGS } = roster;
+  const unitTypes = Object.keys(UNITS), buildingTypes = Object.keys(BUILDINGS);
   const time = readTime(game), state = game.state;
   if (game.map.id !== map.id || game.map.revision !== map.revision) fail('battlefield changed during recording.');
   const units = liveEntities(state.units, UNITS, 'units', 140);
@@ -106,7 +107,7 @@ function cumulativeStats(game) {
     damage: number(stats.damage[owner], 'damage'),
   }));
 }
-function readObjectives(objectiveOutcome, targets, map) {
+function readObjectives(objectiveOutcome, targets, map, BUILDINGS) {
   let items = [];
   if (objectiveOutcome !== null) {
     if (!object(objectiveOutcome)) fail('objective outcome must be an object.');
@@ -129,7 +130,7 @@ function readObjectives(objectiveOutcome, targets, map) {
   const copiedTargets = array(targets, 'resolved targets', 48).map(target => {
     if (!object(target) || !['protect', 'destroy'].includes(target.kind)) fail('target kind must be protect or destroy.');
     const owner = side(target.side, 'target side');
-    if (!Object.hasOwn(BUILDINGS, target.type)) fail('unknown target building.');
+    if (typeof target.type !== 'string' || !Object.hasOwn(BUILDINGS, target.type)) fail('unknown target building.');
     const lane = number(target.lane, 'target lane', { max: map.laneCount - 1, integer: true });
     const x = number(target.x, 'target position', { max: map.width });
     if (target.building !== null && !object(target.building)) fail('resolved target must supply a building or null.');
@@ -161,17 +162,27 @@ function outcomeFor(game, objectiveOutcome) {
  * app, uses simulation time, and owns no engine references in returned data.
  * Call sample after advancement; finish forces an exact terminal snapshot.
  */
-export function createBattleJournal(game, { resumed = false, mode = 'skirmish', id = null, name = 'Skirmish' } = {}) {
+export function createBattleJournal(game, { resumed = false, mode = 'skirmish', id = null, name = 'Skirmish', identity: suppliedIdentity = null } = {}) {
   boolean(resumed, 'resumed flag');
-  if (!['skirmish', 'campaign', 'challenge'].includes(mode)) fail('unknown battle mode.');
+  if (!['skirmish', 'campaign', 'challenge', 'trial', 'lesson'].includes(mode)) fail('unknown battle mode.');
   if (id !== null) text(id, 'battle id', 100);
   const context = freeze({ mode, id, name: text(name, 'battle name', 200) });
-  const map = readMap(game), initial = snapshot(game, map);
+  const map = readMap(game);
+  const roster = getRuleset(game.ruleset.id, game.ruleset.revision);
+  if (game.units !== roster.units || game.buildings !== roster.buildings) fail('game definitions do not match its ruleset.');
+  const identity = suppliedIdentity === null
+    ? identityOf(game, mode === 'lesson' ? { kind: 'lesson', id, revision: 1 } : scenarioForBattle(['challenge', 'trial'].includes(mode) ? id : null, mode === 'campaign' ? id : null))
+    : validateBattleIdentity(suppliedIdentity);
+  if (identity.ruleset.id !== roster.id || identity.ruleset.revision !== roster.revision || identity.map.id !== map.id || identity.map.revision !== map.revision) fail('identity does not match the recorded game.');
+  if (id !== null && (identity.scenario.id !== id || identity.scenario.kind !== (mode === 'challenge' ? 'trial' : mode))) fail('scenario identity does not match the recording context.');
+  const rules = freeze({ name: roster.name, endgame: { ...roster.endgame } });
+  const initial = snapshot(game, map, roster);
   let timeline = [initial], interval = INTERVAL, thinningPasses = 0, observationCount = 1;
   let lastSeenTime = initial.time, finished = null;
   const observedPeaks = [0, 1].map(owner => ({ side: owner, ...Object.fromEntries(peakFields.map(field => [field, { value: initial.sides[owner][field], time: initial.time }])) }));
   const checkIdentity = current => {
     if (current !== game) fail('a journal belongs to one game; create a new journal after restore or restart.');
+    if (current.ruleset !== roster || current.units !== roster.units || current.buildings !== roster.buildings) fail('ruleset changed during recording.');
   };
   const checkGame = current => {
     checkIdentity(current);
@@ -203,7 +214,7 @@ export function createBattleJournal(game, { resumed = false, mode = 'skirmish', 
         lastSeenTime = time;
         return false;
       }
-      accept(snapshot(current, map));
+      accept(snapshot(current, map, roster));
       return true;
     },
     finish(current = game, { objectiveOutcome = null, targets = [] } = {}) {
@@ -212,9 +223,9 @@ export function createBattleJournal(game, { resumed = false, mode = 'skirmish', 
       checkGame(current);
       // Validate everything before altering journal state. No supplied object,
       // entity, function, extra field or prototype is copied into the report.
-      const objectives = readObjectives(objectiveOutcome, targets, map);
+      const objectives = readObjectives(objectiveOutcome, targets, map, roster.buildings);
       const outcome = outcomeFor(current, objectiveOutcome);
-      const counters = cumulativeStats(current), final = snapshot(current, map);
+      const counters = cumulativeStats(current), final = snapshot(current, map, roster);
       if (JSON.stringify(final) !== JSON.stringify(timeline.at(-1))) accept(final);
       const fullTimeline = !resumed && initial.time === 0;
       const limitations = [
@@ -223,13 +234,15 @@ export function createBattleJournal(game, { resumed = false, mode = 'skirmish', 
         'Income is the current rate from base income and living mines, not gold received. Gold changes do not establish spending, refunds, or earned income.',
         'Army and building compositions show living entities at each observation, not lifetime production.',
         'Cumulative kills, buildings placed, and damage are existing full-match engine counters, including before Resume. Buildings placed include starting allocations; upgrades are not additional placements.',
-        'Damage is engine-credited damage to units and structures; automatic overtime citadel decay is not credited to either side.',
+        roster.endgame.forcedDecay
+          ? 'Damage is engine-credited damage to units and structures; automatic overtime citadel decay is not credited to either side.'
+          : 'Damage is engine-credited damage to units and structures. This ruleset has no automatic citadel decay.',
         'This report is held only in this tab for the current match. It is not included in saves, history, or backups.',
       ];
       if (!fullTimeline) limitations.unshift(`Timeline recording began at simulation time ${initial.time} seconds${resumed ? ' after Resume' : ''}. Earlier timeline observations are unavailable.`);
       if (thinningPasses) limitations.push('Older timeline observations were thinned to keep at most 256 points; the recording interval increased. Retained points keep their actual observation times.');
       finished = freeze({
-        format: 'ironroot-battle-report', version: 1, context, map, outcome,
+        format: 'ironroot-battle-report', version: 2, identity, rules, context, map, outcome,
         scope: { resumed, startedAt: initial.time, endedAt: final.time, observedDuration: final.time - initial.time, missingBefore: initial.time, fullTimeline, counters: 'full-match-engine' },
         sampling: { nominalInterval: INTERVAL, currentInterval: interval, maximumPoints: MAX_POINTS, observationCount, retainedPoints: timeline.length, thinned: thinningPasses > 0, thinningPasses, interpolated: false },
         initial, final, timeline: [...timeline], observedPeaks, cumulativeStats: counters, objectives, limitations,

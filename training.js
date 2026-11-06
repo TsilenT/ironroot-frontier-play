@@ -3,30 +3,30 @@ import {Game, BUILDINGS, upgradeCost} from './engine.js';
 
 const freeze=value=>{if(value&&typeof value==='object'){for(const child of Object.values(value))freeze(child);Object.freeze(value);}return value;};
 const site=(x,label,type,side=0)=>({x,y:450,label,type,side});
-const build=(id,type,x,title,prompt)=>({id,kind:'build',type,title,prompt,sites:[site(x,`${BUILDINGS[type].name} site`,type)],successText:`${BUILDINGS[type].name} placed. The real ${BUILDINGS[type].cost}-gold cost has been paid.`});
+const build=(id,type,x,title,prompt)=>({id,kind:'build',type,title,prompt,sites:[site(x,`${BUILDINGS[type].name} site`,type)],successText:`${BUILDINGS[type].name} placed. ${BUILDINGS[type].cost} gold spent.`});
 const watch=(id,title,prompt,successText)=>({id,kind:'watch',title,prompt,successText});
 export const TRAINING_LESSONS=freeze([
-  {id:'first-barracks',name:'Raise the first company',subtitle:'Place a barracks and watch it work',description:'Buildings train troops automatically. You choose what to build and where; units march and fight on their own.',startingGold:280,timeLimit:75,playerBuildings:[],enemyBuildings:[],briefing:['280 training gold. Both citadels have their normal 6,000 HP.','Empty field; no starting troops or buildings and no enemy AI.','Instruction steps freeze time. Watch steps run at normal speed.'],steps:[
-    build('place-barracks','barracks',1110,'Place a barracks','Select Barracks, then choose the marked middle-lane site. It costs 140 gold. Dragging more than 8 pixels pans without spending; cancel a building choice before selecting an existing building.'),
-    watch('watch-spawn','Your army trains itself','Continue to run the real simulation. Watch the new barracks produce its first warrior. No manual train button is needed.','A real warrior spawned from your paid barracks. It will march toward enemy buildings automatically.')
+  {id:'first-barracks',name:'Raise the first company',subtitle:'Place a barracks and watch it work',description:'Buildings train troops automatically. Choose what to build and where. Your troops march and fight on their own.',startingGold:280,timeLimit:75,playerBuildings:[],enemyBuildings:[],briefing:['280 training gold. Both citadels have their normal 6,000 HP.','Empty field; no starting troops or buildings and no enemy AI.','Time stops while you build. Observations run at normal speed.'],steps:[
+    build('place-barracks','barracks',1110,'Place a barracks','Select Barracks, then choose the marked middle-lane site. It costs 140 gold. Drag to pan without spending gold. Cancel your building choice to select a building already on the field.'),
+    watch('watch-spawn','Your army trains itself','Select Start observation to watch your barracks train its first warrior. It trains troops automatically.','Your barracks trained its first warrior. It will march toward enemy buildings on its own.')
   ]},
-  {id:'shield-and-arrow',name:'Put shields in front',subtitle:'Combine warriors and archers',description:'Warriors take reduced arrow damage. Archers deal damage from farther away when a warrior screen keeps enemies occupied.',startingGold:350,timeLimit:100,playerBuildings:[['barracks',1110]],enemyBuildings:[['archery',1950]],briefing:['350 training gold; one free level-1 barracks already stands at the middle front.','One enemy level-1 archery range is placed opposite it. No enemy AI.','Starting buildings are a disclosed practice setup, not a purchased army. All troops spawn and fight normally.'],steps:[
-    build('place-support','archery',970,'Build behind the shields','Place an Archery range at the marked site behind your barracks. Its 175-gold cost is paid normally.'),
-    watch('watch-screen','Watch the two roles','Continue to observe. The lesson waits for a real enemy arrow to hit a warrior and for your archer to fire while a living warrior is ahead.','Enemy arrows hit your warrior screen, and your archers fired from behind it. Both observations came from actual combat.')
+  {id:'shield-and-arrow',name:'Put shields in front',subtitle:'Combine warriors and archers',description:'Warriors take reduced arrow damage. Keep warriors ahead of your archers so they can fire from a safe distance.',startingGold:350,timeLimit:100,playerBuildings:[['barracks',1110]],enemyBuildings:[['archery',1950]],briefing:['350 training gold; one free level-1 barracks already stands at the middle front.','One enemy level-1 archery range stands opposite it. The enemy builds nothing new.','Starting buildings are free for this lesson. Troops train and fight as they do in battle.'],steps:[
+    build('place-support','archery',970,'Build behind the shields','Place an Archery range at the marked site behind your barracks. It costs 175 gold.'),
+    watch('watch-screen','Watch the two roles','Start observation. Watch for enemy arrows hitting your warriors and your archers firing with a warrior still ahead.','Enemy arrows hit your warriors. Your archers fired with a warrior still ahead of them.')
   ]},
-  {id:'mine-and-upgrade',name:'Fund the next company',subtitle:'Build income, then improve it',description:'Gold arrives continuously while the battle runs. A mine adds income; upgrading a mine increases that income.',startingGold:330,timeLimit:120,playerBuildings:[],enemyBuildings:[],briefing:['330 training gold; no starting buildings or enemies.','Base income is the real 5 gold per second. A level-1 mine adds 2.5.','The first mine upgrade costs 133 gold and raises its contribution to 3.75 gold per second.'],steps:[
+  {id:'mine-and-upgrade',name:'Fund the next company',subtitle:'Build income, then improve it',description:'You earn gold while the battle runs. Build a mine to earn more, then upgrade it to increase its income.',startingGold:330,timeLimit:120,playerBuildings:[],enemyBuildings:[],briefing:['330 training gold; no starting buildings or enemies.','Base income is 5 gold per second. A level-1 mine adds 2.5.','The first mine upgrade costs 133 gold and raises its contribution to 3.75 gold per second.'],steps:[
     build('place-mine','mint',410,'Build a gold mine','Choose Gold mine, then the marked rear site. Its 190-gold price leaves 140 gold for the 133-gold first upgrade.'),
-    watch('watch-income','See income arrive','Continue and watch two seconds of real income. With this mine, your treasury receives 7.5 gold per second.','The mine produced real income at a total of 7.5 gold per second.'),
-    {id:'upgrade-mine',kind:'upgrade',type:'mint',title:'Improve the working mine',prompt:'Cancel any building choice, select your marked mine, then upgrade it to level 2 for 133 gold. No simulation time passes while you choose.',successText:'The real upgrade was paid. Your mine is now level 2, with its normal increased health and income.'},
-    watch('watch-upgraded-income','Confirm the improvement','Continue for two seconds. The level-2 mine adds 3.75 gold per second, making total income 8.75.','The upgraded mine produced real income at 8.75 gold per second. Upgrades use existing space but still need gold.')
+    watch('watch-income','See income arrive','Start observation to watch your gold rise for two seconds. With this mine, you earn 7.5 gold per second.','With your mine working, you earned 7.5 gold per second.'),
+    {id:'upgrade-mine',kind:'upgrade',type:'mint',title:'Improve the working mine',prompt:'Cancel any building choice, select your marked mine, then upgrade it to level 2 for 133 gold. No simulation time passes while you choose.',successText:'Upgrade paid. Your level-2 mine has more health and earns more gold.'},
+    watch('watch-upgraded-income','Watch the upgraded mine','Watch for two seconds. Your level-2 mine adds 3.75 gold per second, for a total of 8.75.','With your upgraded mine working, you earned 8.75 gold per second. Upgrades cost gold but need no extra building site.')
   ]},
   {id:'siege-the-tower',name:'Break the stone line',subtitle:'Send siege against a tower',description:'Siege engines deal triple damage to structures. Their reach lets them attack a tower from outside its firing radius.',startingGold:540,timeLimit:120,playerBuildings:[],enemyBuildings:[['watchtower',1950]],briefing:['540 training gold; your side begins empty.','One free enemy level-1 tower has its normal 1,000 HP. No enemy production or AI.','No health, damage, range or production-speed bonuses are used.'],steps:[
-    build('place-foundry','foundry',1250,'Prepare a siege engine','Build a Siege foundry at the marked forward site for 270 gold. Its engines spawn, travel and attack at their real speeds.'),
-    watch('watch-siege','Watch the tower fall','Continue to observe the original marked tower. Success requires real siege hits and its actual destruction, not an unrelated casualty.','Your siege engines damaged the marked tower, which was destroyed in actual combat.')
+    build('place-foundry','foundry',1250,'Prepare a siege engine','Build a Siege foundry at the marked forward site for 270 gold. Its engines train, travel and attack at normal speed.'),
+    watch('watch-siege','Watch the tower fall','Watch your siege engines hit the marked tower. Finish the lesson by destroying that tower.','Your siege engines hit the marked tower. The tower fell.')
   ]},
-  {id:'answer-the-air',name:'Answer the wings',subtitle:'Use archers against flying enemies',description:'Warriors cannot attack flying units. Archers can target them and deal bonus damage to air units.',startingGold:350,timeLimit:100,playerBuildings:[['barracks',1110]],enemyBuildings:[['aerie',1950]],briefing:['350 training gold and one free level-1 barracks at the middle front.','One enemy level-1 gryphon aerie produces real flying units. No enemy AI.','The lesson tracks a specific gryphon and requires actual archer damage followed by that target’s defeat.'],steps:[
+  {id:'answer-the-air',name:'Answer the wings',subtitle:'Use archers against flying enemies',description:'Warriors cannot attack flying units. Archers can target them and deal bonus damage to air units.',startingGold:350,timeLimit:100,playerBuildings:[['barracks',1110]],enemyBuildings:[['aerie',1950]],briefing:['350 training gold and one free level-1 barracks at the middle front.','One enemy level-1 gryphon aerie trains flyers. The enemy builds nothing new.','To finish, your archers must hit the marked gryphon, and that gryphon must fall.'],steps:[
     build('place-anti-air','archery',970,'Give the company air cover','Build an Archery range at the marked site for 175 gold. The warriors can occupy enemies, but cannot strike a gryphon.'),
-    watch('watch-anti-air','Follow a flying target','Continue and watch the marked gryphon produced during this observation. The lesson completes only after your archers actually damage that tracked flying target and it is defeated.','Your archers struck the tracked gryphon, which was defeated. Warriors and siege cannot provide this air cover.')
+    watch('watch-anti-air','Follow a flying target','Watch the marked gryphon. Your archers must hit it, and it must fall to finish the lesson.','Your archers hit the marked gryphon. The gryphon fell. Warriors and siege engines cannot attack flyers.')
   ]}
 ]);
 const copy=value=>JSON.parse(JSON.stringify(value));
@@ -97,7 +97,7 @@ export class TrainingSession {
   #checkOutcome(){
     const winner=this.#game.state.winner;
     if(winner!==null){this.#fail(winner===0?'The enemy citadel fell before this lesson objective was completed. Retry or skip the lesson.':winner==='draw'?'Both citadels fell. Retry or skip the lesson.':'Your citadel fell. Retry or skip the lesson.');return false;}
-    if(this.#game.state.time>=this.lesson.timeLimit-1e-7){this.#fail(`This practice attempt reached its ${this.lesson.timeLimit}-second simulation limit. Retry or skip; nothing was saved.`);return false;}
+    if(this.#game.state.time>=this.lesson.timeLimit-1e-7){this.#fail(`Time is up after ${this.lesson.timeLimit} seconds of practice. Retry or skip. Nothing was saved.`);return false;}
     return true;
   }
   #actionAllowed(kind){
@@ -137,21 +137,21 @@ export class TrainingSession {
   build(type,x,y){
     const allowed=this.#actionAllowed('build');if(!allowed.ok)return allowed;
     if(type!==this.step.type)return this.#reject(`This step needs ${BUILDINGS[this.step.type].name}.`);
-    if(!this.step.sites.some(point=>point.x===x&&point.y===y))return this.#reject('Choose the marked practice site. Other placements are not part of this step.');
-    const result=this.#game.build(type,x,y,0);if(!result.ok)return this.#reject(result.reason+' Use Wait for gold, or retry the lesson.');
+    if(!this.step.sites.some(point=>point.x===x&&point.y===y))return this.#reject('Choose the marked site for this step.');
+    const result=this.#game.build(type,x,y,0);if(!result.ok)return this.#reject(result.reason+' Select Wait for income, or restart the lesson.');
     this.#placed.set(type,result.building.id);this.#completeStep();return result;
   }
   upgrade(id){
     const allowed=this.#actionAllowed('upgrade');if(!allowed.ok)return allowed;
     const building=this.#requiredBuilding();if(!building||building.id!==id)return this.#reject('Select the marked mine you built in this attempt.');
     if(building.level!==1)return this.#reject('This step requires the original level-1 mine. Retry the lesson.');
-    const result=this.#game.upgrade(id,0);if(!result.ok)return this.#reject(result.reason+' Use Wait for gold, or retry the lesson.');
+    const result=this.#game.upgrade(id,0);if(!result.ok)return this.#reject(result.reason+' Select Wait for income, or restart the lesson.');
     this.#completeStep();return result;
   }
   continue(){
     if(this.#paused)return this.#reject('Practice is paused. Resume first.');
     if(this.#status==='lesson-complete'){
-      if(this.#lessonIndex===TRAINING_LESSONS.length-1){this.#status='finished';this.#feedback='Training review. Completed, skipped and failed lessons are listed honestly. No rewards or campaign progress were recorded.';return {ok:true};}
+      if(this.#lessonIndex===TRAINING_LESSONS.length-1){this.#status='finished';this.#feedback='Practice review: completed, skipped and failed lessons. No rewards or campaign progress were saved.';return {ok:true};}
       return this.#load(TRAINING_LESSONS[this.#lessonIndex+1].id);
     }
     if(terminal.has(this.#status)||!this.#checkOutcome())return this.#reject(this.#feedback||'This attempt has ended. Retry or choose another lesson.');
@@ -160,9 +160,9 @@ export class TrainingSession {
     return this.#reject('Complete the current action or observation before continuing.');
   }
   recoverGold(){
-    if(!this.snapshot().canRecoverGold)return this.#reject('Gold recovery is available only when the current paid action is unaffordable.');
+    if(!this.snapshot().canRecoverGold)return this.#reject('Wait for income is available when you need more gold for this step.');
     if(!this.#checkOutcome())return {ok:false,reason:this.#feedback};
-    this.#recovering=true;this.#status='active';this.#feedback='Waiting for real income. Combat also runs; practice pauses as soon as the action is affordable.';return {ok:true};
+    this.#recovering=true;this.#status='active';this.#feedback='Waiting for gold. Combat continues until you can afford the action, then time pauses.';return {ok:true};
   }
   setPaused(paused){
     if(typeof paused!=='boolean')return this.#reject('Pause must be true or false.');
@@ -174,7 +174,7 @@ export class TrainingSession {
   skip(){
     if(terminal.has(this.#status)&&this.#status!=='failed')return this.#reject('Training has ended.');
     if(this.#status!=='lesson-complete')this.#result('skipped','Skipped by the player; not completed.');
-    if(this.#lessonIndex===TRAINING_LESSONS.length-1){this.#status='finished';this.#paused=false;this.#recovering=false;this.#feedback='Training review. Skipped lessons are not completions.';return {ok:true};}
+    if(this.#lessonIndex===TRAINING_LESSONS.length-1){this.#status='finished';this.#paused=false;this.#recovering=false;this.#feedback='Practice review. Skipped lessons do not count as completed.';return {ok:true};}
     return this.#load(TRAINING_LESSONS[this.#lessonIndex+1].id);
   }
   exit(){this.#status='exited';this.#paused=false;this.#recovering=false;this.#feedback='Training closed. This practice attempt is not saved.';return {ok:true};}
@@ -231,7 +231,7 @@ export class TrainingSession {
       this.#observe();
       // Engine loss or draw wins over an objective on the same tick. A win is not a training objective.
       if(!this.#checkOutcome())break;
-      if(this.#recovering){const cost=this.#requiredCost();if(cost===null){this.#fail('The required practice building is no longer available. Retry the lesson.');break;}if(this.#game.state.gold[0]>=cost){this.#recovering=false;this.#status='instruction';this.#feedback='Enough gold is available. Time is paused; complete the marked paid action.';}}
+      if(this.#recovering){const cost=this.#requiredCost();if(cost===null){this.#fail('The required practice building is no longer available. Retry the lesson.');break;}if(this.#game.state.gold[0]>=cost){this.#recovering=false;this.#status='instruction';this.#feedback='You have enough gold. Time is paused. Complete the highlighted action.';}}
       else if(this.#watchComplete())this.#completeStep();
     }
     return {ok:this.#status!=='failed',...(this.#status==='failed'?{reason:this.#feedback}:{})};

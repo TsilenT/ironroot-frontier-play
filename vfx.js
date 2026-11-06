@@ -136,9 +136,12 @@ export class BattleVFX {
         if(!this.reducedMotion)this.shakeEnergy=Math.max(this.shakeEnergy,.65);break;
     }
   }
-  draw(ctx,viewRect=null) {
+  draw(ctx,viewRect=null,{compact=false}={}) {
     ctx.save();
     for(const p of this.particles) {
+      // Secondary decoration is expendable when the battlefield is physically small.
+      // Suppress draw work only: particle lifetime, RNG and preference budgets stay intact.
+      if((compact||this.quality==='low')&&(p.kind==='dust'||p.kind==='leaf'))continue;
       // Conservative margin includes a spark's tail and growing dust cloud.
       if(viewRect&&(p.x<viewRect.x-24||p.x>viewRect.x+viewRect.width+24||p.y<viewRect.y-24||p.y>viewRect.y+viewRect.height+24))continue;
       const remaining=clamp(p.life/p.maxLife,0,1),age=1-remaining;
@@ -158,7 +161,7 @@ export class BattleVFX {
         case 'diamond':
           ctx.beginPath();ctx.moveTo(0,-size*1.7);ctx.lineTo(size,0);ctx.lineTo(0,size*1.7);ctx.lineTo(-size,0);ctx.closePath();ctx.fill();break;
         case 'wisp':
-          ctx.globalAlpha=alpha*.24;ctx.beginPath();ctx.arc(0,0,size*2.5,0,TAU);ctx.fill();
+          if(!compact&&this.quality!=='low'){ctx.globalAlpha=alpha*.24;ctx.beginPath();ctx.arc(0,0,size*2.5,0,TAU);ctx.fill();}
           ctx.globalAlpha=alpha*.85;ctx.beginPath();ctx.moveTo(-size*3,size);ctx.quadraticCurveTo(-size,-size*2,0,0);ctx.stroke();
           ctx.beginPath();ctx.arc(0,0,size*.65,0,TAU);ctx.fill();break;
         case 'rubble':

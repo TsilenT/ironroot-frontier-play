@@ -9,7 +9,7 @@
     <meta name="theme-color" content="#121d1b" />
     <meta
       name="description"
-      content="Build your frontier. Raise an army. Turn the tide. A playable strategy tug-of-war."
+      content="Build an army, defend your citadel and fight across the frontier in this real-time strategy game."
     />
     <title>Ironroot Frontier · RTS</title>
     <link rel="manifest" href="./manifest.webmanifest" />
@@ -18,8 +18,8 @@
     <link rel="stylesheet" href="./report-view.css" />
   </head>
   <body>
-    <div class="app">
-      <header class="topbar">
+    <div class="app" id="app">
+      <header class="topbar" id="topbar">
         <a class="brand" href="./" aria-label="Ironroot Frontier home"
           ><span class="brand-mark">♜</span
           ><span>IRONROOT<small>F R O N T I E R</small></span></a
@@ -49,7 +49,7 @@
           aria-label="Battlefield. Select a building below, then tap a green build slot to place it. Drag to explore."
           tabindex="0"
         ></canvas>
-        <div class="battle-top">
+        <div class="battle-top" id="battleTop">
           <div class="base-status yours">
             <span>YOUR CITADEL</span>
             <div class="hp-track"><i id="yourHp"></i></div>
@@ -64,10 +64,14 @@
             <b id="enemyHpText">100%</b>
           </div>
         </div>
-        <div id="objectiveHUD" class="objective-hud hidden" role="status">
+        <div id="objectiveHUD" class="objective-hud hidden" role="region" aria-label="Mission objectives">
+          <span id="objectiveIdentity" class="objective-identity hidden"></span>
           <b id="objectiveProgress"></b><span id="objectiveTime"></span>
+          <div id="protectedTargets" class="protected-targets hidden" role="group" aria-label="Protected original structures; activate to focus camera"></div>
+          <button id="compactBuild" class="compact-build" type="button" aria-controls="commandDeck" aria-expanded="false" aria-label="Open building controls">Build</button>
         </div>
-        <div class="toolbelt">
+        <div id="protectedAlert" class="sr-only" role="status" aria-live="polite" aria-atomic="true"></div>
+        <div class="toolbelt" id="battleTools">
           <button
             id="pause"
             class="icon-button"
@@ -122,7 +126,7 @@
             ><button id="sell" class="secondary-button">Salvage</button>
           </div>
         </div>
-        <div class="bottom-map">
+        <div class="bottom-map" id="mapControls">
           <button
             id="home"
             class="map-jump"
@@ -151,31 +155,41 @@
           <span>A</span>
         </div>
         <div class="pause-veil hidden" id="pauseVeil">
-          <span>PAUSED</span><small>Take a breath. Plan your next move.</small
+          <span>PAUSED</span><small>Resume when you’re ready.</small
           ><button id="resume" class="gold-button">Resume battle</button
           ><button id="saveExit" class="secondary-button">
             Save & return to title
           </button>
+          <p id="battleLimitWarning" class="battle-limit-warning hidden" role="status"></p>
           <div class="pause-links">
             <button id="pauseSettings" class="text-button">Preferences</button
-            ><button id="help" class="text-button" aria-label="How to play">
+            ><button id="help" class="text-button" aria-label="Open field guide">
               Field guide
             </button>
           </div>
         </div>
       </main>
-      <section class="command-deck">
+      <div id="protectedDock" class="protected-dock hidden"></div>
+      <nav id="protectedNavigation" class="protected-navigation hidden" aria-label="Battle controls"></nav>
+      <section class="command-deck" id="commandDeck" aria-label="Building controls">
+        <div id="campaignCoach" class="campaign-coach hidden" role="status" aria-live="polite">
+          <b id="coachTitle"></b><span id="coachText"></span>
+        </div>
         <div class="deck-heading">
           <span id="buildPrompt">BUILD YOUR FRONTIER</span
           ><small id="buildHelp"
             >Choose a building, then place it in your territory.</small
           ><button id="cancelBuild" class="hidden">Cancel ×</button>
         </div>
+        <div class="deck-tools">
+          <button id="toggleCoach" class="hidden" aria-pressed="true">Hide hints</button>
+          <button id="allBuildings" class="hidden" aria-expanded="false" aria-controls="buildCards">All buildings</button>
+        </div>
         <div class="deck-body">
           <div class="build-cards" id="buildCards"></div>
           <button id="rally" class="rally-card">
-            <span class="rally-icon">✦</span><b>Rally strike</b
-            ><small>Break an enemy push</small
+            <span class="rally-icon">✦</span><b>Arrow volley</b
+            ><small>Area damage to troops</small
             ><span class="rally-cost" id="rallyCost"
               >◆ 75 <em>25s cooldown</em></span
             >
@@ -183,9 +197,15 @@
         </div>
       </section>
     </div>
+    <div class="viewport-pause hidden" id="viewportModal">
+      <section role="dialog" aria-modal="true" aria-labelledby="viewportTitle" aria-describedby="viewportReason" aria-hidden="true">
+        <div class="viewport-message" role="region" tabindex="0" aria-labelledby="viewportTitle"><h2 id="viewportTitle">Battle paused for screen size</h2><p id="viewportReason">Rotate your device or enlarge the window. Your battle stays paused.</p><p id="viewportSaveStatus" role="status"></p></div>
+        <div class="viewport-actions"><button id="viewportResume" class="gold-button" disabled>Resume battle</button><button id="viewportExit" class="secondary-button" data-dialog-focus>Save &amp; return to title</button></div>
+      </section>
+    </div>
     <div class="modal-backdrop" id="welcome">
       <section
-        class="welcome modal"
+        class="welcome modal campaign-mode"
         role="dialog"
         aria-modal="true"
         aria-labelledby="welcomeTitle"
@@ -194,15 +214,15 @@
         <div class="welcome-sigil">♜</div>
         <h1 id="welcomeTitle">IRONROOT<span>FRONTIER</span></h1>
         <p class="welcome-copy">
-          Build your line. Raise an army.<br />Turn the tide.
+          Build your army and break through<br />to the enemy citadel.
         </p>
         <div class="welcome-rule"></div>
         <div class="mode-tabs">
-          <button class="active" data-mode="skirmish">SKIRMISH</button
-          ><button data-mode="campaign">CAMPAIGN <span id="campaignCount">16</span></button
+          <button class="active" data-mode="campaign" aria-pressed="true">CAMPAIGN <span id="campaignCount">16</span></button
+          ><button data-mode="skirmish" aria-pressed="false">SKIRMISH</button
           ><button data-mode="challenges">FIELD TRIALS <span>5</span></button>
         </div>
-        <div id="skirmishConfig">
+        <div id="skirmishConfig" class="hidden">
           <div class="mode-label">CHOOSE YOUR OPPONENT</div>
           <div class="difficulty-choices">
             <button class="active" data-difficulty="easy">
@@ -213,6 +233,14 @@
               <b>The Warlord</b><small>No ground given</small>
             </button>
           </div>
+          <label class="skirmish-rules-label" for="skirmishRules">Endgame
+            <select id="skirmishRules">
+              <option value="frontier-rootwarden-open">Open endgame</option>
+              <option value="frontier-rootwarden-timed">Timed endgame</option>
+            </select>
+          </label>
+          <p id="skirmishRulesDescription" class="rules-description"></p>
+          <p class="rules-description">Saved battles keep their original rules.</p>
           <details class="map-picker" id="mapPicker">
             <summary id="mapPickerToggle">
               Battlefield <b id="selectedMapName">Classic</b>
@@ -225,11 +253,13 @@
             <p class="map-description" id="mapDescription"></p>
           </details>
         </div>
-        <div id="campaignConfig" class="hidden">
+        <div id="campaignConfig">
           <div class="campaign-overview">
             <span>THE IRONROOT CAMPAIGN</span><b id="campaignProgressText"></b>
           </div>
+          <p class="campaign-intro-progress" id="campaignIntroProgressText"></p>
           <div class="campaign-chapters" id="campaignChapters"></div>
+          <button id="skipIntroduction" class="text-button hidden">Go straight to the campaign</button>
           <h3 class="campaign-chapter-title" id="campaignChapterTitle"></h3>
           <p class="campaign-chapter-story" id="campaignChapterStory"></p>
           <div class="campaign-missions" id="campaignMissions"></div>
@@ -271,16 +301,17 @@
           </div>
         </div>
         <button class="start-button" id="start">
-          ENTER THE FRONTIER <span>→</span>
+          BEGIN MISSION <span>→</span>
         </button>
         <p class="save-status hidden" id="saveStatus" role="status"></p>
-        <p class="welcome-foot">Campaign · Skirmish · Field trials · v0.12</p>
+        <button id="exportUnreadableBattle" class="text-button hidden">Download original save</button>
+        <p class="welcome-foot">Campaign · Skirmish · Field trials · v0.13</p>
         <div class="welcome-links">
-          <a class="text-button training-link" id="welcomeTraining" href="./training.html" aria-label="Guided practice. Learn without changing your saved battle">New commander? Guided practice →</a>
+          <a class="text-button training-link" id="welcomeTraining" href="./training.html" aria-label="Optional guided practice. Learn without changing your saved battle">Guided practice (optional) →</a>
           <button class="text-button" id="welcomeHelp">
-            Read the field guide</button
+            Field guide</button
           ><button class="text-button" id="welcomeSettings">
-            Preferences & sound
+            Preferences
           </button><button class="text-button hidden" id="lastResult">Last battle report</button>
         </div>
       </section>
@@ -300,15 +331,15 @@
           ×
         </button>
         <div class="eyebrow">THE COMMANDER'S FIELD GUIDE</div>
-        <h2 id="guideTitle">Win the ground war.</h2>
+        <h2 id="guideTitle">How to play</h2>
         <p class="guide-intro">
-          Destroy the enemy citadel. Your buildings raise troops automatically,
-          so your job is the plan.
+          Destroy the enemy citadel. Build and upgrade your army’s buildings;
+          your troops march and fight automatically.
         </p>
         <div class="guide-grid">
           <article>
             <span>01</span>
-            <h3>Build the engine</h3>
+            <h3>Build your army</h3>
             <p>
               Select a building, then tap a green slot. Troops march down its
               nearest lane. Gold flows in over time.
@@ -316,7 +347,7 @@
           </article>
           <article>
             <span>02</span>
-            <h3>Make a mixed army</h3>
+            <h3>Combine troop types</h3>
             <p>
               Warriors screen your archers. Wizards punish ground swarms.
               Gryphons bypass melee; archers shoot them down. Siege breaks
@@ -327,16 +358,16 @@
             <span>03</span>
             <h3>Commit to a lane</h3>
             <p>
-              Stack producers behind a push or spread out to divide the enemy.
+              Build several troop buildings in one lane, or spread them across lanes.
               Forward buildings reinforce faster, but are exposed.
             </p>
           </article>
           <article>
             <span>04</span>
-            <h3>Turn the tide</h3>
+            <h3>Support your troops</h3>
             <p>
               Towers buy time, but don't heal. Upgrade surviving buildings,
-              invest in Gold mines, or use a Rally strike to thin enemy troops.
+              invest in gold mines, or use an arrow volley to thin enemy troops.
             </p>
           </article>
         </div>
@@ -349,37 +380,37 @@
           <b>Touch:</b> Tap to build · Drag to pan · Tap the minimap to jump<br /><b
             >Keyboard:</b
           >
-          1–7 buildings · R strike · Space pause · Esc cancel · Arrow keys pan
+          <span id="buildingKeyHelp">1–7 buildings</span> · R volley · Space pause · Esc cancel · Arrow keys pan
         </p>
         <p class="controls" id="controllerHelp">
           <b>Controller · experimental:</b> Left stick moves the cursor, right
           stick pans. A confirms, B cancels, LB/RB chooses buildings, X opens
-          HUD focus, Y arms Rally, Start pauses. D-pad navigates controls. LT
+          HUD focus, Y arms Arrow volley, Start pauses. D-pad navigates controls. LT
           slows the cursor. Connect a standard controller and press a button.
           Physical hardware validation is ongoing.
         </p>
         <details class="codex-section" id="rosterGuide">
           <summary id="rosterGuideToggle">
             <span>Units &amp; economy</span
-            ><small>Know your army. Know the tradeoffs.</small>
+            ><small>Stats, counters and costs</small>
           </summary>
           <div class="codex-content">
             <p class="codex-note map-reference-note">
               Skirmish offers three physical battlefields: Classic has three
               roads and 24 sites per side. Long March adds a longer neutral
               crossing. Twin Span has two roads and 16 sites per side. Troop
-              statistics and income rules stay the same. Campaign and field
-              trials use Classic.
+              statistics and income rules stay the same. Chapters 1–4 and field trials use Classic. Chapter 5 also uses
+              Long March and Twin Span.
             </p>
             <p id="codexScope" class="codex-note"></p>
             <p id="codexCaveat" class="codex-note"></p>
-            <h3 class="codex-heading">The fighting force</h3>
+            <h3 class="codex-heading">Troops</h3>
             <p class="codex-note">
               Select a portrait for stats, counters and production costs. Range
               and speed use world units.
             </p>
             <div class="codex-grid" id="unitCodex"></div>
-            <h3 class="codex-heading">Hold the ground. Fund the war.</h3>
+            <h3 class="codex-heading">Towers &amp; mines</h3>
             <div class="codex-grid" id="structureCodex"></div>
             <details class="codex-economy">
               <summary>Gold, upgrades &amp; overtime</summary>
@@ -387,7 +418,7 @@
             </details>
           </div>
         </details>
-        <button id="guideDone" class="gold-button">Ready to command</button>
+        <button id="guideDone" class="gold-button">Close field guide</button>
       </section>
     </div>
     <div class="modal-backdrop hidden" id="settingsModal">
@@ -404,14 +435,14 @@
         >
           ×
         </button>
-        <div class="eyebrow">MAKE THE FRONTIER YOURS</div>
+        <div class="eyebrow">GAME SETTINGS</div>
         <h2 id="settingsTitle">Preferences</h2>
         <div class="settings-grid">
           <label class="setting-row"
             ><span>Enable audio<small>Music and sound effects</small></span
             ><input id="audioEnabled" type="checkbox" /></label
           ><label class="setting-row"
-            ><span>Music<small>Original adaptive frontier score</small></span
+            ><span>Music<small>Music that follows the battle</small></span
             ><input id="musicEnabled" type="checkbox" /></label
           ><label class="setting-row"
             ><span
@@ -429,10 +460,10 @@
               step="5"
               aria-label="Master volume" /></label
           ><label class="setting-row"
-            ><span>Reduced motion<small>No shake or flying debris</small></span
+            ><span>Reduced motion<small>Disable screen shake and flying debris</small></span
             ><input id="reduceMotion" type="checkbox" /></label
           ><label class="setting-row"
-            ><span>Effect detail<small>Lower on slower devices</small></span
+            ><span>Effect detail<small>Choose Low for slower devices</small></span
             ><select id="effectQuality">
               <option value="high">High</option>
               <option value="low">Low</option>
@@ -448,12 +479,12 @@
           </p>
           <p>
             Left stick: cursor · Right stick: pan · A: confirm/place · B: back ·
-            X: HUD focus · Y: rally · LB/RB: buildings · D-pad: navigate
+            X: HUD focus · Y: arrow volley · LB/RB: buildings · D-pad: navigate
             controls · Start: pause · View: home · Left stick press: follow ·
             LT: precision.
           </p>
           <p>
-            In menus, use the stick or D-pad to focus and A to activate.
+            In menus, use the stick or D-pad to select a control, then press A.
             Left/right adjusts sliders and choices. Touch and keyboard remain
             available. Physical controller testing is ongoing.
           </p>
@@ -525,8 +556,7 @@
         <details class="history-details credits-details" id="creditsDetails">
           <summary>Credits &amp; font licenses</summary>
           <p>
-            Ironroot Frontier uses original code-authored 2D battlefield art and
-            an original procedural score. Barlow Condensed and DM Sans are
+            Ironroot Frontier’s original 2D art and music are generated by code. Barlow Condensed and DM Sans are
             locally bundled under the SIL Open Font License 1.1. Their complete
             notices are below and included with this distribution.
           </p>
@@ -756,7 +786,7 @@ OTHER DEALINGS IN THE FONT SOFTWARE.
           >
         </details>
         <button id="settingsDone" class="gold-button">
-          Back to the frontier
+          Close preferences
         </button>
       </section>
     </div>
@@ -768,10 +798,11 @@ OTHER DEALINGS IN THE FONT SOFTWARE.
         aria-labelledby="resultTitle"
       >
         <div class="result-body" id="resultBody">
-        <div class="eyebrow" id="resultEyebrow">THE FRONTIER IS YOURS</div>
+        <div class="eyebrow" id="resultEyebrow">BATTLE WON</div>
         <div class="result-sigil" id="resultSigil">⚑</div>
         <h2 id="resultTitle">VICTORY</h2>
         <p id="resultCopy">Your army broke the enemy citadel.</p>
+        <ul id="resultProtectedLoss" class="result-protected-loss hidden" aria-label="Protected structure losses"></ul>
         <div id="resultObjectives" class="result-objectives hidden"></div>
         <p id="progressSaveWarning" class="save-warning hidden" role="status">
           Progress could not be saved on this browser. Keep this page open and
@@ -789,7 +820,8 @@ OTHER DEALINGS IN THE FONT SOFTWARE.
         </div>
         <div class="result-actions">
         <button id="playAgain" class="start-button" data-dialog-focus>
-          FIGHT ANOTHER DAY <span>→</span></button
+          NEW SKIRMISH <span>→</span></button
+        ><button id="replayMission" class="secondary-button hidden">Replay for more stars</button
         ><button id="resultMenu" class="text-button">Return to title</button
         ><button id="inspectBattle" class="text-button">
           Inspect the battlefield
@@ -804,13 +836,13 @@ OTHER DEALINGS IN THE FONT SOFTWARE.
         aria-modal="true"
         aria-labelledby="backupTitle"
       >
-        <div class="eyebrow">A NEW CHAPTER FROM YOUR FILE</div>
+        <div class="eyebrow">SAVE BACKUP</div>
         <h2 id="backupTitle">Restore this backup?</h2>
         <p id="backupSummary"></p>
         <p class="backup-warning">
-          This replaces all campaign stars, trial records, preferences, battle
-          history and the saved battle on this browser. Your current battle will
-          be replaced. Export a backup first if you want to keep it.
+          This replaces this browser’s campaign stars, trial records, preferences,
+          battle history and saved battle, including your current battle.
+          Export a backup first to keep your current progress.
         </p>
         <p>Close other Ironroot tabs before restoring a backup.</p>
         <label id="backupRecoveryRow" class="backup-check hidden"

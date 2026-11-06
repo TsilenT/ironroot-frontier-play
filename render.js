@@ -1,3 +1,4 @@
+import { drawRootwarden, drawWardenLodge } from './rootwarden-art.js';
 import { BattleVFX } from './vfx.js';
 import {
   BUILDINGS,
@@ -14,6 +15,7 @@ const COLORS = [
   { cloth: '#ad6554', bright: '#edbb92', dark: '#683e35', flag: '#d59070' },
 ];
 export const icons = {
+  wardenLodge: '<path d="M7 39V20L23 7l16 13v19z" fill="#818f77"/><path d="m3 21 20-17 20 17-6 4-14-12L9 25z" fill="#b4bda0"/><path d="m16 26 7-5 7 5v9l-7 5-7-5z" fill="#507e71"/><path d="M23 25v11" stroke="#dbc58d" stroke-width="3"/>',
   barracks:
     '<path d="M7 19 23 8l16 11v20H7z" fill="#a1ae83"/><path d="m3 20 20-15 20 15-5 4-15-11L8 25z" fill="#d0b27d"/><path d="M18 28h10v11H18z" fill="#314332"/><path d="M11 5v10M35 5v10" stroke="#e6d2a1" stroke-width="3"/>',
   archery:
@@ -36,18 +38,37 @@ function rng(seed) {
     return seed / 4294967296;
   };
 }
-function poly(c, pts, color) {
+function poly(c, pts, color, outline = 0) {
   c.fillStyle = color;
   c.beginPath();
   pts.forEach(([x, y], i) => (i ? c.lineTo(x, y) : c.moveTo(x, y)));
   c.closePath();
+  if (outline) outlinePath(c, outline);
   c.fill();
 }
-function ellipse(c, x, y, rx, ry, color) {
+function ellipse(c, x, y, rx, ry, color, outline = 0) {
   c.fillStyle = color;
   c.beginPath();
   c.ellipse(x, y, rx, ry, 0, 0, Math.PI * 2);
+  if (outline) outlinePath(c, outline);
   c.fill();
+}
+function outlinePath(c, width) {
+  c.save();
+  c.strokeStyle = '#182a26';
+  c.lineWidth = width * 2;
+  c.lineJoin = 'round';
+  c.stroke();
+  c.restore();
+}
+
+/** Presentation only. Never use this enlargement for hits, ranges or placement. */
+export function battlefieldReadability(scale = 1) {
+  const safeScale = Number.isFinite(scale) && scale > 0 ? scale : 1;
+  return {
+    unitScale: Math.max(1, Math.min(1.65, 0.55 / safeScale)),
+    compact: Math.max(0, Math.min(1, (0.65 - safeScale) / 0.33)),
+  };
 }
 function line(c, pts, color, width = 1) {
   c.strokeStyle = color;
@@ -140,12 +161,16 @@ export class Renderer {
     this.camera = 800;
     this.zoom = 1;
     this.map = getMap('classic');
+    this.buildings = BUILDINGS;
+    this.units = UNITS;
+    this.activeGame = null;
     this.theme = 'woodland';
     this.terrain = this.makeTerrain();
     this.baseTerrain = this.terrain;
     this.terrainKey = this.map.id + ':' + this.map.revision + ':' + this.theme;
     this.resize();
     this.time = 0;
+    this.rootwardenMotion = new Map();
     this.reducedMotion = matchMedia('(prefers-reduced-motion: reduce)').matches;
     this.vfx = new BattleVFX({ reducedMotion: this.reducedMotion });
   }
@@ -431,6 +456,13 @@ export class Renderer {
     return canvas;
   }
   draw(game, ui, dt) {
+    if (this.activeGame !== game) {
+      this.activeGame = game;
+      this.buildings = game.buildings || BUILDINGS;
+      this.units = game.units || UNITS;
+      this.rootwardenMotion.clear();
+    }
+    const buildType = typeof ui.build === 'string' && Object.hasOwn(this.buildings, ui.build) ? ui.build : null;
     this.time += ui.paused ? 0 : dt;
     const c = this.c,
       s = game.state;
@@ -444,34 +476,44 @@ export class Renderer {
     c.scale(this.scale, this.scale);
     c.translate(-this.camera, -450);
     c.drawImage(this.terrain, 0, 0);
+    const { compact } = battlefieldReadability(this.scale);
+    // Quiet the baked decoration at small scales without hiding roads or sites.
+    if (compact) {
+      c.save();
+      c.globalAlpha = compact * 0.18;
+      c.fillStyle = '#24342c';
+      c.fillRect(0, 0, this.map.width, this.map.height);
+      c.restore();
+    }
     // Subtle side tints on each half.
     c.fillStyle = '#4597800c';
     const frontier = buildBounds(this.map, 0).maxX + 70;
     c.fillRect(0, 150, frontier, 600);
     c.fillStyle = '#a051370b';
     c.fillRect(this.map.width - frontier, 150, frontier, 600);
-    if (ui.build) {
+    if (buildType) {
       for (const { x, y } of buildSites(this.map, 0)) {
-        const valid = game.canBuild(ui.build, x, y).ok;
+        const valid = game.canBuild(buildType, x, y).ok;
         c.fillStyle = valid ? '#c8e2a429' : '#273d2820';
         c.strokeStyle = valid ? '#d0e7a67a' : '#52644733';
-        c.lineWidth = 1.5;
+        c.lineWidth = Math.max(1.5, 1 / this.scale);
         c.fillRect(x - 55, y - 55, 110, 110);
         c.strokeRect(x - 55, y - 55, 110, 110);
         if (valid) {
           c.strokeStyle = '#d0e7a699';
+          const mark = Math.max(7, 3.5 / this.scale);
           c.beginPath();
-          c.moveTo(x - 7, y);
-          c.lineTo(x + 7, y);
-          c.moveTo(x, y - 7);
-          c.lineTo(x, y + 7);
+          c.moveTo(x - mark, y);
+          c.lineTo(x + mark, y);
+          c.moveTo(x, y - mark);
+          c.lineTo(x, y + mark);
           c.stroke();
         }
       }
     }
     const selected = s.buildings.find((b) => b.id === ui.selected);
     if (selected) {
-      const d = BUILDINGS[selected.type];
+      const d = this.buildings[selected.type];
       if (d.range) {
         c.beginPath();
         c.arc(selected.x, selected.y, d.range, 0, Math.PI * 2);
@@ -489,55 +531,29 @@ export class Renderer {
       c.ellipse(selected.x, selected.y + 18, 65, 30, 0, 0, Math.PI * 2);
       c.stroke();
     }
-    this.drawBase(s.bases[0]);
-    this.drawBase(s.bases[1]);
-    const entities = [...s.buildings, ...s.units].sort((a, b) => a.y - b.y);
     const left = this.camera - this.width / (2 * this.scale) - 120,
       right = this.camera + this.width / (2 * this.scale) + 120;
+    // Impacts read as ground events; troops and objective markers stay on top.
+    for (const e of s.effects) this.drawEffect(e);
+    this.vfx.draw(c, { x: left, y: 0, width: right - left, height: this.map.height }, { compact: compact > 0 });
+    this.drawBase(s.bases[0]);
+    this.drawBase(s.bases[1]);
+    // Presentation-only locomotion from observed simulation positions, never cooldown.
+    const wardenIds = new Set();
+    for (const u of s.units) if (u.type === 'rootwarden') {
+      wardenIds.add(u.id);
+      const old = this.rootwardenMotion.get(u.id);
+      if (!old || old.time !== s.time) this.rootwardenMotion.set(u.id, {
+        x: u.x, y: u.y, time: s.time,
+        moving: !!old && Math.hypot(u.x - old.x, u.y - old.y) > 0.001,
+      });
+    }
+    for (const id of this.rootwardenMotion.keys()) if (!wardenIds.has(id)) this.rootwardenMotion.delete(id);
+    const entities = [...s.buildings, ...s.units].sort((a, b) => a.y - b.y);
     for (const e of entities) {
       if (e.x < left || e.x > right) continue;
-      if (BUILDINGS[e.type]) {
-        this.drawBuilding(e);
-        if (ui.targets?.includes(e.id)) {
-          c.save();
-          c.translate(e.x, e.y - 94);
-          const protect = ui.protectedTargets?.includes(e.id);
-          poly(
-            c,
-            [
-              [0, -9],
-              [9, 0],
-              [0, 9],
-              [-9, 0],
-            ],
-            protect ? '#b6ead5' : '#f1d295',
-          );
-          if (protect)
-            poly(
-              c,
-              [
-                [-4, -4],
-                [4, -4],
-                [4, 2],
-                [0, 6],
-                [-4, 2],
-              ],
-              '#376c57',
-            );
-          else
-            poly(
-              c,
-              [
-                [0, -4],
-                [4, 0],
-                [0, 4],
-                [-4, 0],
-              ],
-              '#69543b',
-            );
-          c.restore();
-        }
-      } else this.drawUnit(e, s.time);
+      if (Object.hasOwn(this.buildings, e.type)) this.drawBuilding(e);
+      else this.drawUnit(e, s.time);
     }
     for (const p of s.projectiles) {
       const t = 1 - p.life / p.maxLife;
@@ -599,26 +615,70 @@ export class Renderer {
       }
       c.restore();
     }
-    for (const e of s.effects) this.drawEffect(e);
-    this.vfx.draw(c, { x: left, y: 0, width: right - left, height: this.map.height });
-    if (ui.pointer && ui.build && !ui.dragging) {
+    // Mission badges must not disappear behind enlarged troops or projectile trails.
+    for (const e of s.buildings) {
+      if (e.x < left || e.x > right) continue;
+      if (ui.targets?.includes(e.id)) {
+        c.save();
+        c.translate(e.x, e.y - 94);
+        const markerScale = Math.max(1, Math.min(2, 10 / (18 * this.scale)));
+        c.scale(markerScale, markerScale);
+        const protect = ui.protectedTargets?.includes(e.id);
+        poly(
+          c,
+          [
+            [0, -9],
+            [9, 0],
+            [0, 9],
+            [-9, 0],
+          ],
+          protect ? '#b6ead5' : '#f1d295',
+          Math.min(3, 0.75 / (this.scale * markerScale)),
+        );
+        if (protect)
+          poly(
+            c,
+            [
+              [-4, -4],
+              [4, -4],
+              [4, 2],
+              [0, 6],
+              [-4, 2],
+            ],
+            '#376c57',
+          );
+        else
+          poly(
+            c,
+            [
+              [0, -4],
+              [4, 0],
+              [0, 4],
+              [-4, 0],
+            ],
+            '#69543b',
+          );
+        c.restore();
+      }
+    }
+    if (ui.pointer && buildType && !ui.dragging) {
       const p = this.snap(ui.pointer);
-      const valid = game.canBuild(ui.build, p.x, p.y).ok;
+      const valid = game.canBuild(buildType, p.x, p.y).ok;
       c.save();
       c.globalAlpha = 0.6;
       this.drawBuilding({
         x: p.x,
         y: p.y,
         side: 0,
-        type: ui.build,
-        hp: BUILDINGS[ui.build].hp,
-        maxHp: BUILDINGS[ui.build].hp,
+        type: buildType,
+        hp: this.buildings[buildType].hp,
+        maxHp: this.buildings[buildType].hp,
         level: 1,
         ghost: true,
       });
       c.globalAlpha = 1;
       c.strokeStyle = valid ? '#edf2b4' : '#e89176';
-      c.lineWidth = 3;
+      c.lineWidth = Math.max(3, 2 / this.scale);
       c.strokeRect(p.x - 55, p.y - 55, 110, 110);
       c.restore();
     }
@@ -635,10 +695,10 @@ export class Renderer {
     }
     // World-side labels remain grounded in the scene.
     c.textAlign = 'center';
-    c.font = '600 13px "DM Sans",sans-serif';
-    c.fillStyle = '#e5edc2aa';
+    c.font = `600 ${Math.max(13, 10 / this.scale)}px "DM Sans",sans-serif`;
+    c.fillStyle = '#e5edc2';
     c.fillText('YOUR FRONTIER', 780, 145);
-    c.fillStyle = '#f1d5b7aa';
+    c.fillStyle = '#f1d5b7';
     c.fillText('ENEMY FRONTIER', this.map.width - 770, 145);
     c.restore();
     const shade = c.createLinearGradient(0, 0, 0, this.height);
@@ -653,14 +713,16 @@ export class Renderer {
   drawBuilding(b) {
     const c = this.c,
       co = COLORS[b.side],
-      d = BUILDINGS[b.type];
+      d = (this.buildings || BUILDINGS)[b.type];
     c.save();
     c.translate(b.x, b.y);
-    ellipse(c, 8, 23, 51, 22, '#233a3045');
+    if (b.type !== 'wardenLodge') ellipse(c, 8, 23, 51, 22, '#233a3045');
     if (b.hit) c.globalAlpha = 0.7;
     const roof = b.side ? '#986652' : '#5d8570',
       roofLight = b.side ? '#bd8663' : '#8cab83';
-    if (b.type === 'sanctum') {
+    if (b.type === 'wardenLodge') {
+      drawWardenLodge(c, { side: b.side, compact: battlefieldReadability(this.scale).compact > 0, reducedMotion: this.reducedMotion, state: b.hit ? 'hit' : !b.ghost && b.progress > 0 ? 'working' : 'idle' });
+    } else if (b.type === 'sanctum') {
       poly(
         c,
         [
@@ -1073,7 +1135,7 @@ export class Renderer {
     if (!b.ghost) {
       this.health(
         -31,
-        b.type === 'watchtower' ? -91 : -63,
+        b.type === 'wardenLodge' ? -88 : b.type === 'watchtower' ? -91 : -63,
         62,
         b.hp / b.maxHp,
         co.bright,
@@ -1152,7 +1214,7 @@ export class Renderer {
       co.flag,
     );
     c.fillStyle = co.bright;
-    c.font = 'bold 13px "DM Sans",sans-serif';
+    c.font = `bold ${Math.max(13, 10 / this.scale)}px "DM Sans",sans-serif`;
     c.textAlign = 'center';
     c.fillText(b.side ? 'IRON CITADEL' : 'HOME CITADEL', 0, 87);
     this.health(-54, 65, 108, b.hp / b.maxHp, co.bright);
@@ -1161,11 +1223,41 @@ export class Renderer {
   drawUnit(u, time) {
     const c = this.c,
       co = COLORS[u.side],
-      direction = u.side ? -1 : 1;
+      direction = u.side ? -1 : 1,
+      battlefield = Number.isFinite(this.scale) && this.scale > 0,
+      modelScale = battlefield ? battlefieldReadability(this.scale).unitScale : 1,
+      effectiveScale = battlefield ? this.scale * modelScale : 1,
+      outline = battlefield ? Math.min(2.8, 0.8 / effectiveScale) : 0;
+    if (u.type === 'rootwarden') {
+      c.save();
+      c.translate(u.x, u.y);
+      if (battlefield) this.drawTeamMarker(u.side, modelScale);
+      drawRootwarden(c, { side: u.side, facing: direction, scale: modelScale,
+        compact: battlefield && battlefieldReadability(this.scale).compact > 0,
+        reducedMotion: this.reducedMotion, marker: false, outline,
+        state: u.hit > 0 ? 'hit' : u.attack > 0 ? 'attack' : this.rootwardenMotion?.get(u.id)?.moving ? 'walk' : 'idle',
+        // Native damage is immediate: show contact/settle, never a post-damage windup.
+        phase: u.hit > 0 ? 1 - u.hit / 0.16 : u.attack > 0 ? 0.48 + 0.52 * (1 - u.attack / 0.22) : 0.5,
+        time, seed: u.id });
+      if (u.hp < u.maxHp) {
+        const width = battlefield ? Math.max(26 * modelScale, 18 / this.scale) : 26;
+        this.health(-width / 2, -49 * modelScale, width, u.hp / u.maxHp, co.bright,
+          battlefield ? Math.max(3, 2.5 / this.scale) : 3);
+      }
+      c.restore();
+      return;
+    }
     const moving = u.cooldown <= 0,
       walk = this.reducedMotion ? 0 : Math.sin(time * 11 + u.id) * 2;
     c.save();
     c.translate(u.x, u.y);
+    if (battlefield) {
+      // A circle for allied troops, a diamond for enemies, independent of color.
+      // The marker stays at the actual ground anchor, including for flyers.
+      this.drawTeamMarker(u.side, modelScale);
+      c.save();
+      c.scale(modelScale, modelScale);
+    }
     ellipse(
       c,
       2,
@@ -1174,7 +1266,7 @@ export class Renderer {
       u.type === 'siege' ? 10 : 5,
       '#243b304d',
     );
-    if (u.hit) {
+    if (u.hit && (!battlefield || (!this.reducedMotion && this.vfx?.quality !== 'low'))) {
       c.shadowColor = '#fff3c9';
       c.shadowBlur = 9;
     }
@@ -1192,7 +1284,7 @@ export class Renderer {
           [-20, 5],
           [-4, 7],
         ],
-        '#d6c19a',
+        '#d6c19a', outline,
       );
       poly(
         c,
@@ -1202,10 +1294,10 @@ export class Renderer {
           [-31, 15 + flap],
           [-13, 6],
         ],
-        '#a99e80',
+        '#a99e80', outline,
       );
-      ellipse(c, 0, -3, 14, 8, co.cloth);
-      ellipse(c, 12, -8, 8, 8, '#e4d9b5');
+      ellipse(c, 0, -3, 14, 8, co.cloth, outline);
+      ellipse(c, 12, -8, 8, 8, '#e4d9b5', outline);
       poly(
         c,
         [
@@ -1213,7 +1305,7 @@ export class Renderer {
           [27, -5],
           [18, -3],
         ],
-        '#d6ab59',
+        '#d6ab59', outline,
       );
       c.fillStyle = '#3e4c39';
       c.fillRect(14, -10, 2, 2);
@@ -1254,7 +1346,7 @@ export class Renderer {
           [6, -15],
           [-5, -15],
         ],
-        co.cloth,
+        co.cloth, outline,
       );
       line(
         c,
@@ -1265,7 +1357,7 @@ export class Renderer {
         '#d4b5ec',
         2,
       );
-      ellipse(c, 0, -18 + bob, 6, 6, '#d8bf96');
+      ellipse(c, 0, -18 + bob, 6, 6, '#d8bf96', outline);
       poly(
         c,
         [
@@ -1273,7 +1365,7 @@ export class Renderer {
           [9, -21 + bob],
           [2, -39 + bob],
         ],
-        '#8c75ad',
+        '#8c75ad', outline,
       );
       line(
         c,
@@ -1284,14 +1376,14 @@ export class Renderer {
         '#c7a674',
         3,
       );
-      ellipse(c, direction * 12, -31, 5, 5, '#d8b8ff');
+      ellipse(c, direction * 12, -31, 5, 5, '#d8b8ff', outline);
       ellipse(c, direction * 12, -31, 9, 9, '#caa8fa22');
     } else if (u.type === 'siege') {
       c.scale(direction, 1);
       c.fillStyle = '#5b5b42';
       c.fillRect(-17, -12, 33, 18);
       for (const x of [-12, 12]) {
-        ellipse(c, x, 6, 6, 8, '#494e3e');
+        ellipse(c, x, 6, 6, 8, '#494e3e', outline);
         ellipse(c, x, 6, 2, 3, '#b3a071');
       }
       poly(
@@ -1302,7 +1394,7 @@ export class Renderer {
           [11, -21],
           [18, -9],
         ],
-        '#a59160',
+        '#a59160', outline,
       );
       line(
         c,
@@ -1313,7 +1405,7 @@ export class Renderer {
         '#dac18d',
         5,
       );
-      ellipse(c, 18, -37, 7, 5, '#8b8360');
+      ellipse(c, 18, -37, 7, 5, '#8b8360', outline);
       c.fillStyle = co.cloth;
       c.fillRect(-17, -12, 5, 17);
     } else {
@@ -1336,9 +1428,13 @@ export class Renderer {
         '#514c36',
         3,
       );
+      if (outline) {
+        c.strokeStyle = '#182a26'; c.lineWidth = outline * 2;
+        c.strokeRect(-7, -13 + bob, 14, 15);
+      }
       c.fillStyle = co.cloth;
       c.fillRect(-7, -13 + bob, 14, 15);
-      ellipse(c, 0, -17 + bob, 7, 7, '#d7bf8e');
+      ellipse(c, 0, -17 + bob, 7, 7, '#d7bf8e', outline);
       if (u.type === 'warrior') {
         poly(
           c,
@@ -1348,7 +1444,7 @@ export class Renderer {
             [4, -27 + bob],
             [8, -20 + bob],
           ],
-          '#adb8a5',
+          '#adb8a5', outline,
         );
         c.fillStyle = '#55695c';
         c.fillRect(-7, -20 + bob, 14, 3);
@@ -1364,7 +1460,7 @@ export class Renderer {
             [0, 9],
             [-7, 2],
           ],
-          co.dark,
+          co.dark, outline,
         );
         line(
           c,
@@ -1403,7 +1499,7 @@ export class Renderer {
             [3, -27 + bob],
             [8, -19 + bob],
           ],
-          co.dark,
+          co.dark, outline,
         );
         c.strokeStyle = '#d6b77c';
         c.lineWidth = 2;
@@ -1427,45 +1523,58 @@ export class Renderer {
         );
       }
     }
-    if (u.hp < u.maxHp)
-      this.health(
-        -13,
-        u.type === 'siege'
-          ? -46
-          : u.type === 'wizard'
-            ? -47
-            : u.type === 'gryphon'
-              ? -24
-              : -34,
-        26,
-        u.hp / u.maxHp,
-        co.bright,
-        3,
-      );
+    if (battlefield) c.restore();
+    if (u.hp < u.maxHp) {
+      const width = battlefield ? Math.max(26 * modelScale, 18 / this.scale) : 26;
+      const y = u.type === 'siege' ? -46 : u.type === 'wizard' ? -47 : u.type === 'gryphon' ? -54 : -34;
+      this.health(-width / 2, y * modelScale, width, u.hp / u.maxHp, co.bright,
+        battlefield ? Math.max(3, 2.5 / this.scale) : 3);
+    }
     c.restore();
   }
+  drawTeamMarker(side, modelScale) {
+    const c = this.c,
+      rx = Math.max(10 * modelScale, 6 / this.scale),
+      ry = Math.max(3.5 * modelScale, 2.5 / this.scale),
+      y = 9 * modelScale;
+    c.beginPath();
+    if (side) {
+      c.moveTo(-rx, y); c.lineTo(0, y - ry);
+      c.lineTo(rx, y); c.lineTo(0, y + ry); c.closePath();
+    } else c.ellipse(0, y, rx, ry, 0, 0, Math.PI * 2);
+    c.strokeStyle = '#182a26';
+    c.lineWidth = 3 / this.scale;
+    c.stroke();
+    c.strokeStyle = side ? '#ffd091' : '#a5efdc';
+    c.lineWidth = 1.25 / this.scale;
+    c.stroke();
+  }
   health(x, y, w, p, color, h = 4) {
-    const c = this.c;
-    c.fillStyle = '#1b3028bb';
-    c.fillRect(x - 1, y - 1, w + 2, h + 2);
+    const c = this.c, scale = Number.isFinite(this.scale) && this.scale > 0 ? this.scale : 1,
+      border = Math.max(1, 0.75 / scale);
+    h = Math.max(h, 2 / scale);
+    c.fillStyle = '#142720ed';
+    c.fillRect(x - border, y - border, w + border * 2, h + border * 2);
     c.fillStyle = color;
-    c.fillRect(x, y, w * Math.max(0, p), h);
+    c.fillRect(x, y, w * Math.max(0, Math.min(1, p)), h);
   }
   drawEffect(e) {
     const c = this.c,
-      t = 1 - e.life / e.maxLife;
+      age = Math.max(0, Math.min(1, 1 - e.life / e.maxLife)),
+      t = this.reducedMotion ? 0.45 : age;
     c.save();
     c.translate(e.x, e.y);
-    c.globalAlpha = 1 - t;
+    c.globalAlpha = 1 - age;
     if (e.type === 'volley') {
       c.strokeStyle = '#edd59d';
       c.lineWidth = 4;
       c.beginPath();
       c.arc(0, 0, e.radius * (0.7 + 0.3 * t), 0, Math.PI * 2);
       c.stroke();
-      for (let i = 0; i < 18; i++) {
+      const arrows = this.vfx?.quality === 'low' ? 7 : 18;
+      for (let i = 0; i < arrows; i++) {
         const a = i * 2.4,
-          r = Math.sqrt(i / 18) * e.radius,
+          r = Math.sqrt(i / arrows) * e.radius,
           x = Math.cos(a) * r,
           y = Math.sin(a) * r;
         c.strokeStyle = '#f8e3aa';
@@ -1605,8 +1714,9 @@ export class Renderer {
 }
 
 /** Enlarged, static portraits reuse the actual original battlefield models. */
-export function drawUnitPortrait(canvas, type, side = 0) {
-  if (!Object.hasOwn(UNITS, type) || typeof canvas?.getContext !== 'function')
+export function drawUnitPortrait(canvas, type, side = 0, context = null) {
+  const units = context?.units || context?.ruleset?.units || UNITS;
+  if (typeof type !== 'string' || !Object.hasOwn(units, type) || typeof canvas?.getContext !== 'function')
     return false;
   const c = canvas.getContext('2d');
   if (!c) return false;
@@ -1617,7 +1727,7 @@ export function drawUnitPortrait(canvas, type, side = 0) {
   c.save();
   c.translate(56, 74);
   c.scale(1.6, 1.6);
-  const data = UNITS[type];
+  const data = units[type];
   Renderer.prototype.drawUnit.call(
     { c, reducedMotion: true },
     {

@@ -1,12 +1,14 @@
-import { Game, getMap } from './engine.js';
+import { decodeBattle, encodeBattle } from './battle-codec.js';
+import { validateHistory } from './history-codec.js';
 import {
-  CAMPAIGN_MISSIONS, CAMPAIGN_STORAGE_KEY, createCampaignProgress,
-  normalizeCampaignProgress, isMissionUnlocked, evaluateCampaignMission,
+  ALL_CAMPAIGN_MISSIONS, CAMPAIGN_STORAGE_KEY, createCampaignProgress,
+  normalizeCampaignProgress,
 } from './campaign.js';
-import { CHALLENGES, evaluateChallenge } from './challenges.js';
+import { CHALLENGES } from './challenges.js';
 
 export const BACKUP_FORMAT = 'ironroot-backup';
-export const BACKUP_VERSION = 1;
+export const BACKUP_VERSION = 1; // Legacy export remains the default when representable.
+export const LATEST_BACKUP_VERSION = 2;
 export const MAX_BACKUP_BYTES = 1024 * 1024;
 export const BACKUP_STORAGE_KEYS = Object.freeze({
   campaign: CAMPAIGN_STORAGE_KEY,
@@ -107,7 +109,7 @@ function campaign(value) {
   if (value.version !== 1) fail('Campaign progress has an unsupported version.', 'unsupported-version');
   object(value.missions, 'Campaign missions');
   for (const id of Object.keys(value.missions)) {
-    const mission = CAMPAIGN_MISSIONS.find(m => m.id === id);
+    const mission = ALL_CAMPAIGN_MISSIONS.find(m => m.id === id);
     if (!mission) fail('Campaign progress contains an unknown mission.');
     const record = value.missions[id];
     fields(record, ['completed', 'stars', 'bestTime'], ['completed', 'stars', 'bestTime'], 'Campaign record');
@@ -146,99 +148,32 @@ function settings(value) {
   }
   return clean;
 }
-function identity(value) {
-  const challengeId = own(value, 'challengeId') ? value.challengeId : null;
-  const campaignId = own(value, 'campaignId') ? value.campaignId : null;
-  if (challengeId !== null && !CHALLENGES.some(c => c.id === challengeId)) fail('Battle identity contains an unknown trial.');
-  if (campaignId !== null && !CAMPAIGN_MISSIONS.some(m => m.id === campaignId)) fail('Battle identity contains an unknown campaign mission.');
-  if (challengeId !== null && campaignId !== null) fail('A battle cannot be both a trial and a campaign mission.');
-  return { challengeId, campaignId };
-}
-function history(value) {
-  if (!Array.isArray(value) || value.length > 30) fail('Recent results must contain at most 30 entries.');
-  const keys = ['won', 'draw', 'challengeId', 'campaignId', 'difficulty', 'time', 'kills', 'built', 'date', 'mapId'];
-  return value.map(record => {
-    fields(record, keys, ['won', 'difficulty', 'time', 'kills', 'built', 'date'], 'Recent result');
-    const ids = identity(record), draw = own(record, 'draw') ? record.draw : false;
-    if (typeof record.won !== 'boolean' || typeof draw !== 'boolean' || (record.won && draw))
-      fail('Recent result has invalid win/draw flags.');
-    if (!['easy', 'normal', 'hard'].includes(record.difficulty)) fail('Recent result has an unknown difficulty.');
-    const authored = ids.challengeId ? CHALLENGES.find(c => c.id === ids.challengeId) : CAMPAIGN_MISSIONS.find(m => m.id === ids.campaignId);
-    const map = {};
-    if (own(record, 'mapId')) {
-      try {
-        if (typeof record.mapId !== 'string' || getMap(record.mapId).id !== record.mapId) throw new Error('Unknown map');
-      } catch { fail('Recent result contains an unknown battlefield.'); }
-      map.mapId = record.mapId;
-    }
-    if (authored && (record.mapId ?? 'classic') !== (authored.mapId ?? 'classic'))
-      fail(`Authored mission results require the ${getMap(authored.mapId ?? 'classic').name} battlefield.`);
-    number(record.time, 0, authored ? authored.timeLimit + .25 : 10000, 'Recent result time');
-    number(record.kills, 0, 1e9, 'Recent result kills', true);
-    number(record.built, 0, 1e9, 'Recent result buildings', true);
-    return { won: record.won, draw, ...ids, difficulty: record.difficulty, time: record.time,
-      kills: record.kills, built: record.built, date: iso(record.date, 'Recent result date'), ...map };
-  });
-}
-/** Engine restore validates values; these allowlists also exclude unrelated/private metadata. */
-function gameFields(data) {
-  const check = (value, keys, label, optional = []) => fields(value, [...keys, ...optional], keys, label);
-  object(data, 'Engine save');
-  // V1 remains the exact Classic schema; only v2 may carry explicit map identity.
-  const mapFields = data.version === 2 ? ['mapId', 'mapRevision'] : [];
-  check(data, ['version', ...mapFields, 'difficulty', 'seed', 'ai', 'nextId', 'aiTimer', 'accumulator', 'tick', 'state'], 'Engine save');
-  const s = data.state;
-  check(s, ['time', 'gold', 'income', 'bases', 'buildings', 'units', 'projectiles', 'effects', 'frontline', 'winner', 'spellCooldown', 'overtime', 'stats'], 'Engine state');
-  check(s.stats, ['kills', 'built', 'damage'], 'Battle statistics');
-  const entity = ['id', 'type', 'side', 'hp', 'maxHp', 'cooldown', 'x', 'y'];
-  for (const [name, keys, optional] of [
-    ['bases', entity, ['hit', 'attack']],
-    ['buildings', [...entity, 'lane', 'level', 'progress', 'invested'], ['hit', 'attack']],
-    ['units', [...entity, 'lane', 'level', 'flying', 'attack'], ['hit']],
-    ['effects', ['x', 'y', 'type', 'side', 'life', 'maxLife', 'radius'], []],
-    ['projectiles', ['x', 'y', 'sx', 'sy', 'tx', 'ty', 'side', 'type', 'life', 'maxLife'], ['sourceAir', 'targetAir']],
-  ]) {
-    if (!Array.isArray(s[name])) fail('Engine entity collections must be arrays.');
-    for (const e of s[name]) check(e, keys, 'Engine entity', optional);
-  }
-}
 function battle(value, progress) {
   if (value === null) return null;
-  object(value, 'Saved battle');
-  let data = value, ids = { challengeId: null, campaignId: null };
-  if (own(value, 'format')) {
-    fields(value, ['format', 'version', 'challengeId', 'campaignId', 'game'], ['format', 'version', 'game'], 'Saved battle');
-    if (value.format !== 'ironroot-save') fail('Saved battle has an invalid format.');
-    if (![1, 2].includes(value.version)) fail('Saved battle has an unsupported version.', 'unsupported-version');
-    ids = identity(value);
-    if (value.version === 1 && ids.campaignId !== null) fail('Version-1 battle envelopes cannot contain campaign missions.');
-    data = value.game;
-  }
-  gameFields(data);
-  let game;
-  try { game = Game.restore(data); }
-  catch { fail('Saved battle contains invalid or incompatible engine data.'); }
-  if (game.state.winner !== null || game.state.bases.some(base => base.hp <= 0)) fail('Saved battle has already ended.');
-  const mission = ids.campaignId ? CAMPAIGN_MISSIONS.find(m => m.id === ids.campaignId) : CHALLENGES.find(c => c.id === ids.challengeId);
-  if (mission) {
-    if (game.map.id !== (mission.mapId ?? 'classic'))
-      fail(`Authored missions require the ${getMap(mission.mapId ?? 'classic').name} battlefield.`);
-    if (game.difficulty !== mission.difficulty || game.ai !== (mission.ai === true)) fail('Saved battle does not match its mission rules.');
-    if (ids.campaignId && !isMissionUnlocked(progress, ids.campaignId)) fail('Saved campaign battle is locked by the backup progress.');
-    const result = ids.campaignId ? evaluateCampaignMission(game, ids.campaignId) : evaluateChallenge(game, ids.challengeId);
-    if (result.completed || result.failed) fail('Saved mission has already ended.');
-  }
-  return { format: 'ironroot-save', version: 2, ...ids, game: game.serialize() };
+  try {
+    const decoded = decodeBattle(value, { campaignProgress: progress });
+    return encodeBattle(decoded.game, decoded.scenario, { campaignProgress: progress });
+  } catch (error) { fail(error.message || 'Saved battle contains invalid or incompatible data.', error.code === 'invalid-battle' ? 'invalid-backup' : error.code); }
+}
+function history(value) {
+  try { return validateHistory(value); }
+  catch (error) { fail(error.message || 'Recent results are invalid.', error.code); }
+}
+function needsV2(data) {
+  return data.battle?.version === 3 || data.battle?.game?.version === 3 ||
+    (Array.isArray(data.history) && data.history.some(row => row && typeof row === 'object' && own(row, 'identity'))) ||
+    Object.keys(data.campaign?.missions || {}).some(id => ['first-watch', 'forked-road'].includes(id));
 }
 function validate(value) {
   bounded(value);
   fields(value, ['format', 'version', 'createdAt', 'data'], ['format', 'version', 'createdAt', 'data'], 'Backup');
   if (value.format !== BACKUP_FORMAT) fail('This is not an Ironroot Frontier backup.');
-  if (value.version !== BACKUP_VERSION) fail('This backup version is not supported.', 'unsupported-version');
+  if (![1, 2].includes(value.version)) fail('This backup version is not supported.', 'unsupported-version');
   iso(value.createdAt, 'Backup date');
   fields(value.data, domains, domains, 'Backup data');
   const progress = campaign(value.data.campaign);
-  return { format: BACKUP_FORMAT, version: BACKUP_VERSION, createdAt: value.createdAt, data: {
+  if (value.version === 1 && needsV2(value.data)) fail('Version-1 backups cannot contain new battle or history identities.');
+  return { format: BACKUP_FORMAT, version: value.version, createdAt: value.createdAt, data: {
     campaign: progress, trials: trials(value.data.trials), settings: settings(value.data.settings),
     history: history(value.data.history), battle: battle(value.data.battle, progress),
   } };
@@ -293,7 +228,7 @@ export function createBackup(storage, options = {}) {
       throw error;
     }
   }
-  const clean = validate({ format: BACKUP_FORMAT, version: BACKUP_VERSION,
+  const clean = validate({ format: BACKUP_FORMAT, version: needsV2(data) ? 2 : 1,
     createdAt: own(options, 'createdAt') ? options.createdAt : new Date().toISOString(), data });
   const text = JSON.stringify(clean, null, 2);
   byteLength(text);

@@ -28,12 +28,12 @@ function encoded(epoch, phase, version) { return JSON.stringify({ format: FORMAT
 
 /**
  * getBackend must expose throwing getItem/setItem/removeItem methods, never swallow read errors.
- * Version 2 fences older clients before they can drop newly authored campaign IDs.
+ * Protocol 2 fences expanded campaigns; protocol 3 fences explicit battle identities.
  * Only construction upgrades a ready marker; a failed or uncertain upgrade requires reload.
  */
 export function createProfileSession(getBackend, { newEpoch = nextEpoch, requiredProtocolVersion = 1 } = {}) {
   if (typeof getBackend !== 'function' || typeof newEpoch !== 'function') throw new TypeError('A storage getter and epoch factory are required.');
-  if (![1, 2].includes(requiredProtocolVersion)) throw new TypeError('The required profile protocol must be version 1 or 2.');
+  if (![1, 2, 3].includes(requiredProtocolVersion)) throw new TypeError('The required profile protocol must be version 1, 2 or 3.');
   let boundRaw, boundKnown = false, initiallyUnavailable = false, transaction = null, upgradeAttempted = false, upgradeError = null;
   function backend() {
     let value;
@@ -55,7 +55,7 @@ export function createProfileSession(getBackend, { newEpoch = nextEpoch, require
     }
   }
   function read() { return marker(rawRead(), requiredProtocolVersion); }
-  function needsUpgrade(current) { return requiredProtocolVersion === 2 && current.version < 2; }
+  function needsUpgrade(current) { return requiredProtocolVersion > 1 && current.version < requiredProtocolVersion; }
   try {
     let initial = read();
     if (initial.phase === 'ready' && needsUpgrade(initial)) {
@@ -138,7 +138,13 @@ export function createProfileSession(getBackend, { newEpoch = nextEpoch, require
       try { current = read(); }
       catch (e) {
         if (!recover || e.code !== 'invalid-marker') throw e;
-        current = { raw: rawRead(), phase: 'invalid', epoch: null };
+        const raw = rawRead();
+        // An explicit recovery may repair corruption, never downgrade a future client.
+        let future;
+        try { future = JSON.parse(raw); } catch {}
+        if (future?.format === FORMAT && Number.isInteger(future.version) && future.version > requiredProtocolVersion)
+          error('unsupported-protocol', 'This profile needs a compatible newer version. Its marker and saves were retained.');
+        current = { raw, phase: 'invalid', epoch: null };
       }
       if (transaction && !transaction.done && current.raw === transaction.restoringRaw) {
         if (!transaction.started) { transaction.started = true; return response(true, 'import-started', 'Import ownership verified.', { epoch: transaction.epoch }); }

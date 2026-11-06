@@ -1,5 +1,5 @@
 # Ironroot Frontier
 
-Public browser build of Ironroot Frontier, version 0.12.0.
+Public browser build of Ironroot Frontier, version 0.13.0.
 
 Play at https://ironroot.stevets.ai.

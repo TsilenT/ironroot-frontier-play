@@ -26,7 +26,7 @@ export const CHALLENGES = [
   },
   {
     id:'siegecraft', name:'Siegecraft', subtitle:'Crack the fortress',
-    description:'Three fortified watchtowers lock down the middle lane. Find a protected firing position and work through their defenses.',
+    description:'Three fortified watchtowers lock down the middle lane. Bring siege engines into range and protect them while they fire.',
     objective:'Destroy all 3 watchtowers within 4:00, or destroy the enemy citadel.',
     hint:'Siege engines can outrange towers and deal triple damage to structures. A warrior screen keeps enemy infantry away.',
     difficulty:'normal', seed:349, mode:'destroy', timeLimit:240, startingGold:500, startingHealth:6000,
@@ -37,7 +37,7 @@ export const CHALLENGES = [
   },
   {
     id:'goldrush', name:'Gold Rush', subtitle:'Invest under pressure',
-    description:'Your damaged citadel needs a working economy, not just an army. Build protected mines, improve them, and keep your defenses funded.',
+    description:'Your citadel is damaged. Build mines behind your defenses and upgrade them to fund the fight.',
     objective:'Have at least 15 gold/sec when the clock reaches 2:30, with your citadel alive. Destroying the enemy citadel also wins.',
     hint:'Two watchtowers can hold the outer lanes. Three mines plus two mine upgrades reach 15 gold/sec. Keep mines behind your defenses.',
     difficulty:'normal', seed:463, mode:'economy', timeLimit:150, incomeTarget:15, startingGold:500, startingHealth:3500,
@@ -48,9 +48,9 @@ export const CHALLENGES = [
   },
   {
     id:'holdfast', name:'Holdfast', subtitle:'Hold a broken line',
-    description:'The citadel has only 1,800 health. Infantry attacks every lane, with archers in the middle and gryphons in the north. Every defensive choice matters.',
+    description:'The citadel has only 1,800 health. Infantry attacks every lane, with archers in the middle and gryphons in the north. Cover all three lanes.',
     objective:'Keep your citadel alive for 2:20, or destroy the enemy citadel.',
-    hint:'Defend all three lanes before spending on mines. Towers hold ground; archers answer the northern flyers. Save a rally strike for a breakthrough.',
+    hint:'Defend all three lanes before spending on mines. Towers hold ground; archers answer the northern flyers. Save an arrow volley for a breakthrough.',
     difficulty:'hard', seed:587, mode:'survive', timeLimit:140, startingGold:650, startingHealth:1800,
     briefing:['650 starting gold; citadel starts at 1,800 HP', '3 barracks, a middle-lane archery range and a northern aerie', 'Survive 2:20; fixed enemy formation'],
     playerBuildings:[['barracks',690,1]],
