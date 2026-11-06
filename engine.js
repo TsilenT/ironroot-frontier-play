@@ -90,7 +90,7 @@ export class Game {
     if(this.ai){this.aiTimer-=dt;if(this.aiTimer<=0){this._ai();this.aiTimer=(this.difficulty==='easy'?14:this.difficulty==='hard'?3:5)+this.random()*3;}}
   }
   _ai(side=1){
-    if(![0,1].includes(side))return;
+    if(![0,1].includes(side)||this.state.winner!==null)return;
     const fx=x=>side===1?x:3200-x;
     const s=this.state,hard=this.difficulty==='hard',easy=this.difficulty==='easy';
     // Honest economy, but stronger rivals react earlier and reinforce threatened lanes.
@@ -108,20 +108,30 @@ export class Game {
       const local=t=>target.buildings.filter(b=>b.type===t).length;
       const pressure=target.foes.some(u=>fx(u.x)>1750)||target.enemyProduction>target.production;
       if(!easy&&s.time<5)type='barracks';
-      else if(!easy&&pressure&&local('watchtower')<1&&target.production>0)type='watchtower';
       else if(!easy&&target.foes.some(u=>UNITS[u.type].flying)&&local('archery')<2)type='archery';
+      else if(!easy&&target.foes.some(u=>fx(u.x)>1950)&&local('watchtower')<1&&target.production>0)type='watchtower';
       else if(local('barracks')<1)type='barracks';
       else if(enemy.some(b=>b.type==='watchtower'&&b.lane===lane)&&local('foundry')<1)type='foundry';
       else if(!easy&&target.foes.filter(u=>u.type==='warrior').length>=3&&local('sanctum')<1)type='sanctum';
       else if(local('archery')<local('barracks'))type='archery';
-      else if(!pressure&&count('mint')<(hard?3:2)&&s.time>35&&own.length>4){type='mint';lane=Math.floor(this.random()*3);}
+      else if(!pressure&&count('mint')<(hard?3:2)&&s.time>35&&s.time<220&&own.length>4){type='mint';lane=Math.floor(this.random()*3);}
       else if(s.time>90&&local('sanctum')<1)type='sanctum';
       else if(s.time>110&&local('aerie')<1&&!enemy.some(b=>b.lane===lane&&b.type==='watchtower'))type='aerie';
       else if(s.time>130&&local('foundry')<1)type='foundry';
       const xs=type==='mint'?[2930,2790,2650]:easy?[2510,2370,2650,2230,2790,2090,2930,1950]:type==='watchtower'?[1950,2090,2230,2370,2510]:[1950,2090,2230,2370,2510,2650,2790,2930];
       let built=false;
-      for(const x of xs)if(this.build(type,fx(x),LANES[lane],side).ok){built=true;break;}
-      if(!built&&s.gold[side]>300){const upgrades=own.filter(b=>b.level<3).sort((a,b)=>a.level-b.level);if(upgrades[0])this.upgrade(upgrades[0].id,side);}
+      // Search the other lanes when the preferred lane has no legal space.
+      for(const candidate of [lane,...lanes.map(l=>l.lane).filter(l=>l!==lane)]){
+        for(const x of xs)if(this.build(type,fx(x),LANES[candidate],side).ok){built=true;break;}
+        if(built)break;
+      }
+      // Save for the selected counter if it is still affordable in principle.
+      // At a full frontier, spend only on upgrades we can actually afford.
+      if(!built&&(own.length>=24||s.gold[side]>=BUILDINGS[type].cost)){
+        const upgrades=own.filter(b=>b.level<3&&upgradeCost(b)<=s.gold[side])
+          .sort((a,b)=>(a.lane!==lane)-(b.lane!==lane)||a.level-b.level||a.id-b.id);
+        if(upgrades[0])this.upgrade(upgrades[0].id,side);
+      }
       if(!built)break;
     }
     if(!easy&&s.gold[side]>=SPELL.cost){const enemies=s.units.filter(u=>u.side!==side&&fx(u.x)>1550);let target=null,best=hard?2:3;for(const u of enemies){const n=enemies.filter(e=>Math.hypot(e.x-u.x,e.y-u.y)<SPELL.radius).length;if(n>best){best=n;target=u;}}if(target)this.cast(target.x,target.y,side);}

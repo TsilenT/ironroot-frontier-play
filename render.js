@@ -1,3 +1,4 @@
+import {BattleVFX} from './vfx.js';
 import {BUILDINGS, UNITS, WORLD, LANES, SPELL} from './engine.js';
 const COLORS=[{cloth:'#539d95',bright:'#b4e3c3',dark:'#214d4a',flag:'#80c5ad'},{cloth:'#ad6554',bright:'#edbb92',dark:'#683e35',flag:'#d59070'}];
 export const icons={
@@ -17,7 +18,7 @@ function line(c,pts,color,width=1){c.strokeStyle=color;c.lineWidth=width;c.begin
 function tree(c,x,y,s=1){c.save();c.translate(x,y);c.scale(s,s);ellipse(c,10,9,22,9,'#334a3538');c.fillStyle='#554f38';c.fillRect(-3,-4,6,18);poly(c,[[-20,-2],[0,-36],[20,-2]],'#374f3d');poly(c,[[-17,-14],[0,-47],[17,-14]],'#415f44');poly(c,[[-12,-28],[0,-54],[12,-28]],'#52714c');line(c,[[0,-48],[0,-2]],'#60794e',1);c.restore();}
 function rock(c,x,y,s=1){c.save();c.translate(x,y);c.scale(s,s);poly(c,[[-11,1],[-7,-9],[5,-12],[13,-3],[9,7],[-5,8]],'#75816b');poly(c,[[-7,-9],[5,-12],[8,-4],[-2,0]],'#99a185');c.restore();}
 export class Renderer{
- constructor(canvas,minimap){this.canvas=canvas;this.mini=minimap;this.c=canvas.getContext('2d');this.m=minimap.getContext('2d');this.width=0;this.height=0;this.camera=800;this.zoom=1;this.terrain=this.makeTerrain();this.resize();this.time=0;this.reducedMotion=matchMedia('(prefers-reduced-motion: reduce)').matches;}
+ constructor(canvas,minimap){this.canvas=canvas;this.mini=minimap;this.c=canvas.getContext('2d');this.m=minimap.getContext('2d');this.width=0;this.height=0;this.camera=800;this.zoom=1;this.terrain=this.makeTerrain();this.resize();this.time=0;this.reducedMotion=matchMedia('(prefers-reduced-motion: reduce)').matches;this.vfx=new BattleVFX({reducedMotion:this.reducedMotion});}
  resize(){const rect=this.canvas.getBoundingClientRect(),dpr=Math.min(devicePixelRatio||1,2);this.width=rect.width;this.height=rect.height;this.canvas.width=Math.round(rect.width*dpr);this.canvas.height=Math.round(rect.height*dpr);this.dpr=dpr;const mr=this.mini.getBoundingClientRect();this.mini.width=Math.round(mr.width*dpr);this.mini.height=Math.round(mr.height*dpr);this.mw=mr.width;this.mh=mr.height;this.scale=Math.max(.32,this.height/900)*this.zoom;this.clampCamera();}
  clampCamera(){const half=this.width/(2*this.scale);this.camera=half>=1600?1600:Math.max(half,Math.min(3200-half,this.camera));}
  screenToWorld(x,y){return {x:(x-this.width/2)/this.scale+this.camera,y:(y-this.height/2)/this.scale+450};}
@@ -34,7 +35,7 @@ export class Renderer{
  for(const x of[1440,1760])for(const y of[125,775]){rock(c,x,y,2.5);c.fillStyle='#747f68';c.fillRect(x-8,y-45,16,48);c.fillStyle='#a5a786';c.fillRect(x-12,y-49,24,9);}
  for(const x of[1390,1810]){c.strokeStyle='#b9c48b77';c.setLineDash([9,14]);c.lineWidth=2;c.beginPath();c.moveTo(x,160);c.lineTo(x,740);c.stroke();c.setLineDash([]);}
  return canvas;}
- draw(game,ui,dt){this.time+=dt;const c=this.c,s=game.state;this.clampCamera();c.setTransform(this.dpr,0,0,this.dpr,0,0);c.clearRect(0,0,this.width,this.height);c.save();c.translate(this.width/2,this.height/2);c.scale(this.scale,this.scale);c.translate(-this.camera,-450);c.drawImage(this.terrain,0,0);
+ draw(game,ui,dt){this.time+=ui.paused?0:dt;const c=this.c,s=game.state;this.vfx.update(s.effects,dt,{paused:!!ui.paused});const shake=this.vfx.getShake();this.clampCamera();c.setTransform(this.dpr,0,0,this.dpr,0,0);c.clearRect(0,0,this.width,this.height);c.save();c.translate(this.width/2+shake.x,this.height/2+shake.y);c.scale(this.scale,this.scale);c.translate(-this.camera,-450);c.drawImage(this.terrain,0,0);
  // Subtle side tints on each half.
  c.fillStyle='#4597800c';c.fillRect(0,150,1390,600);c.fillStyle='#a051370b';c.fillRect(1810,150,1390,600);
  if(ui.build){for(const y of LANES)for(let x=270;x<=1250;x+=140){const valid=game.canBuild(ui.build,x,y).ok;c.fillStyle=valid?'#c8e2a429':'#273d2820';c.strokeStyle=valid?'#d0e7a67a':'#52644733';c.lineWidth=1.5;c.fillRect(x-55,y-55,110,110);c.strokeRect(x-55,y-55,110,110);if(valid){c.strokeStyle='#d0e7a699';c.beginPath();c.moveTo(x-7,y);c.lineTo(x+7,y);c.moveTo(x,y-7);c.lineTo(x,y+7);c.stroke();}}}
@@ -43,7 +44,7 @@ export class Renderer{
  const entities=[...s.buildings,...s.units].sort((a,b)=>a.y-b.y);const left=this.camera-this.width/(2*this.scale)-120,right=this.camera+this.width/(2*this.scale)+120;
  for(const e of entities){if(e.x<left||e.x>right)continue;if(BUILDINGS[e.type]){this.drawBuilding(e);if(ui.targets?.includes(e.id)){c.save();c.translate(e.x,e.y-94);poly(c,[[0,-9],[9,0],[0,9],[-9,0]],'#f1d295');poly(c,[[0,-4],[4,0],[0,4],[-4,0]],'#69543b');c.restore();}}else this.drawUnit(e,s.time);}
  for(const p of s.projectiles){const t=1-p.life/p.maxLife;const arc=p.type==='siege'?Math.sin(t*Math.PI)*55:0;c.save();c.translate(p.x,p.y-arc-17-(p.sourceAir?17*(1-t):0)-(p.targetAir?17*t:0));if(p.type==='wizard'){ellipse(c,0,0,7,7,'#bfa0ed66');ellipse(c,0,0,4,4,'#e6cbff');}else if(p.type==='gryphon'){line(c,[[-7,-4],[5,1]],'#f4dcaa',2);line(c,[[-7,1],[5,6]],'#f4dcaa',2);}else if(p.type==='siege'){ellipse(c,0,0,5,5,'#e8ad69');ellipse(c,-2,-2,2,2,'#fff0b2');}else{c.rotate(Math.atan2(p.ty-p.sy,p.tx-p.sx));line(c,[[-11,0],[7,0]],p.side?'#ebbc8a':'#dae7b6',2);poly(c,[[8,0],[2,-3],[2,3]],'#f3e4b5');}c.restore();}
- for(const e of s.effects)this.drawEffect(e);
+ for(const e of s.effects)this.drawEffect(e);this.vfx.draw(c,{x:left,y:0,width:right-left,height:900});
  if(ui.pointer&&ui.build&&!ui.dragging){const p=this.snap(ui.pointer);const valid=game.canBuild(ui.build,p.x,p.y).ok;c.save();c.globalAlpha=.6;this.drawBuilding({x:p.x,y:p.y,side:0,type:ui.build,hp:BUILDINGS[ui.build].hp,maxHp:BUILDINGS[ui.build].hp,level:1,ghost:true});c.globalAlpha=1;c.strokeStyle=valid?'#edf2b4':'#e89176';c.lineWidth=3;c.strokeRect(p.x-55,p.y-55,110,110);c.restore();}
  if(ui.spell&&ui.pointer){c.beginPath();c.arc(ui.pointer.x,ui.pointer.y,SPELL.radius,0,Math.PI*2);c.fillStyle='#f0d17a25';c.fill();c.strokeStyle='#efd491';c.lineWidth=2;c.setLineDash([10,8]);c.stroke();c.setLineDash([]);}
  // World-side labels remain grounded in the scene.
