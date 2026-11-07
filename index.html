@@ -126,6 +126,7 @@
             ><button id="sell" class="secondary-button">Salvage</button>
           </div>
         </div>
+        <p id="bridgeBattleStatus" class="sr-only hidden" aria-live="off"></p>
         <div class="bottom-map" id="mapControls">
           <button
             id="home"
@@ -200,6 +201,12 @@
         <div class="pause-briefing">
           <h3 id="pauseBattleName"></h3>
           <p id="pauseObjective"></p>
+          <details id="pauseBridgeDetails" class="bridge-details hidden">
+            <summary>Bridge control · experimental</summary>
+            <p id="pauseBridgeStatus"></p>
+            <p id="pauseBridgeRules"></p>
+            <p>Map labels: Y = you, E = enemy, — = unowned, X = payout blocked. An arrow points to the side attempting a ground capture. Bridges are numbered from the top road.</p>
+          </details>
         </div>
         <button id="resume" class="gold-button" data-dialog-focus>Resume battle <span aria-hidden="true">→</span></button>
         <div class="pause-utilities">
@@ -257,6 +264,11 @@
             </select>
           </label>
           <p id="skirmishRulesDescription" class="rules-description"></p>
+          <label class="skirmish-bridge-label" for="skirmishBridgeIncome">
+            <input type="checkbox" id="skirmishBridgeIncome" aria-describedby="skirmishBridgeDescription" />
+            <span>Bridge control income <small>Experimental · off by default</small></span>
+          </label>
+          <p id="skirmishBridgeDescription" class="rules-description"></p>
           <p class="rules-description">Saved battles keep their original rules.</p>
           <details class="map-picker" id="mapPicker">
             <summary id="mapPickerToggle">
@@ -357,7 +369,7 @@
         </button>
         <p class="save-status hidden" id="saveStatus" role="status"></p>
         <button id="exportUnreadableBattle" class="text-button hidden">Download original save</button>
-        <p class="welcome-foot">Campaign · Skirmish · Field trials · v0.18.1</p>
+        <p class="welcome-foot">Campaign · Skirmish · Field trials · v0.19.0</p>
         <div class="welcome-links">
           <a class="text-button training-link" id="welcomeTraining" href="./training.html" aria-label="Optional guided practice. Learn without changing your saved battle">Guided practice (optional) →</a>
           <button class="text-button" id="welcomeFullscreen" type="button" data-fullscreen aria-pressed="false" aria-describedby="welcomeFullscreenStatus">Enter fullscreen</button>

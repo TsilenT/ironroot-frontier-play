@@ -4,6 +4,7 @@ import { createInputScopeGuard } from './input-scope.js';
 import { ACTIONS, effectiveBindings, normalizeKeyboardMap, bindingConflict, bindableCode, keyLabel, actionLabel, ignoreKeyboardEvent, keyboardAction } from './keyboard.js';
 import { createMenuHistory, seedMenuAncestors } from './menu-history.js';
 import { supportsAutonomousAir } from './autonomous-air.js';
+import { bridgeIncome, bridgeStatus, bridgeSummary, BRIDGE_RULES_TEXT } from './bridge-control.js';
 import { airRulesGuide, airBuildingDescription } from './flight-orders-view.js';
 import {
   GamepadInput,
@@ -267,12 +268,13 @@ const preferences = {
   volume: 0.5,
   reducedMotion: renderer.reducedMotion,
   quality: 'high',
+  skirmishBridgeIncome: false,
 };
 let keyboardCapture = null, keyboardLoadWarning = '', keyboardSavePending = false;
 try {
   const saved = JSON.parse(preferenceSession.initial().value || '{}');
   if (saved && typeof saved === 'object') {
-    for (const key of ['sound', 'music', 'sfx', 'reducedMotion'])
+    for (const key of ['sound', 'music', 'sfx', 'reducedMotion', 'skirmishBridgeIncome'])
       if (typeof saved[key] === 'boolean') preferences[key] = saved[key];
     if (Number.isFinite(saved.volume))
       preferences.volume = Math.max(0, Math.min(1, saved.volume));
@@ -1041,7 +1043,9 @@ function start(
         : createProgressionCampaignMission(currentCampaign, campaignProgress))
       : currentChallenge
         ? createCurrentChallenge(currentChallenge)
-        : new Game({ difficulty, seed: Date.now() >>> 0, mapId: selectedMap, mapRevision: 1, rulesetId: selectedRuleset, rulesetRevision: 1 }));
+        : new Game({ difficulty, seed: Date.now() >>> 0, mapId: selectedMap, mapRevision: 1, rulesetId: $('skirmishBridgeIncome').checked
+          ? selectedRuleset === 'frontier-air-local-timed' ? 'frontier-bridge-timed' : 'frontier-bridge-open'
+          : selectedRuleset, rulesetRevision: 1 }));
   populateBuildCards();
   populateFieldGuide(game);
   if (!currentChallenge && !currentCampaign) {
@@ -1707,7 +1711,7 @@ function updateResume() {
       : cid
         ? `TRIAL · ${CHALLENGES.find((c) => c.id === cid).name.toUpperCase()}`
         : valid.map.id === 'classic' ? 'BATTLE' : valid.map.name.toUpperCase();
-    const ruleLabel = !mid && !cid && valid.schemaVersion === 3 ? ` · ${valid.ruleset.endgame.name.toUpperCase()}` : '';
+    const ruleLabel = !mid && !cid && valid.schemaVersion === 3 ? ` · ${valid.ruleset.endgame.name.toUpperCase()}${valid.state.bridgeControl ? ' · BRIDGES' : ''}` : '';
     button.textContent = `RESUME ${name}${ruleLabel} · ${timeText(valid.state.time)}`;
     button.onclick = () => start(valid, cid, mid);
     if (valid.limitReason) button.textContent = `VIEW PAUSED ${name}${ruleLabel} · ${timeText(valid.state.time)}`;
@@ -2200,9 +2204,22 @@ let hudTimer = 0,
   lastProfileCheck = 0;
 function updateHUD() {
   const s = game.state;
+  const bridgeMode = !!s.bridgeControl;
+  $('app').classList.toggle('bridge-income', bridgeMode);
+  const bridgeRate = bridgeMode ? bridgeIncome(game)[0] : 0;
+  const bridgeLabel = bridgeMode ? `Bridges +${bridgeRate.toFixed(2)} /s` : '';
+  $('bridgeBattleStatus').classList.toggle('hidden', !bridgeMode);
+  if (bridgeMode) {
+    const status = bridgeSummary(game);
+    if ($('bridgeBattleStatus').textContent !== status) $('bridgeBattleStatus').textContent = status;
+    $('minimap').setAttribute('aria-describedby', 'bridgeBattleStatus');
+  } else $('minimap').removeAttribute('aria-describedby');
   $('gold').textContent = Math.floor(s.gold[0]);
   $('income').textContent =
-    `+${s.income[0].toFixed(s.income[0] % 1 ? 1 : 0)} /s`;
+    `+${s.income[0].toFixed(bridgeMode ? 2 : s.income[0] % 1 ? 1 : 0)} /s`;
+  $('income').setAttribute('aria-label', bridgeMode
+    ? `Total income ${s.income[0].toFixed(2)} gold per second, including ${bridgeRate.toFixed(2)} from bridges.`
+    : `Total income ${s.income[0]} gold per second.`);
   const army = s.units.filter((u) => u.side === 0).length;
   $('army').textContent = army >= 70 ? '70/70' : army;
   $('army').title = `${army} / 70 army capacity`;
@@ -2222,6 +2239,12 @@ function updateHUD() {
       : s.overtime
         ? 'OVERTIME<small>FASTER WAVES · MORE STRUCTURE DAMAGE</small>'
         : `${game.map.id === 'classic' ? 'THE LONG REACH' : game.map.name.toUpperCase()}<small>${['ZERO', 'ONE', 'TWO', 'THREE'][game.map.lanes.length] || game.map.lanes.length} ${game.map.lanes.length === 1 ? 'LANE' : 'LANES'} · ${game.map.buildLimit} SITES</small>`;
+  if (bridgeMode && !$('app').classList.contains('protected-mobile')) {
+    const subtitle = document.createElement('small');
+    subtitle.textContent = bridgeLabel;
+    $('phase').querySelector('small')?.remove();
+    $('phase').append(subtitle);
+  }
   document
     .querySelectorAll('.build-card')
     .forEach((b) =>
@@ -2276,8 +2299,10 @@ function updateHUD() {
   updateProtectedObjectives();
   updateCompactBuildControl();
   if (!currentCampaign && !currentChallenge && $('app').classList.contains('protected-mobile')) {
-    $('objectiveProgress').textContent = 'Destroy the enemy citadel.';
-    $('objectiveTime').textContent = `${game.map.lanes.length} ${game.map.lanes.length === 1 ? 'road' : 'roads'}`;
+    $('objectiveProgress').textContent = bridgeMode ? bridgeLabel : 'Destroy the enemy citadel.';
+    $('objectiveTime').textContent = bridgeMode
+      ? `You ${bridgeStatus(game).filter(b => b.owner === 0).length} · Enemy ${bridgeStatus(game).filter(b => b.owner === 1).length}`
+      : `${game.map.lanes.length} ${game.map.lanes.length === 1 ? 'road' : 'roads'}`;
   }
   updateSelection();
   updateCampaignDeck();
@@ -2490,7 +2515,10 @@ function setMode(value) {
   globalThis.queueMicrotask?.(syncMenuHistory);
 }
 function updateSkirmishRules() {
-  const rules = getRuleset(selectedRuleset, 1);
+  const bridgeMode = $('skirmishBridgeIncome').checked;
+  const rules = getRuleset(bridgeMode
+    ? selectedRuleset === 'frontier-air-local-timed' ? 'frontier-bridge-timed' : 'frontier-bridge-open'
+    : selectedRuleset, 1);
   $('skirmishRules').value = selectedRuleset;
   $('skirmishRulesDescription').textContent = rules.endgame.forcedDecay
     ? 'Eight buildings, including Rootwardens and gryphons that seek nearby enemies one road over. Production and structure damage increase at 5:00; citadels lose health from 7:00.'
@@ -2501,6 +2529,13 @@ $('skirmishRules').onchange = () => {
   const value = $('skirmishRules').value;
   if (!['frontier-air-local-open', 'frontier-air-local-timed'].includes(value)) return;
   selectedRuleset = value;
+  updateSkirmishRules();
+};
+$('skirmishBridgeIncome').checked = preferences.skirmishBridgeIncome;
+$('skirmishBridgeDescription').textContent = BRIDGE_RULES_TEXT;
+$('skirmishBridgeIncome').onchange = () => {
+  preferences.skirmishBridgeIncome = $('skirmishBridgeIncome').checked;
+  savePreferences();
   updateSkirmishRules();
 };
 updateSkirmishRules();
@@ -2680,6 +2715,11 @@ function syncPauseMenu() {
   $('pauseBattleName').textContent = mission?.name || trial?.name || game.map.name;
   $('pauseContext').textContent = `${mission ? 'Campaign' : trial ? 'Field trial' : 'Skirmish'} · ${timeText(game.state.time)} · ${speed}× speed`;
   $('pauseObjective').textContent = mission?.objective || trial?.objective || 'Destroy the enemy citadel.';
+  $('pauseBridgeDetails').classList.toggle('hidden', !game.state.bridgeControl);
+  if (game.state.bridgeControl) {
+    $('pauseBridgeStatus').textContent = bridgeSummary(game);
+    $('pauseBridgeRules').textContent = BRIDGE_RULES_TEXT;
+  }
   $('restartBattle').textContent = `Restart ${noun}…`;
   $('restartTitle').textContent = `Restart ${noun}?`;
   $('confirmRestart').textContent = `Restart ${noun}`;

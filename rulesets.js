@@ -1,3 +1,4 @@
+import { BRIDGE_CONTROL } from './bridge-control.js';
 /** Immutable whole-rule identities. Never mutate a bound game's definitions. */
 export function deepFreeze(value){if(value&&typeof value==='object'&&!Object.isFrozen(value)){Object.values(value).forEach(deepFreeze);Object.freeze(value);}return value;}
 export const SPELL = deepFreeze({cost:75,cooldown:25,radius:170,damage:92});
@@ -51,7 +52,13 @@ const autonomousAirEntry=(id,name,forcedDecay,campaignOnly=false)=>deepFreeze({
   combat:{policy:'legacy',flyingCrossLanes:true},
   movement:{policy:'autonomous-air-local-v1',autonomousAir:{perception:300,retention:420,adjacentOnly:true}}
 });
+const bridgeEntry=(id,forcedDecay)=>deepFreeze({
+  ...autonomousAirEntry(id,`Bridge income · ${forcedDecay?'Sudden death':'Open-ended'}`,forcedDecay),
+  skirmishOnly:true,economy:BRIDGE_CONTROL
+});
 export const RULESETS=deepFreeze({
+  'frontier-bridge-open':bridgeEntry('frontier-bridge-open',false),
+  'frontier-bridge-timed':bridgeEntry('frontier-bridge-timed',true),
   'frontier-legacy':entry('frontier-legacy','Classic · Sudden death',UNITS,BUILDINGS,true,legacyLimits),
   'frontier-rootwarden-timed':entry('frontier-rootwarden-timed','Rootwarden · Sudden death',rootwardenUnits,rootwardenBuildings,true,longLimits),
   'frontier-rootwarden-open':entry('frontier-rootwarden-open','Rootwarden · Open-ended',rootwardenUnits,rootwardenBuildings,false,longLimits),

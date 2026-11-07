@@ -1,3 +1,4 @@
+import { bridgeZones, bridgeStatus, supportsBridgeControl } from './bridge-control.js';
 import { drawRootwarden, drawWardenLodge } from './rootwarden-art.js';
 import { sampleCombatFeedback } from './combat-feedback.js';
 import { BattleVFX } from './vfx.js';
@@ -493,6 +494,7 @@ export class Renderer {
     c.fillRect(0, 150, frontier, 600);
     c.fillStyle = '#a051370b';
     c.fillRect(this.map.width - frontier, 150, frontier, 600);
+    this.drawBridgeZones(game, 'zones');
     if (buildType) {
       for (const { x, y } of buildSites(this.map, 0)) {
         const valid = game.canBuild(buildType, x, y).ok;
@@ -620,6 +622,8 @@ export class Renderer {
     }
     // Paths stay below actors; complete route labels clear building pennants.
     drawFlightLabels(this, flightLabels);
+    // Control labels stay readable above troops and projectiles; zone fills remain below them.
+    this.drawBridgeZones(game, 'labels');
     // Mission badges must not disappear behind enlarged troops or projectile trails.
     for (const e of s.buildings) {
       if (e.x < left || e.x > right) continue;
@@ -714,6 +718,44 @@ export class Renderer {
     c.fillStyle = shade;
     c.fillRect(0, 0, this.width, this.height);
     this.drawMinimap(s, game, ui);
+  }
+  drawBridgeZones(game, layer = 'all') {
+    if (!supportsBridgeControl(game.ruleset)) return;
+    const c = this.c, states = bridgeStatus(game), zones = bridgeZones(game.map);
+    c.save();
+    c.lineWidth = Math.max(2, 1.5 / this.scale);
+    for (const zone of zones) {
+      const state = states[zone.lane], left = zone.x - zone.width / 2, top = zone.y - zone.height / 2;
+      const color = state.owner === 0 ? '#c4edd8' : state.owner === 1 ? '#ffd4b5' : '#f0e6bb';
+      const capturing = state.capturing !== null;
+      if (layer !== 'labels') {
+        c.fillStyle = state.owner === 0 ? '#367c6840' : state.owner === 1 ? '#9b4f3d40' : '#20312855';
+        c.fillRect(left, top, zone.width, zone.height);
+        c.strokeStyle = color;
+        c.setLineDash(state.blocked ? [10, 7] : []);
+        c.strokeRect(left, top, zone.width, zone.height);
+        c.setLineDash([]);
+        if (capturing) {
+          c.fillStyle = '#14291f'; c.fillRect(left, top + zone.height - 10, zone.width, 10);
+          c.fillStyle = '#fff0b5'; c.fillRect(left, top + zone.height - 10, zone.width * state.progress / 2, 10);
+        }
+      }
+      if (layer === 'zones') continue;
+      const owner = state.owner === null ? 'UNOWNED' : state.owner === 0 ? 'YOU' : 'ENEMY';
+      const label = `${zone.lane + 1} ${owner}`;
+      const detail = capturing ? `${state.capturing === 0 ? 'Y' : 'E'} → ${Math.floor(state.progress / 2 * 100)}%`
+        : state.blocked ? 'X BLOCKED' : state.owner === null ? 'GROUND 2s' : 'HELD';
+      const fontSize = Math.max(20, 10 / this.scale), line = fontSize * 1.15;
+      c.font = `bold ${fontSize}px sans-serif`;
+      const width = Math.max(c.measureText(label).width, c.measureText(detail).width) + 12;
+      c.fillStyle = '#15251ff0';
+      c.fillRect(zone.x - width / 2, top - line - 5, width, line * 2 + 8);
+      c.textAlign = 'center'; c.textBaseline = 'middle'; c.fillStyle = color;
+      c.fillText(label, zone.x, top - line / 2);
+      c.fillStyle = '#fff2d8';
+      c.fillText(detail, zone.x, top + line / 2 + 3);
+    }
+    c.restore();
   }
   drawBuilding(b) {
     const c = this.c,
@@ -1739,6 +1781,19 @@ export class Renderer {
       }
     }
     drawFlightMinimap(c, game, { width: w, height: h, selected: ui.selected });
+    if (game && supportsBridgeControl(game.ruleset)) {
+      c.save(); c.font = 'bold 8px sans-serif'; c.textAlign = 'center'; c.textBaseline = 'middle';
+      for (const bridge of bridgeStatus(game)) {
+        const x = w / 2, y = game.map.lanes[bridge.lane] / game.map.height * h;
+        const owner = bridge.owner === null ? '—' : bridge.owner === 0 ? 'Y' : 'E';
+        const label = owner + (bridge.capturing !== null ? `→${bridge.capturing === 0 ? 'Y' : 'E'}` : bridge.blocked ? 'X' : '');
+        const width = c.measureText(label).width + 4;
+        c.fillStyle = '#15251ff5'; c.fillRect(x - width / 2, y - 4.5, width, 9);
+        c.fillStyle = bridge.owner === 0 ? '#d3f6e4' : bridge.owner === 1 ? '#ffe0c6' : '#fff3cc';
+        c.fillText(label, x, y + 0.5);
+      }
+      c.restore();
+    }
     const vw = Math.min(w, (this.width / this.scale / this.map.width) * w),
       vx = (this.camera / this.map.width) * w - vw / 2;
     c.fillStyle = '#f0ecd415';

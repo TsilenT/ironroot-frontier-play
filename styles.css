@@ -4089,3 +4089,20 @@ body.gamepad-active a:focus {
 .trial-targets .protected-focus-hint { display: none; }
 .trial-targets .protected-health { grid-column: 1 / -1; }
 .trial-targets .protected-target[data-state='destroyed'] { border-color: #b7d991; background: #293c2c; }
+
+/* Optional bridge setup and pause detail reuse the existing scrollable menus.
+   In-play contribution occupies existing HUD text, with no new phone track. */
+.skirmish-bridge-label { display: flex; align-items: center; gap: 10px; min-height: 44px; margin-top: 8px; cursor: pointer; font-size: 13px; }
+.skirmish-bridge-label input { flex: 0 0 44px; width: 44px; height: 44px; margin: 0; accent-color: #b4d8ae; }
+.skirmish-bridge-label span { min-width: 0; }
+.skirmish-bridge-label small { display: block; color: var(--muted); font-size: 11px; margin-top: 3px; }
+.bridge-details { margin-top: 10px; font-size: 12px; line-height: 1.45; }
+.bridge-details summary { min-height: 44px; display: flex; align-items: center; cursor: pointer; color: var(--gold); }
+.bridge-details summary::before { content: '▸'; margin-right: 7px; }
+.bridge-details[open] summary::before { content: '▾'; }
+.bridge-details p { margin: 6px 0 10px; }
+
+/* Bridge totals include fractional road shares; keep this new text readable
+   in the existing resource/phase slots without changing ordinary battles. */
+.bridge-income #income { font-size: 11px; line-height: 16px; white-space: nowrap; }
+.bridge-income:not(.protected-mobile) #phase small { font-size: 11px; line-height: 1.2; }

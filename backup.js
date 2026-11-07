@@ -138,7 +138,7 @@ function trials(value) {
   return clean;
 }
 function settings(value) {
-  const keys = ['sound', 'music', 'sfx', 'volume', 'reducedMotion', 'quality', 'keyboard'];
+  const keys = ['sound', 'music', 'sfx', 'volume', 'reducedMotion', 'quality', 'keyboard', 'skirmishBridgeIncome'];
   fields(value, keys, [], 'Preferences');
   const clean = {};
   for (const key of keys) if (own(value, key)) {

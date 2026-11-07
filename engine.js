@@ -1,6 +1,7 @@
 import { BUILDINGS, UNITS, SPELL, getRuleset, LEGACY_RULESET_ID } from './rulesets.js';
 import { supportsFlightOrders, flightGateHome, flightGateX } from './flight-orders.js';
 import { supportsAutonomousAir, autonomousAirTarget, retainedAirTarget, releaseAirTarget } from './autonomous-air.js';
+import { supportsBridgeControl, createBridgeControl, advanceBridgeControl, bridgeIncome, validateBridgeControl } from './bridge-control.js';
 export { supportsAutonomousAir } from './autonomous-air.js';
 export { supportsFlightOrders, flightGateHome, flightGateX } from './flight-orders.js';
 export { BUILDINGS, UNITS, SPELL, RULESETS, getRuleset, LEGACY_RULESET_ID, DEFAULT_SKIRMISH_RULESET_ID } from './rulesets.js';
@@ -38,9 +39,11 @@ export class Game {
       schemaVersion:{value:rulesetId!==undefined||!Object.hasOwn(MAPS,mapId)?3:mapId==='classic'?1:2}
     });
     const map=this.map;
+    if(supportsBridgeControl(ruleset)&&!Object.hasOwn(MAPS,map.id))throw new Error('Bridge income requires a Skirmish battlefield');
     this.difficulty=['easy','normal','hard'].includes(difficulty)?difficulty:'normal';
     this.seed=seed>>>0; this.ai=ai;this.nextId=1;this.aiTimer=this.difficulty==='easy'?7:0;this.accumulator=0;this.tick=0;this.damageQueue=null;
     this.state={time:0,gold:[420,420],income:[5,5],bases:[{id:'base0',type:'base',side:0,hp:6000,maxHp:6000,cooldown:0,x:110,y:450},{id:'base1',type:'base',side:1,hp:6000,maxHp:6000,cooldown:0,x:map.width-110,y:450}],buildings:[],units:[],projectiles:[],effects:[],frontline:map.width/2,winner:null,spellCooldown:[0,0],overtime:false,stats:{kills:[0,0],built:[0,0],damage:[0,0]}};
+    if(supportsBridgeControl(ruleset))this.state.bridgeControl=createBridgeControl(map);
     for(let side=0;side<2;side++)this._place('barracks',worldX(map,side,410),map.lanes[map.startingLane],side);
   }
   serialize(){return JSON.parse(JSON.stringify({...(this.schemaVersion===3?{version:3,rulesetId:this.ruleset.id,rulesetRevision:this.ruleset.revision,mapId:this.map.id,mapRevision:this.map.revision}:this.schemaVersion===1?{version:1}:{version:2,mapId:this.map.id,mapRevision:this.map.revision}),difficulty:this.difficulty,seed:this.seed,ai:this.ai,nextId:this.nextId,aiTimer:this.aiTimer,accumulator:this.accumulator,tick:this.tick,state:this.state}));}
@@ -164,6 +167,12 @@ export class Game {
     const pendingDamage=this.damageQueue;this.damageQueue=null;for(const hit of pendingDamage)this._damage(...hit);
     s.units=s.units.filter(u=>u.hp>0);s.buildings=s.buildings.filter(b=>b.hp>0);
     if(autoAir)for(const u of s.units)if(this.units[u.type].flying&&u.airTargetId!==null&&!retainedAirTarget(this,u,airTargets))releaseAirTarget(u);
+    if(supportsBridgeControl(this.ruleset)){
+      // Sample living troops after simultaneous movement/damage. Income belongs
+      // to this bound match, never to a mutable setup preference. AI can spend it.
+      const paid=advanceBridgeControl(s.bridgeControl,this.map,s.units,dt,this.units),rates=bridgeIncome(this);
+      for(const side of [0,1]){s.gold[side]+=paid[side];s.income[side]+=rates[side];}
+    }
     if(s.units.length){const left=s.units.filter(u=>u.side===0),right=s.units.filter(u=>u.side===1);const a=left.length?Math.max(...left.map(u=>u.x)):110;const b=right.length?Math.min(...right.map(u=>u.x)):this.map.width-110;s.frontline=clamp((a+b)/2,110,this.map.width-110);}
     if(this.ruleset.endgame.forcedDecay&&s.time>420){for(const b of s.bases)b.hp=Math.max(0,b.hp-dt*(20+(s.time-420)*0.3));}
     if(s.bases[0].hp<=0||s.bases[1].hp<=0){if(s.bases[0].hp===0&&s.bases[1].hp===0)s.winner='draw';else s.winner=s.bases[0].hp<=0?1:0;return;}
@@ -271,7 +280,15 @@ function validateSave(data){
   if(typeof data.ai!=='boolean')fail('ai must be boolean');
   num(data.seed,0,4294967295,'seed',true);num(data.nextId,1,limits.maxId,'nextId',true);num(data.tick,0,limits.maxTick,'tick',true);
   num(data.aiTimer,-1,30,'aiTimer');num(data.accumulator,0,.251,'accumulator');
-  const s=data.state;obj(s,'state');num(s.time,0,limits.maxTime,'time');pair(s.gold,'gold',false,limits.maxCounter);pair(s.income,'income',false,20);pair(s.spellCooldown,'spellCooldown',false,SPELL.cooldown);
+  const s=data.state;obj(s,'state');num(s.time,0,limits.maxTime,'time');pair(s.gold,'gold',false,limits.maxCounter);pair(s.income,'income',false,supportsBridgeControl(ruleset)?20.5:20);pair(s.spellCooldown,'spellCooldown',false,SPELL.cooldown);
+  if(supportsBridgeControl(ruleset)){
+    if(!Object.hasOwn(MAPS,map.id))fail('bridge income requires a Skirmish battlefield');
+    validateBridgeControl(s.bridgeControl,map,s.time,fail);
+    for(const side of [0,1]){
+      const share=s.bridgeControl.bridges.filter(b=>b.owner===side).length*.5/map.lanes.length;
+      num(s.income[side],5,20+share,'bridge-mode total income');
+    }
+  }else if(Object.hasOwn(s,'bridgeControl'))fail('bridge control is outside this ruleset');
   if(![null,0,1,'draw'].includes(s.winner))fail('unknown winner');if(typeof s.overtime!=='boolean')fail('overtime must be boolean');num(s.frontline,110,map.width-110,'frontline');
   obj(s.stats,'stats');pair(s.stats.kills,'kills',true,limits.maxCounter);pair(s.stats.built,'built',true,limits.maxCounter);pair(s.stats.damage,'damage',false,limits.maxCounter);
   arr(s.bases,2,2,'bases');arr(s.buildings,0,map.buildLimit*2,'buildings');arr(s.units,0,140,'units');arr(s.effects,0,256,'effects');arr(s.projectiles,0,256,'projectiles');
@@ -332,7 +349,7 @@ export function validateEngineFields(data){
 }
 function strictFields(value,required,optional,fail){if(!value||typeof value!=='object'||Array.isArray(value)||Object.keys(value).some(k=>!required.includes(k)&&!optional.includes(k))||required.some(k=>!Object.hasOwn(value,k)))fail('unknown field or missing required field');}
 function strictStateFields(s,fail,ruleset){
-  strictFields(s,['time','gold','income','bases','buildings','units','projectiles','effects','frontline','winner','spellCooldown','overtime','stats'],[],fail);
+  strictFields(s,['time','gold','income','bases','buildings','units','projectiles','effects','frontline','winner','spellCooldown','overtime','stats',...(supportsBridgeControl(ruleset)?['bridgeControl']:[])],[],fail);
   strictFields(s.stats,['kills','built','damage'],[],fail);
   const entity=['id','type','side','hp','maxHp','cooldown','x','y'],flight=supportsFlightOrders(ruleset),autoAir=supportsAutonomousAir(ruleset);
   for(const [name,required,optional] of [

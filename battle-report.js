@@ -1,5 +1,6 @@
 import { getMap, getRuleset } from './engine.js';
 import { identityOf, scenarioForBattle, validateBattleIdentity } from './battle-codec.js';
+import { supportsBridgeControl, bridgeIncome, BRIDGE_RULES_TEXT } from './bridge-control.js';
 
 /** Read-only, current-session observations. This module never drives the game. */
 const INTERVAL = 2;
@@ -87,7 +88,8 @@ function snapshot(game, map, roster) {
       .reduce((sum, building) => sum + BUILDINGS.mint.income * (1 + 0.5 * (building.level - 1)), 0);
     return {
       side: owner, label: owner === 0 ? 'You' : 'Enemy', gold: number(gold[owner], 'gold'),
-      income: 5 + mineIncome, mineIncome,
+      income: 5 + mineIncome + (supportsBridgeControl(roster)?bridgeIncome(game)[owner]:0), mineIncome,
+      ...(supportsBridgeControl(roster)?{bridgeIncome:bridgeIncome(game)[owner]}:{}),
       armyCount: units.filter(unit => unit.side === owner).length,
       unitComposition: composition(units, owner, unitTypes, UNITS),
       buildingCount: ownBuildings.length,
@@ -105,6 +107,7 @@ function cumulativeStats(game) {
     kills: number(stats.kills[owner], 'kills', { integer: true }),
     built: number(stats.built[owner], 'buildings placed', { integer: true }),
     damage: number(stats.damage[owner], 'damage'),
+    ...(supportsBridgeControl(game.ruleset)?{bridgeGold:number(game.state.bridgeControl.earned[owner],'bridge gold')}:{}),
   }));
 }
 function readObjectives(objectiveOutcome, targets, map, BUILDINGS) {
@@ -175,7 +178,7 @@ export function createBattleJournal(game, { resumed = false, mode = 'skirmish', 
     : validateBattleIdentity(suppliedIdentity);
   if (identity.ruleset.id !== roster.id || identity.ruleset.revision !== roster.revision || identity.map.id !== map.id || identity.map.revision !== map.revision) fail('identity does not match the recorded game.');
   if (id !== null && (identity.scenario.id !== id || identity.scenario.kind !== (mode === 'challenge' ? 'trial' : mode))) fail('scenario identity does not match the recording context.');
-  const rules = freeze({ name: roster.name, endgame: { ...roster.endgame } });
+  const rules = freeze({ name: roster.name, endgame: { ...roster.endgame },...(supportsBridgeControl(roster)?{bridgeControl:{...roster.economy}}:{}) });
   const initial = snapshot(game, map, roster);
   let timeline = [initial], interval = INTERVAL, thinningPasses = 0, observationCount = 1;
   let lastSeenTime = initial.time, finished = null;
@@ -231,7 +234,9 @@ export function createBattleJournal(game, { resumed = false, mode = 'skirmish', 
       const limitations = [
         'Timeline values are snapshots at observed simulation times, not continuous measurements. No interpolation or causal explanation is recorded.',
         'Observed peaks use captured snapshots, including snapshots later removed by thinning; events between observations may be missed.',
-        'Income is the current rate from base income and living mines, not gold received. Gold changes do not establish spending, refunds, or earned income.',
+        supportsBridgeControl(roster)
+          ? 'Income is the current rate from base income, living mines and owned uncontested bridges. Bridge gold is an exact full-match engine counter; other gold changes do not establish spending, refunds or earnings. '+BRIDGE_RULES_TEXT
+          : 'Income is the current rate from base income and living mines, not gold received. Gold changes do not establish spending, refunds, or earned income.',
         'Army and building compositions show living entities at each observation, not lifetime production.',
         'Cumulative kills, buildings placed, and damage are existing full-match engine counters, including before Resume. Buildings placed include starting allocations; upgrades are not additional placements.',
         roster.endgame.forcedDecay
