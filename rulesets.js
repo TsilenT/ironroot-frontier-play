@@ -19,7 +19,7 @@ export const BUILDINGS = deepFreeze({
 });
 
 export const LEGACY_RULESET_ID='frontier-legacy';
-export const DEFAULT_SKIRMISH_RULESET_ID='frontier-flight-open';
+export const DEFAULT_SKIRMISH_RULESET_ID='frontier-air-local-open';
 const legacyLimits=deepFreeze({maxTime:10000,maxTick:1e7,maxCounter:1e9,maxId:1e9,headroom:0});
 const longLimits=deepFreeze({maxTime:604800.01,maxTick:12096000,maxCounter:1e12,maxId:1e12,headroom:1e7});
 const rootwardenUnits=deepFreeze({...UNITS,rootwarden:{name:'Rootwarden',hp:800,damage:8,range:34,speed:60,attackTime:1.5,color:'#91a177',radius:17,flying:false,canAttackAir:false,canAttackGround:true,description:'High-health, low-damage ground screen. No arrow resistance; cannot attack air.'}});
@@ -42,6 +42,15 @@ const flightEntry=(id,name,forcedDecay,campaignOnly=false)=>deepFreeze({
   combat:{policy:'legacy',flyingCrossLanes:true},
   movement:{policy:'flight-orders-v1',flightOrders:{gateCenterOffset:200,warningSeconds:2,adjacentOnly:true,maxCrossings:1}}
 });
+// Fresh battles use local autonomous air combat; all published identities remain frozen.
+export const AUTHORED_AIR_RULESET_ID='frontier-authored-air-local';
+export const AUTONOMOUS_AIR_RULESET_IDS=deepFreeze(['frontier-air-local-open','frontier-air-local-timed','frontier-campaign-air-local']);
+const autonomousAirEntry=(id,name,forcedDecay,campaignOnly=false)=>deepFreeze({
+  ...entry(id,name,rootwardenUnits,rootwardenBuildings,forcedDecay,longLimits),
+  ...(campaignOnly?{campaignOnly:true}:{}),
+  combat:{policy:'legacy',flyingCrossLanes:true},
+  movement:{policy:'autonomous-air-local-v1',autonomousAir:{perception:300,retention:420,adjacentOnly:true}}
+});
 export const RULESETS=deepFreeze({
   'frontier-legacy':entry('frontier-legacy','Classic · Sudden death',UNITS,BUILDINGS,true,legacyLimits),
   'frontier-rootwarden-timed':entry('frontier-rootwarden-timed','Rootwarden · Sudden death',rootwardenUnits,rootwardenBuildings,true,longLimits),
@@ -51,6 +60,14 @@ export const RULESETS=deepFreeze({
   'frontier-campaign-open':campaignEntry('frontier-campaign-open','Campaign · Full company',rootwardenBuildings),
   'frontier-flight-open':flightEntry('frontier-flight-open','Flight orders · Open-ended',false),
   'frontier-flight-timed':flightEntry('frontier-flight-timed','Flight orders · Sudden death',true),
-  'frontier-campaign-flight':flightEntry('frontier-campaign-flight','Campaign · Flight orders',false,true)
+  'frontier-campaign-flight':flightEntry('frontier-campaign-flight','Campaign · Flight orders',false,true),
+  'frontier-air-local-open':autonomousAirEntry('frontier-air-local-open','Automatic flyers · Open-ended',false),
+  'frontier-air-local-timed':autonomousAirEntry('frontier-air-local-timed','Automatic flyers · Sudden death',true),
+  'frontier-campaign-air-local':autonomousAirEntry('frontier-campaign-air-local','Campaign · Automatic flyers',false,true),
+  [AUTHORED_AIR_RULESET_ID]:deepFreeze({
+    ...entry(AUTHORED_AIR_RULESET_ID,'Field trials and practice · Automatic flyers',UNITS,BUILDINGS,true,legacyLimits),
+    authoredOnly:true,combat:{policy:'legacy',flyingCrossLanes:true},
+    movement:{policy:'autonomous-air-local-v1',autonomousAir:{perception:300,retention:420,adjacentOnly:true}}
+  })
 });
 export function getRuleset(id=LEGACY_RULESET_ID,revision=1){if(typeof id!=='string'||!Object.hasOwn(RULESETS,id))throw new Error('Unknown ruleset: '+String(id));const rules=RULESETS[id];if(revision!==rules.revision)throw new Error('Unsupported ruleset revision');return rules;}

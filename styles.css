@@ -3967,29 +3967,16 @@ body.gamepad-active a:focus {
   .coaching-actions {grid-template-columns: 1fr 1fr;}
 }
 
-/* Flight orders stay inside the existing, scrollable building inspector. */
-.flight-orders { border-top: 1px solid #65745b; margin: 10px 0 12px; padding-top: 10px; }
-.flight-orders h4 { margin: 0 0 5px; font-size: 14px; }
-.flight-orders p { margin: 6px 0; font-size: 12px; line-height: 1.4; color: #d6dfc8; }
-.flight-order-buttons { display: flex; gap: 6px; }
-.flight-order-buttons button { flex: 1; min-width: 44px; min-height: 44px; padding: 7px 5px; border: 1px solid #83947b; background: #263e35; color: #edf1df; font-size: 12px; line-height: 1.25; }
-.flight-order-buttons button[aria-pressed="true"] { background: #e3cd93; color: #23342c; border-color: #f1e1b9; font-weight: 700; }
-.flight-order-buttons button:focus-visible { outline: 3px solid #fff4c9; outline-offset: 2px; }
-.selection-panel:has(.flight-orders:not(.hidden)) { max-height: calc(100% - 96px); overflow-y: auto; overscroll-behavior: contain; scroll-padding-block: 8px; }
-.protected-mobile .command-deck .selection-panel:has(.flight-orders:not(.hidden)) { max-height: none; overflow: visible; }
-/* Nearest-edge scrolling rounds to CSS pixels. Leave room inside the actual
-   mobile scrollport for fractional button bounds and the 5px focus outline. */
-.protected-mobile .command-deck:has(.flight-orders:not(.hidden)) { scroll-padding-block: 8px; }
-.pause-flights { margin: 12px 0; border: 1px solid #64745c; padding: 0 12px; }
-.pause-flights summary { min-height: 44px; display: flex; align-items: center; cursor: pointer; font-size: 14px; }
-.pause-flights p { font-size: 13px; line-height: 1.5; white-space: pre-line; }
-/* Keep the collapsed route disclosure and every primary action in the initial
-   narrow-phone pause view. Only whitespace shrinks; expanded route details
-   retain their readable text and the modal's existing vertical scroller. */
+/* The existing inspector remains scrollable for longer rules-aware descriptions.
+   Keep the focus inset in the actual scrollport, including on small screens. */
+.selection-panel.air-inspector { max-height: calc(100% - 96px); overflow-y: auto; overscroll-behavior: contain; scroll-padding-block: 8px; }
+.protected-mobile .command-deck .selection-panel.air-inspector { max-height: none; overflow: visible; }
+.protected-mobile .command-deck:has(.air-inspector:not(.hidden)) { scroll-padding-block: 8px; }
+/* Keep primary pause actions readable in short portrait views. */
 @media (max-width: 400px) and (max-height: 600px) and (orientation: portrait) {
   .pause-menu { padding: 16px 18px; }
   .pause-menu .pause-briefing { margin: 10px 0; padding: 10px 0; }
-  .pause-menu .pause-utilities, .pause-menu .pause-flights { margin: 8px 0; }
+  .pause-menu .pause-utilities { margin: 8px 0; }
   .pause-menu .menu-status { margin: 8px 0; }
 }
 .flight-guide { padding: 12px; margin: 14px 0; border: 1px solid #65745b; font-size: 14px; line-height: 1.5; }

@@ -2,7 +2,7 @@
 import { Game, MAPS, getMap, getRuleset, LEGACY_RULESET_ID, validateEngineFields } from './engine.js';
 import { deepFreeze } from './rulesets.js';
 import * as campaign from './campaign.js';
-import { CHALLENGES, evaluateChallenge } from './challenges.js';
+import { getChallenge, challengeScenarioForGame, evaluateChallenge } from './challenges.js';
 import { TRAINING_LESSONS } from './training.js';
 
 export const MAX_BATTLE_BYTES=1024*1024;
@@ -36,13 +36,13 @@ export function battleByteLength(text){
 }
 export function scenarioForBattle(challengeId=null,campaignId=null,game=null){
   if(challengeId!==null&&campaignId!==null)fail('A battle cannot be both a trial and a campaign mission.');
-  const ref=campaignId!==null?(game?campaign.campaignScenarioForGame(game,campaignId):{kind:'campaign',id:campaignId,revision:1}):challengeId!==null?{kind:'trial',id:challengeId,revision:1}:{kind:'skirmish',id:'standard',revision:1};
+  const ref=campaignId!==null?(game?campaign.campaignScenarioForGame(game,campaignId):{kind:'campaign',id:campaignId,revision:1}):challengeId!==null?(game?challengeScenarioForGame(game,challengeId):{kind:'trial',id:challengeId,revision:1}):{kind:'skirmish',id:'standard',revision:1};
   resolveScenario(ref);return ref;
 }
 const scenarioCache=new Map();
 export function resolveScenario(ref){
   fields(ref,['kind','id','revision']);
-  if(typeof ref.kind!=='string'||!['skirmish','campaign','trial','lesson'].includes(ref.kind)||typeof ref.id!=='string'||!Number.isSafeInteger(ref.revision)||ref.revision<1||(ref.kind!=='campaign'&&ref.revision!==1))fail('This save needs a compatible scenario version.','unsupported-identity');
+  if(typeof ref.kind!=='string'||!['skirmish','campaign','trial','lesson'].includes(ref.kind)||typeof ref.id!=='string'||!Number.isSafeInteger(ref.revision)||ref.revision<1||(!['campaign','trial'].includes(ref.kind)&&ref.revision!==1))fail('This save needs a compatible scenario version.','unsupported-identity');
   const key=`${ref.kind}/${ref.id}@${ref.revision}`;
   if(scenarioCache.has(key))return scenarioCache.get(key);
   let mission;
@@ -50,7 +50,9 @@ export function resolveScenario(ref){
   else {
     if(ref.kind==='campaign'){
       try{mission=campaign.getCampaignMission(ref.id,ref.revision);}catch{fail('This save needs a compatible scenario version.','unsupported-identity');}
-    }else mission=(ref.kind==='trial'?CHALLENGES:TRAINING_LESSONS).find(item=>item.id===ref.id);
+    }else if(ref.kind==='trial'){
+      try{mission=getChallenge(ref.id,ref.revision);}catch{fail('This save needs a compatible scenario version.','unsupported-identity');}
+    }else mission=TRAINING_LESSONS.find(item=>item.id===ref.id);
     if(!mission||(mission.scenarioRevision??1)!==ref.revision)fail('This save needs a compatible scenario version.','unsupported-identity');
   }
   const descriptor=deepFreeze({...ref,...(mission?{mapId:mission.mapId??'classic',mapRevision:mission.mapRevision??1,rulesetId:mission.rulesetId??LEGACY_RULESET_ID,rulesetRevision:mission.rulesetRevision??1,mission:JSON.parse(JSON.stringify(mission))}:{})});
@@ -61,7 +63,7 @@ export function validateBattleIdentity(identity){
   fields(identity,['ruleset','map','scenario']);identityRef(identity.ruleset,'ruleset');identityRef(identity.map,'battlefield');
   let rules,map;try{rules=getRuleset(identity.ruleset.id,identity.ruleset.revision);map=getMap(identity.map.id,identity.map.revision);}catch{fail('This save needs a compatible ruleset or battlefield version.','unsupported-identity');}
   const scenario=resolveScenario(identity.scenario);
-  if(scenario.kind==='skirmish'){if(rules.campaignOnly)fail('This roster is only available in its authored campaign.');if(!own(MAPS,map.id))fail('This battlefield is only available in its authored scenario.');}
+  if(scenario.kind==='skirmish'){if(rules.campaignOnly||rules.authoredOnly)fail('This roster is only available in its authored scenario.');if(!own(MAPS,map.id))fail('This battlefield is only available in its authored scenario.');}
   else {if(map.id!==scenario.mapId||map.revision!==scenario.mapRevision)fail(`Authored missions require the ${getMap(scenario.mapId,scenario.mapRevision).name} battlefield.`);if(rules.revision!==scenario.rulesetRevision||(scenario.kind==='campaign'?!campaign.campaignRulesetAllowed(scenario.id,scenario.revision,rules.id):rules.id!==scenario.rulesetId))fail('Saved battle does not match its scenario rules.');}
   return deepFreeze({ruleset:{id:rules.id,revision:rules.revision},map:{id:map.id,revision:map.revision},scenario:{kind:scenario.kind,id:scenario.id,revision:scenario.revision}});
 }

@@ -1,32 +1,35 @@
 /** Isolated, in-memory lessons over the unchanged real engine. No progression or persistence. */
 import {Game, BUILDINGS, upgradeCost} from './engine.js';
 
+export const CURRENT_TRAINING_RULESET_ID='frontier-authored-air-local';
+export const createCurrentTrainingSession=(options={})=>new TrainingSession({...options,rulesetId:CURRENT_TRAINING_RULESET_ID});
+
 const freeze=value=>{if(value&&typeof value==='object'){for(const child of Object.values(value))freeze(child);Object.freeze(value);}return value;};
 const site=(x,label,type,side=0)=>({x,y:450,label,type,side});
-const build=(id,type,x,title,prompt)=>({id,kind:'build',type,title,prompt,sites:[site(x,`${BUILDINGS[type].name} site`,type)],successText:`${BUILDINGS[type].name} placed. ${BUILDINGS[type].cost} gold spent.`});
+const build=(id,type,x,title,prompt)=>({id,kind:'build',type,title,prompt,sites:[site(x,`${BUILDINGS[type].name} site`,type)],successText:`${BUILDINGS[type].name} placed for ${BUILDINGS[type].cost} gold.`});
 const watch=(id,title,prompt,successText)=>({id,kind:'watch',title,prompt,successText});
 export const TRAINING_LESSONS=freeze([
-  {id:'first-barracks',name:'Raise the first company',subtitle:'Place a barracks and watch it work',description:'Buildings train troops automatically. Choose what to build and where. Your troops march and fight on their own.',startingGold:280,timeLimit:75,playerBuildings:[],enemyBuildings:[],briefing:['280 training gold. Both citadels have their normal 6,000 HP.','Empty field; no starting troops or buildings and no enemy AI.','Time stops while you build. Observations run at normal speed.'],steps:[
-    build('place-barracks','barracks',1110,'Place a barracks','Select Barracks, then choose the marked middle-lane site. It costs 140 gold. Drag to pan without spending gold. Cancel your building choice to select a building already on the field.'),
-    watch('watch-spawn','Your army trains itself','Select Start observation to watch your barracks train its first warrior. It trains troops automatically.','Your barracks trained its first warrior. It will march toward enemy buildings on its own.')
+  {id:'first-barracks',name:'Raise the first company',subtitle:'Place a barracks and watch it work',description:'Choose what to build and where, and your buildings will train troops who march and fight on their own.',startingGold:280,timeLimit:75,playerBuildings:[],enemyBuildings:[],briefing:['280 training gold. Both citadels have their normal 6,000 HP.','Empty field; no starting troops or buildings and no enemy AI.','Time stops for building instructions and runs at normal speed during observations.'],steps:[
+    build('place-barracks','barracks',1110,'Place a barracks','Spend 140 gold on Barracks at the marked middle-lane site. You can drag to pan without spending gold, or cancel your choice to select a building already on the field.'),
+    watch('watch-spawn','Your army trains itself','Select Start observation to watch the barracks train its first warrior automatically.','Your barracks has trained its first warrior, who will march toward enemy buildings on its own.')
   ]},
-  {id:'shield-and-arrow',name:'Put shields in front',subtitle:'Combine warriors and archers',description:'Warriors take reduced arrow damage. Keep warriors ahead of your archers so they can fire from a safe distance.',startingGold:350,timeLimit:100,playerBuildings:[['barracks',1110]],enemyBuildings:[['archery',1950]],briefing:['350 training gold; one free level-1 barracks already stands at the middle front.','One enemy level-1 archery range stands opposite it. The enemy builds nothing new.','Starting buildings are free for this lesson. Troops train and fight as they do in battle.'],steps:[
-    build('place-support','archery',970,'Build behind the shields','Place an Archery range at the marked site behind your barracks. It costs 175 gold.'),
-    watch('watch-screen','Watch the two roles','Start observation. Watch for enemy arrows hitting your warriors and your archers firing with a warrior still ahead.','Enemy arrows hit your warriors. Your archers fired with a warrior still ahead of them.')
+  {id:'shield-and-arrow',name:'Put shields in front',subtitle:'Combine warriors and archers',description:'Screen your archers with warriors, who take reduced arrow damage while the archers fire from a safe distance.',startingGold:350,timeLimit:100,playerBuildings:[['barracks',1110]],enemyBuildings:[['archery',1950]],briefing:['350 training gold; one free level-1 barracks already stands at the middle front.','An enemy level-1 archery range stands opposite it, with no new enemy construction.','This lesson gives you free starting buildings whose troops train and fight as they do in battle.'],steps:[
+    build('place-support','archery',970,'Build behind the shields','Spend 175 gold on an Archery range at the marked site behind your barracks.'),
+    watch('watch-screen','Watch the two roles','Start observation to watch enemy arrows hit your warriors while your archers fire with a warrior still ahead.','Your archers fired with a warrior still ahead of them, and enemy arrows hit your warriors.')
   ]},
-  {id:'mine-and-upgrade',name:'Fund the next company',subtitle:'Build income, then improve it',description:'You earn gold while the battle runs. Build a mine to earn more, then upgrade it to increase its income.',startingGold:330,timeLimit:120,playerBuildings:[],enemyBuildings:[],briefing:['330 training gold; no starting buildings or enemies.','Base income is 5 gold per second. A level-1 mine adds 2.5.','The first mine upgrade costs 133 gold and raises its contribution to 3.75 gold per second.'],steps:[
+  {id:'mine-and-upgrade',name:'Fund the next company',subtitle:'Build income, then improve it',description:'Increase the gold you earn while the battle runs by building a mine, then upgrading it.',startingGold:330,timeLimit:120,playerBuildings:[],enemyBuildings:[],briefing:['330 training gold; no starting buildings or enemies.','A level-1 mine adds 2.5 gold per second to the base income of 5.','The first mine upgrade costs 133 gold and raises its contribution to 3.75 gold per second.'],steps:[
     build('place-mine','mint',410,'Build a gold mine','Choose Gold mine, then the marked rear site. Its 190-gold price leaves 140 gold for the 133-gold first upgrade.'),
-    watch('watch-income','See income arrive','Start observation to watch your gold rise for two seconds. With this mine, you earn 7.5 gold per second.','With your mine working, you earned 7.5 gold per second.'),
-    {id:'upgrade-mine',kind:'upgrade',type:'mint',title:'Improve the working mine',prompt:'Cancel any building choice, select your marked mine, then upgrade it to level 2 for 133 gold. No simulation time passes while you choose.',successText:'Upgrade paid. Your level-2 mine has more health and earns more gold.'},
-    watch('watch-upgraded-income','Watch the upgraded mine','Watch for two seconds. Your level-2 mine adds 3.75 gold per second, for a total of 8.75.','With your upgraded mine working, you earned 8.75 gold per second. Upgrades cost gold but need no extra building site.')
+    watch('watch-income','See income arrive','Watch your gold rise for two seconds at the combined rate of 7.5 gold per second.','With your mine working, you earned 7.5 gold per second.'),
+    {id:'upgrade-mine',kind:'upgrade',type:'mint',title:'Improve the working mine',prompt:'With time stopped, cancel any building choice and select your marked mine to upgrade it to level 2 for 133 gold.',successText:'The paid upgrade gives your level-2 mine more health and income.'},
+    watch('watch-upgraded-income','Watch the upgraded mine','Watch for two seconds as your level-2 mine adds 3.75 gold per second, bringing total income to 8.75.','The upgrade cost gold but no extra building site, raising your observed income to 8.75 gold per second.')
   ]},
-  {id:'siege-the-tower',name:'Break the stone line',subtitle:'Send siege against a tower',description:'Siege engines deal triple damage to structures. Their reach lets them attack a tower from outside its firing radius.',startingGold:540,timeLimit:120,playerBuildings:[],enemyBuildings:[['watchtower',1950]],briefing:['540 training gold; your side begins empty.','One free enemy level-1 tower has its normal 1,000 HP. No enemy production or AI.','No health, damage, range or production-speed bonuses are used.'],steps:[
-    build('place-foundry','foundry',1250,'Prepare a siege engine','Build a Siege foundry at the marked forward site for 270 gold. Its engines train, travel and attack at normal speed.'),
-    watch('watch-siege','Watch the tower fall','Watch your siege engines hit the marked tower. Finish the lesson by destroying that tower.','Your siege engines hit the marked tower. The tower fell.')
+  {id:'siege-the-tower',name:'Break the stone line',subtitle:'Send siege against a tower',description:'Siege engines can attack towers from beyond their firing radius while dealing triple damage to structures.',startingGold:540,timeLimit:120,playerBuildings:[],enemyBuildings:[['watchtower',1950]],briefing:['540 training gold; your side begins empty.','One free enemy level-1 tower has its normal 1,000 HP. No enemy production or AI.','No health, damage, range or production-speed bonuses are used.'],steps:[
+    build('place-foundry','foundry',1250,'Prepare a siege engine','Build a Siege foundry at the marked forward site for 270 gold to send engines into battle at normal training, travel and attack speeds.'),
+    watch('watch-siege','Watch the tower fall','Watch your siege engines fire on the marked tower until it falls.','After taking fire from your siege engines, the marked tower fell.')
   ]},
-  {id:'answer-the-air',name:'Answer the wings',subtitle:'Use archers against flying enemies',description:'Warriors cannot attack flying units. Archers can target them and deal bonus damage to air units.',startingGold:350,timeLimit:100,playerBuildings:[['barracks',1110]],enemyBuildings:[['aerie',1950]],briefing:['350 training gold and one free level-1 barracks at the middle front.','One enemy level-1 gryphon aerie trains flyers. The enemy builds nothing new.','To finish, your archers must hit the marked gryphon, and that gryphon must fall.'],steps:[
+  {id:'answer-the-air',name:'Answer the wings',subtitle:'Use archers against flying enemies',description:'Use archers to hit flying units for bonus damage, since warriors cannot attack them.',startingGold:350,timeLimit:100,playerBuildings:[['barracks',1110]],enemyBuildings:[['aerie',1950]],briefing:['350 training gold and one free level-1 barracks at the middle front.','The enemy trains flyers from one level-1 gryphon aerie and builds nothing new.','To finish, your archers must hit the marked gryphon, and that gryphon must fall.'],steps:[
     build('place-anti-air','archery',970,'Give the company air cover','Build an Archery range at the marked site for 175 gold. The warriors can occupy enemies, but cannot strike a gryphon.'),
-    watch('watch-anti-air','Follow a flying target','Watch the marked gryphon. Your archers must hit it, and it must fall to finish the lesson.','Your archers hit the marked gryphon. The gryphon fell. Warriors and siege engines cannot attack flyers.')
+    watch('watch-anti-air','Follow a flying target','To finish the lesson, watch your archers hit the marked gryphon before it falls.','Your archers hit the marked gryphon before it fell, doing what warriors and siege engines cannot: attack flyers.')
   ]}
 ]);
 const copy=value=>JSON.parse(JSON.stringify(value));
@@ -68,11 +71,12 @@ function observeEngine(game){
 export class TrainingSession {
   #game; #lessonIndex=0; #stepIndex=0; #status='instruction'; #paused=false; #recovering=false;
   #attemptId=0; #feedback=''; #results=new Map(); #evidence={}; #placed=new Map(); #stepStartedAt=0;
-  #seed; #targetIds=[]; #lastResult=null; #observed;
-  constructor({seed=12012,lessonId=TRAINING_LESSONS[0].id}={}) {
+  #seed; #rulesetId; #targetIds=[]; #lastResult=null; #observed;
+  constructor({seed=12012,lessonId=TRAINING_LESSONS[0].id,rulesetId}={}) {
     if(!Number.isInteger(seed)||seed<0||seed>4294967295)throw new Error('Training seed must be an unsigned 32-bit integer.');
     if(!lessonById(lessonId))throw new Error('Unknown training lesson: '+String(lessonId));
-    this.#seed=seed;this.#load(lessonId);
+    if(rulesetId!==undefined&&rulesetId!==CURRENT_TRAINING_RULESET_ID)throw new Error('Unsupported practice ruleset.');
+    this.#seed=seed;this.#rulesetId=rulesetId;this.#load(lessonId);
   }
   get game(){return this.#game;}
   get lesson(){return TRAINING_LESSONS[this.#lessonIndex];}
@@ -81,7 +85,7 @@ export class TrainingSession {
     const lesson=lessonById(id);if(!lesson)return this.#reject('Choose one of the listed training lessons.');
     this.#lessonIndex=TRAINING_LESSONS.indexOf(lesson);this.#stepIndex=0;this.#status='instruction';this.#paused=false;this.#recovering=false;
     this.#attemptId++;this.#feedback='';this.#evidence={};this.#placed=new Map();this.#results.delete(id);this.#targetIds=[];this.#lastResult=null;this.#stepStartedAt=0;
-    const game=new Game({seed:this.#seed,ai:false,difficulty:'normal',mapId:'classic'}),s=game.state;
+    const game=new Game({seed:this.#seed,ai:false,difficulty:'normal',mapId:'classic',...(this.#rulesetId?{rulesetId:this.#rulesetId}:{} )}),s=game.state;
     // Replace the constructor's normal starting barracks only. Authored practice forces are disclosed above.
     s.buildings=[];s.units=[];s.projectiles=[];s.effects=[];s.stats={kills:[0,0],built:[0,0],damage:[0,0]};s.gold=[lesson.startingGold,0];
     for(const [type,x] of lesson.playerBuildings)game._place(type,x,450,0);

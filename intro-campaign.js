@@ -4,7 +4,7 @@ import { BUILDINGS } from './engine.js';
 export const INTRO_CHAPTER = {
   id: 'first-roads', number: 0, name: 'The First Roads', subtitle: 'Learn as you build', theme: 'woodland',
   description: 'Start with one road, then defend a second. These short battles use the same buildings, gold and controls as the rest of the campaign.',
-  epilogue: 'The roads are clear. Rowan is waiting at Emberwatch.', optional: true,
+  epilogue: 'The cleared roads lead on to Rowan at Emberwatch.', optional: true,
 };
 
 const destroy = (targets) => ({ id: 'roadblocks', type: 'destroy', label: targets.length === 1 ? 'Destroy the marked barracks' : 'Destroy both marked barracks', targets });
@@ -19,11 +19,11 @@ export const INTRO_MISSIONS = [
   {
     ...identity, id: 'first-watch', number: 1, name: 'First Watch', subtitle: 'Build your first army',
     mapId: 'intro-one-road', seed: 1001, timeLimit: 180, startingGold: 420, prerequisites: [],
-    description: 'A raider barracks blocks the road to Emberwatch. Your camp is empty. Build an army and clear the way.',
-    dialogue: { speaker: 'Captain Rowan', text: 'Put a barracks on the road. The warriors will take it from there.' },
-    victoryText: 'The raiders leave the road. Ahead, the path splits around the hills.',
+    description: 'Raise an army from your empty camp to clear the raider barracks blocking the road to Emberwatch.',
+    dialogue: { speaker: 'Captain Rowan', text: 'A barracks on the road will send warriors to take care of the raiders.' },
+    victoryText: 'Beyond the retreating raiders, the road splits around the hills.',
     objective: 'Destroy the marked barracks within 3:00, or destroy the enemy citadel.',
-    hint: 'Start with a barracks. An archery range behind it adds ranged support. Troops march and fight on their own.',
+    hint: 'Start with a barracks and an archery range behind it for support; their troops march and fight on their own.',
     playerBuildings: [], enemyBuildings: [['barracks', 2370, 0]],
     objectives: [destroy([target(0)])],
     medals: [
@@ -31,7 +31,7 @@ export const INTRO_MISSIONS = [
       { id: 'ranged-support', type: 'building-type', buildingType: 'archery', amount: 1, label: 'Finish with an archery range standing' },
     ],
     briefing: [
-      'One road. 420 gold. No starting buildings; every choice has its normal cost.',
+      'An empty camp on one road, with 420 starting gold and normal building costs.',
       'The enemy has one level-1 barracks and cannot build, upgrade or use Arrow volley.',
       'A win opens the second lesson. The two building stars are optional; replay any time.',
     ],
@@ -41,10 +41,10 @@ export const INTRO_MISSIONS = [
     ...identity, id: 'forked-road', number: 2, name: 'Forked Road', subtitle: 'Watch both roads',
     mapId: 'intro-two-road', seed: 1003, timeLimit: 210, startingGold: 610, prerequisites: ['first-watch'],
     description: 'Two raider camps control the fork. Send troops down both roads and leave room for a working mine.',
-    dialogue: { speaker: 'Scout Sera', text: 'They have a camp on each road. Check both before you spend.' },
-    victoryText: 'Both roads are open. The scouts lead you on to Emberwatch.',
+    dialogue: { speaker: 'Scout Sera', text: 'Check the raider camp on each road before you spend.' },
+    victoryText: 'The scouts lead you along the cleared roads toward Emberwatch.',
     objective: 'Destroy both marked barracks within 3:30, or destroy the enemy citadel.',
-    hint: 'Build troops on both roads first. A mine adds 2.5 gold/sec; a watchtower can hold a road while you build up.',
+    hint: 'Get troops onto both roads before investing in a mine for an extra 2.5 gold/sec or a watchtower to hold ground while you build up.',
     playerBuildings: [], enemyBuildings: [['barracks', 2370, 0], ['barracks', 2370, 1]],
     objectives: [destroy([target(0), target(1)])],
     medals: [
@@ -52,7 +52,7 @@ export const INTRO_MISSIONS = [
       { id: 'working-mine', type: 'income', amount: 7.5, label: 'Finish with at least 7.5 gold/sec' },
     ],
     briefing: [
-      'Two roads. 610 gold. No starting buildings; mines and towers use normal gold costs.',
+      'An empty camp across two roads, with 610 starting gold and normal mine and tower costs.',
       'The enemy has one level-1 barracks on each road and cannot build, upgrade or use Arrow volley.',
       'The income star needs a living mine. Winning without one still counts as a win.',
     ],

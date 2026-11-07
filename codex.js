@@ -1,4 +1,4 @@
-import { BUILDINGS as LEGACY_BUILDINGS, Game, SPELL, UNITS as LEGACY_UNITS, upgradeCost as legacyUpgradeCost } from './engine.js';
+import { BUILDINGS as LEGACY_BUILDINGS, Game, SPELL, UNITS as LEGACY_UNITS, upgradeCost as legacyUpgradeCost, supportsAutonomousAir } from './engine.js';
 
 /** Read-only presentation data. This module never changes engine definitions. */
 function freeze(value) {
@@ -61,13 +61,14 @@ export function createCodex(context = null) {
   const initial = baseline.state;
   const buildingCap = baseline.map.buildLimit;
   const endgame = baseline.ruleset?.endgame;
+  const automaticAir = supportsAutonomousAir(baseline.ruleset);
 
   const unitCopy = {
     get warrior() { return {
       role: 'Shielded melee screen',
       silhouette: 'Helmet, broad shield and sword.',
-      advantages: 'Absorbs archer fire and protects ranged troops. Deals extra damage when it reaches enemy archers.',
-      cautions: 'Cannot attack flyers. Wizard and siege hits ignore its arrow resistance. Keep warriors spread out to limit splash damage.',
+      advantages: 'Shields ranged troops from archer fire and deals extra damage to enemy archers once it reaches them.',
+      cautions: 'Wizard and siege hits ignore arrow resistance and can splash onto clustered warriors; flyers are also beyond a warrior’s reach.',
       mechanics: [
         `Takes ${percent(1 - RULES.archerVsWarrior)} less damage from archers: ${num(UNITS.archer.damage * RULES.archerVsWarrior)} per level-1 arrow.`,
         `Deals ${percent(RULES.warriorVsArcher - 1)} extra damage to archers: ${num(UNITS.warrior.damage * RULES.warriorVsArcher)} per level-1 hit.`,
@@ -77,18 +78,19 @@ export function createCodex(context = null) {
     get archer() { return {
       role: 'Ranged support and anti-air',
       silhouette: 'Hood and curved bow.',
-      advantages: 'Shoots ground and air targets from behind a screen. Deals bonus damage to gryphons.',
-      cautions: 'Low health makes it vulnerable at close range. Warrior shields reduce arrow damage. Keep archers spread out to limit splash damage.',
+      advantages: 'Shoots both ground and air targets from behind a screen, with bonus damage against gryphons.',
+      cautions: 'Keep archers spread out and clear of close attackers; their low health makes them vulnerable, and warrior shields reduce their arrow damage.',
       mechanics: [
         `Deals ${percent(RULES.archerVsAir - 1)} extra damage to flyers: ${num(UNITS.archer.damage * RULES.archerVsAir)} per level-1 hit.`,
         `Deals only ${percent(RULES.archerVsWarrior)} of normal damage to warriors: ${num(UNITS.archer.damage * RULES.archerVsWarrior)} per level-1 hit.`,
+        ...(automaticAir ? ['Archers stay on their road, but can shoot a flyer between roads when it comes within range.'] : []),
       ],
     }; },
     get siege() { return {
       role: 'Structure breaker and ground splash',
       silhouette: 'Wheeled wooden engine with a raised throwing arm.',
-      advantages: 'Heavy structure damage. Can fire on a watchtower from outside its reach when no closer enemy draws its fire.',
-      cautions: 'Moves and attacks slowly. Cannot hit flyers. Keep other troops ahead of it to block enemies that get close.',
+      advantages: 'Can fire on a watchtower from beyond its reach for heavy structure damage, provided no closer enemy draws its fire.',
+      cautions: 'Keep other troops ahead of this slow-moving, slow-firing engine to block enemies that get close; it cannot hit flyers.',
       mechanics: [
         `Deals ${num(RULES.siegeVsStructure)}× damage to structures: ${num(UNITS.siege.damage * RULES.siegeVsStructure)} per level-1 hit before overtime.`,
         `Other enemy ground troops within ${num(RULES.splashRadius)} world units of the impact take ${percent(RULES.siegeSplash)} of troop damage: ${num(UNITS.siege.damage * RULES.siegeSplash)} at level 1. Flyers and other structures take no splash.`,
@@ -99,8 +101,8 @@ export function createCodex(context = null) {
     get wizard() { return {
       role: 'Protected ground splash',
       silhouette: 'Pointed hat, long robe and glowing staff.',
-      advantages: 'Full damage through warrior shields. Keep it behind other troops to hit groups of enemies with splash damage.',
-      cautions: 'Cannot hit flyers. Archers outrange it and can kill it before it gets close enough to fire.',
+      advantages: 'From behind other troops, a wizard can hit groups of enemies with splash damage and deal full damage through warrior shields.',
+      cautions: 'Archers outrange the wizard and can kill it before it gets close enough to fire, and flyers are beyond its reach altogether.',
       mechanics: [
         `Hits a warrior for the full ${num(UNITS.wizard.damage)} damage at level 1; warrior arrow resistance does not apply.`,
         `Other enemy ground troops within ${num(RULES.splashRadius)} world units of the impact take ${percent(RULES.wizardSplash)} of troop damage: ${num(UNITS.wizard.damage * RULES.wizardSplash)} at level 1. Flyers and other structures take no splash.`,
@@ -110,8 +112,8 @@ export function createCodex(context = null) {
     get rootwarden() { return {
       role: 'High-health, low-damage ground screen',
       silhouette: 'Broad wooden shield, rooted feet and a leaf-crested hood.',
-      advantages: 'High health buys time for ranged support. A slower-damage alternative to a warrior screen, not a replacement for every matchup.',
-      cautions: 'No armor or arrow resistance. Cannot hit flyers. Arrow volleys and ground splash can still hit archers behind it.',
+      advantages: 'High health buys time for ranged support, though its slower damage makes it an alternative to warriors rather than a replacement for every matchup.',
+      cautions: 'A Rootwarden relies on health rather than armor or arrow resistance and cannot hit flyers. Arrow volleys and ground splash can still hit archers behind it.',
       mechanics: [
         'Takes full damage from archers and watchtowers; its durability comes from health, not armor.',
         'Deals single-target melee damage to ground troops and structures. It has no projectile, splash or anti-air attack.',
@@ -120,10 +122,17 @@ export function createCodex(context = null) {
     get gryphon() { return {
       role: 'Flying raider',
       silhouette: 'Broad wings, hooked beak and a body held above its shadow.',
-      advantages: 'Flies out of reach of warriors, siege engines and wizards. Attacks ground and air troops.',
-      cautions: 'Archers receive an anti-air bonus. Watchtowers and citadels can also hit it. Deals reduced damage to structures, so bring support when attacking buildings.',
+      advantages: automaticAir
+        ? 'Seeks nearby enemies on its own, including troops on an adjacent road, while staying out of reach of warriors, siege engines and wizards.'
+        : 'Attacks ground and air troops while flying out of reach of warriors, siege engines and wizards.',
+      cautions: 'Bring support when attacking buildings: gryphons deal reduced structure damage, archers have an anti-air bonus, and watchtowers and citadels can also hit them.',
       mechanics: [
         `Deals ${percent(RULES.gryphonVsStructure)} of normal damage to structures: ${num(UNITS.gryphon.damage * RULES.gryphonVsStructure)} per level-1 hit before overtime.`,
+        ...(automaticAir ? [
+          `Notices troops within ${num(baseline.ruleset.movement.autonomousAir.perception)} world units on its current or a neighboring road, then flies into its normal ${num(UNITS.gryphon.range)} attack range.`,
+          `Keeps pursuing a living nearby target up to ${num(baseline.ruleset.movement.autonomousAir.retention)} world units away; after losing it, seeks another nearby enemy or advances along the nearest road.`,
+          'A detour can reach an exposed enemy or draw the gryphon away from the army it was supporting; archers and towers can hit it throughout the flight.',
+        ] : []),
       ],
     }; },
   };
@@ -162,8 +171,8 @@ export function createCodex(context = null) {
       id: 'watchtower', name: tower.name, role: 'Stationary defense',
       cost: tower.cost, hp: tower.hp, range: tower.range, damage: tower.damage,
       attackTime: RULES.towerAttackTime, upgradeCosts: upgradeCosts('watchtower'),
-      advantages: 'Targets ground and air troops. Holds a position without waiting for reinforcements to walk there.',
-      cautions: 'Produces no troops or income. Cannot move. A siege engine with a troop screen can destroy it from beyond its range.',
+      advantages: 'Holds a position against ground and air troops without waiting for reinforcements to walk there.',
+      cautions: 'An immobile defense that produces no troops or income, and can fall to a screened siege engine firing from beyond its range.',
       mechanics: [
         `Level-1 arrows hit for ${num(tower.damage)} every ${formatSeconds(RULES.towerAttackTime)}; warriors take ${num(tower.damage * RULES.towerVsWarrior)}.`,
         `Range is ${num(tower.range)} world units measured from the tower's center.`,
@@ -174,7 +183,7 @@ export function createCodex(context = null) {
       cost: mine.cost, hp: mine.hp, income: mine.income,
       upgradeCosts: upgradeCosts('mint'), levels: mineLevels,
       advantages: `Adds ${num(mine.income)} gold/s at level 1 automatically.`,
-      cautions: 'Cannot attack or produce troops. Spending on mines leaves less gold for troops and defense. A destroyed or salvaged mine stops earning gold.',
+      cautions: 'Mine spending leaves less gold for troops and defense, and the mine cannot attack or train troops itself. Its income stops if it is destroyed or salvaged.',
       mechanics: [
         `Maximum ${RULES.mineCap} mines per side; each produces ${mineLevels.map(level => num(level.income)).join(' / ')} gold/s at levels 1 / 2 / 3.`,
         `New mine: ${mine.cost} gold ÷ ${num(mine.income)} additional gold/s = ${formatSeconds(mineLevels[0].bestCasePaybackSeconds)} best-case payback.`,
@@ -204,10 +213,10 @@ export function createCodex(context = null) {
     notes: [
       baseline.ruleset.campaignOnly ? `Gold arrives at ${num(initial.income[0])} per second before working mines. Your mission briefing gives the actual starting gold and forces.` : `Both sides start a skirmish with ${initial.gold[0]} gold, ${num(initial.income[0])} gold/s and one free level-1 barracks. AI difficulty changes decisions, not prices or base income.`,
       `Defeating an enemy troop awards ${RULES.killBounty} gold. Structures award no kill gold.`,
-      'Pay once for a troop building. It then trains troops automatically at no extra gold cost.',
+      'Pay once for a troop building that keeps training troops automatically at no extra gold cost.',
       `Training intervals show the usual time between troops. A new level-1 building trains its first troop sooner, after about ${formatSeconds(RULES.firstSpawnSeconds)}.`,
       `Each side can field ${RULES.unitCap} living troops and ${buildingCap} buildings, ${mine ? 'including at most ' + RULES.mineCap + ' mines' : 'with no gold mines available in this roster'}. At the troop cap, a training cycle can finish without adding a troop.`,
-      'Range and speed are measured in world units. Screen size does not change them. Attacks happen on game ticks, so cooldowns are approximate and do not guarantee damage per second.',
+      'Range and speed use world units regardless of screen size. Since attacks happen on game ticks, listed cooldowns are approximate and do not guarantee damage per second.',
       'Salvage returns half of total invested gold, scaled by remaining building health and rounded down. You cannot salvage protected campaign buildings.',
     ],
     upgrades: [

@@ -1,7 +1,7 @@
 import { BUILDINGS, buildBounds, upgradeCost } from './engine.js';
 import { Renderer, iconSVG } from './render.js';
 import { createInputScopeGuard } from './input-scope.js';
-import { TRAINING_LESSONS, TrainingSession } from './training.js';
+import { TRAINING_LESSONS, createCurrentTrainingSession } from './training.js';
 
 const BUILD_ORDER = ['barracks', 'archery', 'foundry', 'watchtower', 'mint', 'sanctum', 'aerie'];
 const ACTION_STATES = new Set(['instruction', 'active']);
@@ -202,7 +202,7 @@ export function trainingScope(snapshot) {
 
 export function bootTraining(doc = document) {
   const $ = (id) => doc.getElementById(id);
-  let session = new TrainingSession();
+  let session = createCurrentTrainingSession();
   const renderer = new Renderer($('trainingBattle'), $('trainingMinimap'));
   let choices = createTrainingChoices(session);
   const inputScope = createInputScopeGuard();
@@ -504,7 +504,7 @@ export function bootTraining(doc = document) {
   window.addEventListener('pagehide', () => { leaving = true; session.exit(); coachAlignment.interrupt(); inputScope.interrupt(); resetGesture(); });
   window.addEventListener('pageshow', (event) => {
     if (event.persisted) {
-      leaving = false; session = new TrainingSession(); choices = createTrainingChoices(session);
+      leaving = false; session = createCurrentTrainingSession(); choices = createTrainingChoices(session);
       coachAlignment.interrupt(); inputScope.interrupt(); inputScope.setScope('restored-page'); stepKey = null; lastFrame = 0; refresh();
     }
   });

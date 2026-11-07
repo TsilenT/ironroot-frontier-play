@@ -1,4 +1,5 @@
-import {Game, BUILDINGS, LANES} from './engine.js';
+import {Game, BUILDINGS, LANES, LEGACY_RULESET_ID} from './engine.js';
+import { AUTHORED_AIR_RULESET_ID, deepFreeze } from './rulesets.js';
 
 /** Authored battles use the normal economy, combat and save format. */
 export const CHALLENGES = [
@@ -59,15 +60,40 @@ export const CHALLENGES = [
   },
 ];
 
-function challengeFor(id) {
-  const challenge=CHALLENGES.find(c=>c.id===id);
+export const CURRENT_CHALLENGE_REVISION=2;
+// Published revision 1 remains untouched. Fresh attempts select this whole identity.
+export const CURRENT_CHALLENGES=deepFreeze(CHALLENGES.map(challenge=>({
+  ...JSON.parse(JSON.stringify(challenge)),scenarioRevision:CURRENT_CHALLENGE_REVISION,
+  rulesetId:AUTHORED_AIR_RULESET_ID,rulesetRevision:1,mapId:'classic',mapRevision:1
+})));
+export function getChallenge(id,revision=1) {
+  const list=revision===1?CHALLENGES:revision===CURRENT_CHALLENGE_REVISION?CURRENT_CHALLENGES:null;
+  if(!list)throw new RangeError('Unsupported challenge revision: '+String(revision));
+  const challenge=list.find(c=>c.id===id);
   if(!challenge)throw new RangeError('Unknown challenge: '+String(id));
   return challenge;
 }
-
-export function createChallenge(id) {
-  const challenge=challengeFor(id);
-  const game=new Game({difficulty:challenge.difficulty,seed:challenge.seed,ai:false});
+export function challengeScenarioForGame(game,id) {
+  getChallenge(id);
+  const revision=game?.ruleset?.id===AUTHORED_AIR_RULESET_ID?CURRENT_CHALLENGE_REVISION:
+    game?.ruleset?.id===LEGACY_RULESET_ID?1:null;
+  if(revision===null||game.ruleset.revision!==1||game.map.id!=='classic'||game.map.revision!==1)
+    throw new Error('This game does not match a supported trial identity.');
+  return {kind:'trial',id,revision};
+}
+export const getChallengeForGame=(game,id)=>getChallenge(id,challengeScenarioForGame(game,id).revision);
+export const createCurrentChallenge=id=>createChallenge(id,CURRENT_CHALLENGE_REVISION);
+export function restartChallenge(game,id) {
+  const revision=challengeScenarioForGame(game,id).revision;
+  return makeChallenge(getChallenge(id,revision),game.schemaVersion===3);
+}
+// The one-argument historical factory deliberately retains its original schema.
+export function createChallenge(id,revision=1) {
+  return makeChallenge(getChallenge(id,revision),revision!==1);
+}
+function makeChallenge(challenge,explicitIdentity) {
+  const game=new Game({difficulty:challenge.difficulty,seed:challenge.seed,ai:false,
+    ...(explicitIdentity?{rulesetId:challenge.rulesetId??LEGACY_RULESET_ID,rulesetRevision:challenge.rulesetRevision??1}:{} )});
   const state=game.state;
   state.buildings=[];state.effects=[];state.stats.built=[0,0];state.gold=[10000,10000];
   for(const [side,placements] of [[0,challenge.playerBuildings],[1,challenge.enemyBuildings]]) {
@@ -86,14 +112,14 @@ export function createChallenge(id) {
 
 /** Target identity uses authored positions, so evaluation also works after restore. */
 export function getChallengeTargets(game,id) {
-  return challengeFor(id).markedTargets.map(target=>({
+  return getChallengeForGame(game,id).markedTargets.map(target=>({
     ...target,
     building:game.state.buildings.find(b=>b.side===1&&b.hp>0&&b.type===target.type&&b.x===target.x&&b.lane===target.lane)||null,
   }));
 }
 
 export function evaluateChallenge(game,id) {
-  const challenge=challengeFor(id),s=game.state;
+  const challenge=getChallengeForGame(game,id),s=game.state;
   const duration=Math.max(0,Math.min(1,s.time/challenge.timeLimit));
   // Read buildings rather than the cached HUD income, which updates on the next tick.
   const income=5+s.buildings.filter(b=>b.side===0&&b.type==='mint'&&b.hp>0)

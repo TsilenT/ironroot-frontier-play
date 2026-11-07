@@ -2,8 +2,8 @@ import { createViewportPause, inspectMobileGeometry, visibleViewportRect, insetV
 import { createProfileSession, PROFILE_MARKER_KEY, CURRENT_PROFILE_PROTOCOL_VERSION } from './profile-session.js';
 import { createInputScopeGuard } from './input-scope.js';
 import { createMenuHistory, seedMenuAncestors } from './menu-history.js';
-import { supportsFlightOrders } from './flight-orders.js';
-import { flightOrderModel, flightRoadName, flightRouteRows, flightWarningSummary } from './flight-orders-view.js';
+import { supportsAutonomousAir } from './autonomous-air.js';
+import { airRulesGuide, airBuildingDescription } from './flight-orders-view.js';
 import {
   GamepadInput,
   moveCursor,
@@ -42,8 +42,10 @@ import {
   formatSeconds,
 } from './codex.js';
 import {
-  CHALLENGES,
-  createChallenge,
+  CURRENT_CHALLENGES as CHALLENGES,
+  createCurrentChallenge,
+  restartChallenge,
+  getChallengeForGame,
   getChallengeTargets,
   evaluateChallenge,
 } from './challenges.js';
@@ -110,7 +112,10 @@ function populateFieldGuide(context = null) {
     `<ul>${items.map((text) => `<li>${esc(text)}</li>`).join('')}</ul>`;
   const stats = (values) =>
     `<dl class="codex-stats">${values.map(([label, value]) => `<div><dt>${esc(label)}</dt><dd>${esc(value)}</dd></div>`).join('')}</dl>`;
-  $('flightGuide').classList.toggle('hidden', !supportsFlightOrders(context?.ruleset || context));
+  const airGuide = airRulesGuide(context);
+  $('flightGuide').classList.toggle('hidden', !airGuide);
+  $('flightGuideTitle').textContent = airGuide?.title || '';
+  $('flightGuideText').textContent = airGuide?.detail || '';
   $('codexScope').textContent = ECONOMY_GUIDE.scope;
   $('codexCaveat').textContent = ECONOMY_GUIDE.counterCaveat;
   $('unitCodex').innerHTML = UNIT_CODEX.map(
@@ -488,7 +493,7 @@ function syncChoice() {
       ? 'ARROW VOLLEY · TAP ENEMY TROOPS'
       : 'BUILD YOUR FRONTIER';
   $('buildHelp').textContent = ui.build
-    ? (game.buildings || BUILDINGS)[ui.build].description
+    ? airBuildingDescription(game, ui.build)
     : ui.spell
       ? 'Damages enemy troops in a wide area.'
       : $('buildCards').scrollWidth > $('buildCards').clientWidth + 2
@@ -505,7 +510,7 @@ function updateCampaignDeck() {
   for (const card of document.querySelectorAll('.build-card'))
     card.classList.toggle('hidden', started && !choices.includes(card.dataset.type));
   $('coachResume').classList.toggle('hidden', !coachingHold || firstBuildHold || !canInteract());
-  $('coachReplay').classList.toggle('hidden', coachingHold || !canInteract() || !campaignTeaching(currentCampaign, { flightOrders: supportsFlightOrders(game.ruleset) }));
+  $('coachReplay').classList.toggle('hidden', coachingHold || !canInteract() || !campaignTeaching(currentCampaign, { autonomousAir: supportsAutonomousAir(game.ruleset) }));
   const hint = started && !objectiveOutcome && game.state.winner === null ? campaignCoach(game, currentCampaign, ui) : null;
   const show = coachEnabled && !!hint && canInteract() && !dialogLayers.some(layer => !layer.classList.contains('hidden'));
   const compact = $('app').classList.contains('protected-compact');
@@ -574,13 +579,13 @@ function updateCampaignDeck() {
   if (show) {
     let next = hint.title;
     if (ui.spell) next = 'Tap enemy troops to fire Arrow volley.';
-    else if (ui.build) next = hint.site ? 'Tap a green site. Gold ring suggested.'
+    else if (ui.build) next = hint.site ? 'Tap any green site; the gold ring is a suggestion.'
       : game.state.gold[0] < (game.buildings || BUILDINGS)[ui.build]?.cost
         ? 'Need more gold. Resume to earn income.' : 'No suggested site. Choose another site or building.';
     else if (hint.buildType) next = `${ui.selected ? 'Close details, then Build → ' : compact && !open ? 'Build → ' : 'Choose '}${(game.buildings || BUILDINGS)[hint.buildType].name}.`;
     else if (hint.control === '#upgrade') next = 'Upgrade the selected building.';
     else if (hint.buildingId) next = 'Tap your marked building to manage it.';
-    else if (hint.control === '#front') next = coachingHold ? 'Start when ready. Front follows your army.' : 'Use Front to follow your army.';
+    else if (hint.control === '#front') next = coachingHold ? 'Start when ready, then use Front to follow your army.' : 'Use Front to follow your army.';
     if (show && point && !guidancePointVisible(renderer, game, point) && !open) next = 'Pan or use the minimap to find the marked site.';
     if (coachingHold) next = 'Paused. ' + next;
     if ($('coachNext').textContent !== next || $('coachTitle').textContent !== hint.title || $('coachText').textContent !== text)
@@ -616,7 +621,7 @@ $('toggleCoach').onclick = () => {
 };
 function beginCampaignCoaching({ manual = false } = {}) {
   const lesson = campaignTeaching(currentCampaign, {
-    flightOrders: supportsFlightOrders(game.ruleset),
+    autonomousAir: supportsAutonomousAir(game.ruleset),
     ...(manual ? {} : {
       resumed: resumedBattle,
       completed: !!campaignProgress.missions[currentCampaign]?.completed,
@@ -674,54 +679,12 @@ function coachControlVisible(element) {
   }
   return true;
 }
-function syncFlightOrders(building) {
-  const model = flightOrderModel(game, building);
-  $('flightOrders').classList.toggle('hidden', !model);
-  if (!model) return;
-  $('flightOrderCurrent').textContent = model.current;
-  $('flightOrderHelp').textContent = model.detail;
-  for (const option of model.options) {
-    const button = $('flight' + option.key[0].toUpperCase() + option.key.slice(1));
-    button.classList.toggle('hidden', !option.available);
-    button.textContent = option.label;
-    button.setAttribute('aria-pressed', String(option.selected));
-    button.disabled = !option.available || !canInteract();
-  }
-}
-let armedFlightControl = null;
-document.addEventListener('pointerdown', event => {
-  const button = event.target.closest?.('[data-flight-order]');
-  armedFlightControl = button && $('flightOrders').contains(button)
-    ? {button, pointerId: event.pointerId} : null;
-}, true);
-document.addEventListener('pointercancel', () => { armedFlightControl = null; }, true);
-window.addEventListener('blur', () => { armedFlightControl = null; });
-for (const key of ['north', 'hold', 'south']) {
-  $('flight' + key[0].toUpperCase() + key.slice(1)).onclick = event => {
-    const button = event.currentTarget;
-    if (event.detail !== 0 && (armedFlightControl?.button !== button ||
-      (Number.isFinite(event.pointerId) && event.pointerId > 0 && armedFlightControl.pointerId !== event.pointerId))) return;
-    armedFlightControl = null;
-    syncProfileSafety();
-    if (!canInteract()) return;
-    const building = game.state.buildings.find(b => b.id === ui.selected && b.side === 0);
-    const option = flightOrderModel(game, building)?.options.find(value => value.key === key && value.available);
-    if (!option) return;
-    const result = game.setFlightPlan(building.id, option.lane);
-    if (result.ok) {
-      sound('click');
-      toast(option.lane === building.lane ? 'Future gryphons will hold this road.'
-        : `Future gryphons will cross to ${flightRoadName(game.map, option.lane).toLowerCase()}.`);
-    } else toast(result.reason);
-    updateSelection();
-  };
-}
 function updateSelection() {
   const b = game.state.buildings.find(
     (x) => x.id === ui.selected && x.side === 0,
   );
-  syncFlightOrders(b);
   $('selectionPanel').classList.toggle('hidden', !b);
+  $('selectionPanel').classList.toggle('air-inspector', b?.type === 'aerie');
   $('commandDeck').classList.toggle('inspecting-building', !!b && $('app').classList.contains('protected-mobile'));
   if (!b) return;
   const d = (game.buildings || BUILDINGS)[b.type];
@@ -731,7 +694,7 @@ function updateSelection() {
     `Level ${b.level} · ${d.unit ? (game.units || UNITS)[d.unit].name + ' production' : d.range ? 'Defensive structure' : 'Economy'}`;
   $('selectionStats').innerHTML =
     `<span>♥ ${Math.ceil(b.hp)} / ${Math.ceil(b.maxHp)}</span><span>${d.unit ? `${(d.spawnTime / (1 + 0.22 * (b.level - 1)) / (game.state.overtime ? 1.65 : 1)).toFixed(1)}s / wave` : d.range ? `Range ${d.range}` : `+${(2.5 * (1 + 0.5 * (b.level - 1))).toFixed(1)} gold /s`}</span>`;
-  $('selectionDescription').textContent = d.description;
+  $('selectionDescription').textContent = airBuildingDescription(game, b.type);
   const cost = game.upgradeCost ? game.upgradeCost(b) : upgradeCost(b);
   $('upgrade').textContent = b.level < 3 ? `Upgrade · ◆ ${cost}` : 'Max level';
   $('upgrade').disabled =
@@ -1019,7 +982,7 @@ function start(
       : null;
   const campaignRevision = cid
     ? restored ? campaignScenarioForGame(restored, cid).revision
-      : scenarioRevision ?? (isIntroMission(cid) ? 1 : getCampaignLaunchMission(cid, campaignProgress).scenarioRevision)
+      : scenarioRevision ?? getCampaignLaunchMission(cid, campaignProgress).scenarioRevision
     : 1;
   if (cid && !isMissionUnlocked(campaignProgress, cid, campaignRevision)) {
     toast('Complete the preceding missions to unlock this one.');
@@ -1050,11 +1013,11 @@ function start(
   game =
     restored ||
     (currentCampaign
-      ? (isIntroMission(currentCampaign) || (scenarioRevision === 1 && !getCampaignMission(currentCampaign).rulesetId?.startsWith('frontier-campaign-'))
+      ? ((scenarioRevision === 1 && !getCampaignMission(currentCampaign).rulesetId?.startsWith('frontier-campaign-'))
         ? createCampaignMission(currentCampaign)
         : createProgressionCampaignMission(currentCampaign, campaignProgress))
       : currentChallenge
-        ? createChallenge(currentChallenge)
+        ? createCurrentChallenge(currentChallenge)
         : new Game({ difficulty, seed: Date.now() >>> 0, mapId: selectedMap, mapRevision: 1, rulesetId: selectedRuleset, rulesetRevision: 1 }));
   populateBuildCards();
   populateFieldGuide(game);
@@ -1109,7 +1072,7 @@ function start(
   $('opponentLabel').textContent = mission
     ? mission.name.toUpperCase()
     : currentChallenge
-      ? CHALLENGES.find((c) => c.id === currentChallenge).name.toUpperCase()
+      ? getChallengeForGame(game, currentChallenge).name.toUpperCase()
       : {
           easy: 'THE OUTRIDER',
           normal: 'THE IRON MARSHAL',
@@ -1135,7 +1098,7 @@ function start(
       : mission
         ? mission.objective
         : currentChallenge
-          ? CHALLENGES.find((c) => c.id === currentChallenge).objective
+          ? getChallengeForGame(game, currentChallenge).objective
           : 'Choose a building, then tap a green slot to place it.',
   );
   $('battle').focus();
@@ -1390,7 +1353,7 @@ function beginBattleReport(resumed) {
   $('resultReportIssue').classList.add('hidden');
   const authored = currentCampaign
     ? CAMPAIGN_MISSIONS.find((m) => m.id === currentCampaign)
-    : currentChallenge ? CHALLENGES.find((c) => c.id === currentChallenge) : null;
+    : currentChallenge ? getChallengeForGame(game, currentChallenge) : null;
   try {
     battleJournal = createBattleJournal(game, {
       resumed,
@@ -1658,7 +1621,7 @@ function finish() {
       currentCampaign &&
       CAMPAIGN_MISSIONS.find((m) => m.id === currentCampaign),
     trial =
-      currentChallenge && CHALLENGES.find((c) => c.id === currentChallenge);
+      currentChallenge && getChallengeForGame(game, currentChallenge);
   $('resultEyebrow').textContent = mission
     ? won
       ? 'MISSION WON'
@@ -1904,7 +1867,7 @@ function activateBattlePoint(w, { repeatBuild = false } = {}) {
       }
       sound('build');
       toast(
-        `${(game.buildings || BUILDINGS)[ui.build].name} raised. ${ui.build === 'aerie' && supportsFlightOrders(game.ruleset) ? 'Tap it for flight orders.' : (game.buildings || BUILDINGS)[ui.build].unit ? 'First troops in a moment.' : 'Your frontier grows.'}`,
+        `${(game.buildings || BUILDINGS)[ui.build].name} raised. ${ui.build === 'aerie' && supportsAutonomousAir(game.ruleset) ? 'Gryphons will seek nearby enemies, including one road over.' : (game.buildings || BUILDINGS)[ui.build].unit ? 'First troops in a moment.' : 'Your frontier grows.'}`,
       );
       if (!repeatBuild || game.state.gold[0] < (game.buildings || BUILDINGS)[ui.build].cost) {
         ui.build = null;
@@ -2150,7 +2113,7 @@ function updateHUD() {
   if (currentChallenge || currentCampaign) {
     const authored = currentCampaign
         ? CAMPAIGN_MISSIONS.find((m) => m.id === currentCampaign)
-        : CHALLENGES.find((c) => c.id === currentChallenge),
+        : getChallengeForGame(game, currentChallenge),
       outcome =
         objectiveOutcome ||
         (currentCampaign
@@ -2189,27 +2152,6 @@ function updateHUD() {
   }
   updateSelection();
   updateCampaignDeck();
-  updateFlightStatus();
-}
-let flightStatusGame = null, seenFlightWarnings = new Set(), lastFlightNotice = -Infinity;
-function updateFlightStatus() {
-  if (flightStatusGame !== game) { flightStatusGame = game; seenFlightWarnings = new Set(); lastFlightNotice = -Infinity; $('flightAlert').textContent = ''; }
-  const rows = flightRouteRows(game);
-  $('pauseFlights').classList.toggle('hidden', !supportsFlightOrders(game.ruleset));
-  const text = rows.length ? rows.map(row => row.text).join('\n') : 'No gryphons are changing roads.';
-  if ($('pauseFlightList').textContent !== text) $('pauseFlightList').textContent = text;
-  const living = new Set(game.state.units.filter(unit => unit.hp > 0).map(unit => unit.id));
-  for (const id of seenFlightWarnings) if (!living.has(id)) seenFlightWarnings.delete(id);
-  const warnings = game.state.units.filter(unit => unit.side === 1 && unit.hp > 0 && unit.airRoute?.phase === 'warning' && !seenFlightWarnings.has(unit.id));
-  const message = flightWarningSummary(game, warnings);
-  if (message && !paused && !coachingHold && !document.hidden && game.state.time - lastFlightNotice >= 6) {
-    // A pause or throttled observation must not consume an unannounced warning.
-    // If it is still pending when live feedback is eligible, announce it once.
-    for (const unit of warnings) seenFlightWarnings.add(unit.id);
-    $('flightAlert').textContent = message;
-    sound('warning');
-    lastFlightNotice = game.state.time;
-  }
 }
 let heardEffects = new WeakSet(),
   heardProjectiles = new WeakSet();
@@ -2281,7 +2223,7 @@ function frame(now) {
     if (currentCampaign || currentChallenge) {
       const authored = currentCampaign
         ? CAMPAIGN_MISSIONS.find((m) => m.id === currentCampaign)
-        : CHALLENGES.find((c) => c.id === currentChallenge);
+        : getChallengeForGame(game, currentChallenge);
       const outcome = advanceObjectiveBattle(
         game,
         dt * speed,
@@ -2386,7 +2328,8 @@ function renderChallenge() {
 }
 function setMode(value) {
   mode = value;
-  if (!started) populateFieldGuide(mode === 'skirmish' ? getRuleset(selectedRuleset, 1) : null);
+  if (!started) populateFieldGuide(mode === 'skirmish' ? getRuleset(selectedRuleset, 1)
+    : mode === 'challenges' ? getRuleset(CHALLENGES.find(c => c.id === selectedChallenge).rulesetId, 1) : null);
   document
     .querySelectorAll('[data-mode]')
     .forEach((b) => {
@@ -2418,13 +2361,13 @@ function updateSkirmishRules() {
   const rules = getRuleset(selectedRuleset, 1);
   $('skirmishRules').value = selectedRuleset;
   $('skirmishRulesDescription').textContent = rules.endgame.forcedDecay
-    ? 'Eight buildings, including Rootwardens and aerie flight orders. Production and structure damage increase at 5:00; citadels lose health from 7:00.'
-    : 'Eight buildings, including Rootwardens and aerie flight orders. Production and structure damage increase at 5:00; citadels never decay with time.';
+    ? 'Eight buildings, including Rootwardens and gryphons that seek nearby enemies one road over. Production and structure damage increase at 5:00; citadels lose health from 7:00.'
+    : 'Eight buildings, including Rootwardens and gryphons that seek nearby enemies one road over. Production and structure damage increase at 5:00; citadels never decay with time.';
   if (!started && mode === 'skirmish') populateFieldGuide(rules);
 }
 $('skirmishRules').onchange = () => {
   const value = $('skirmishRules').value;
-  if (!['frontier-flight-open', 'frontier-flight-timed'].includes(value)) return;
+  if (!['frontier-air-local-open', 'frontier-air-local-timed'].includes(value)) return;
   selectedRuleset = value;
   updateSkirmishRules();
 };
@@ -2593,7 +2536,7 @@ setMode(mode);
 // The pause menu is a top-level dialog, independent of battlefield sizing.
 function syncPauseMenu() {
   const mission = currentCampaign && CAMPAIGN_MISSIONS.find(m => m.id === currentCampaign);
-  const trial = currentChallenge && CHALLENGES.find(c => c.id === currentChallenge);
+  const trial = currentChallenge && getChallengeForGame(game, currentChallenge);
   const noun = mission ? 'mission' : trial ? 'field trial' : 'battle';
   $('pauseBattleName').textContent = mission?.name || trial?.name || game.map.name;
   $('pauseContext').textContent = `${mission ? 'Campaign' : trial ? 'Field trial' : 'Skirmish'} · ${timeText(game.state.time)} · ${speed}× speed`;
@@ -2638,7 +2581,7 @@ $('confirmRestart').onclick = () => {
   }
   try {
     const candidate = currentCampaign ? createCampaignRestart(game, currentCampaign)
-      : currentChallenge ? createChallenge(currentChallenge)
+      : currentChallenge ? restartChallenge(game, currentChallenge)
         : new Game({ difficulty: game.difficulty, ai: game.ai, seed: Date.now() >>> 0,
           mapId: game.map.id, mapRevision: game.map.revision,
           ...(game.schemaVersion === 3 ? {rulesetId: game.ruleset.id, rulesetRevision: game.ruleset.revision} : {}) });
@@ -2775,7 +2718,7 @@ function syncFullscreenControls() {
         ? 'App view is already active. Fullscreen is optional; system controls may remain.'
         : 'App view is already active. Extra fullscreen is unavailable; keep playing here.'
       : available
-        ? 'Optional. Fullscreen can hide browser bars; system controls may remain.'
+        ? 'Optional fullscreen can hide browser bars, though system controls may remain.'
         : 'Fullscreen is unavailable here. Keep playing in this window.');
   for (const node of fullscreenStatuses) node.textContent = status;
 }
@@ -3048,7 +2991,6 @@ function interruptMobileInput() {
   resetBattleGesture();
   armedProtectedControl = null;
   closeSelectionArmed = false;
-  armedFlightControl = null;
   controller.reset();
   padHud = false;
 }

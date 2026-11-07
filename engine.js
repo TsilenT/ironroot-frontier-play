@@ -1,5 +1,7 @@
 import { BUILDINGS, UNITS, SPELL, getRuleset, LEGACY_RULESET_ID } from './rulesets.js';
 import { supportsFlightOrders, flightGateHome, flightGateX } from './flight-orders.js';
+import { supportsAutonomousAir, autonomousAirTarget, retainedAirTarget, releaseAirTarget } from './autonomous-air.js';
+export { supportsAutonomousAir } from './autonomous-air.js';
 export { supportsFlightOrders, flightGateHome, flightGateX } from './flight-orders.js';
 export { BUILDINGS, UNITS, SPELL, RULESETS, getRuleset, LEGACY_RULESET_ID, DEFAULT_SKIRMISH_RULESET_ID } from './rulesets.js';
 /** Deterministic, DOM-free simulation. All coordinates are world pixels. */
@@ -93,7 +95,7 @@ export class Game {
   sell(id,side=0){if(this.limitReason)return {ok:false,code:'save-safety-limit',reason:this.limitReason};const b=this.state.buildings.find(b=>b.id===id&&b.side===side&&b.hp>0);if(this.state.winner!==null||!b)return {ok:false,reason:'Select one of your buildings.'};const refund=Math.floor(b.invested*0.5*b.hp/b.maxHp);this.state.gold[side]+=refund;this.state.buildings=this.state.buildings.filter(a=>a!==b);this._effect(b.x,b.y,'sell',side,0.6);return {ok:true,refund};}
   cast(x,y,side=0){if(this.limitReason)return {ok:false,code:'save-safety-limit',reason:this.limitReason};const s=this.state;if(s.winner!==null||![0,1].includes(side)||!Number.isFinite(x)||!Number.isFinite(y)||x<0||x>this.map.width||y<0||y>this.map.height)return {ok:false,reason:'Choose a point on the battlefield.'};if(s.spellCooldown[side]>0)return {ok:false,reason:'Volley is recharging.'};if(s.gold[side]<SPELL.cost)return {ok:false,reason:`Need ${SPELL.cost} gold.`};s.gold[side]-=SPELL.cost;s.spellCooldown[side]=SPELL.cooldown;for(const u of s.units)if(u.side!==side&&Math.hypot(u.x-x,u.y-y)<SPELL.radius)this._damage(u,SPELL.damage,side);this._effect(x,y,'volley',side,1.1,SPELL.radius);return {ok:true};}
   _effect(x,y,type,side,life=0.35,radius=30){if(this.state.effects.length>=256)this.state.effects.shift();this.state.effects.push({x,y,type,side,life,maxLife:life,radius});}
-  _spawn(b){const s=this.state;if(s.units.filter(u=>u.side===b.side&&u.hp>0).length>=70)return;const type=this.buildings[b.type].unit,d=this.units[type],mult=1+0.12*(b.level-1);const u={id:this.nextId++,type,flying:d.flying,side:b.side,x:b.x+(b.side?-48:48),y:this.map.lanes[b.lane]+(this.random()-0.5)*32,lane:b.lane,hp:d.hp*mult,maxHp:d.hp*mult,level:b.level,cooldown:this.random()*0.2,attack:0};if(supportsFlightOrders(this.ruleset)&&type==='gryphon'&&b.flightPlan!=null&&b.flightPlan!==b.lane)u.airRoute={from:b.lane,to:b.flightPlan,phase:'approach',remaining:this.ruleset.movement.flightOrders.warningSeconds};s.units.push(u);this._effect(u.x,u.y,'spawn',u.side,0.45);}
+  _spawn(b){const s=this.state;if(s.units.filter(u=>u.side===b.side&&u.hp>0).length>=70)return;const type=this.buildings[b.type].unit,d=this.units[type],mult=1+0.12*(b.level-1);const u={id:this.nextId++,type,flying:d.flying,side:b.side,x:b.x+(b.side?-48:48),y:this.map.lanes[b.lane]+(this.random()-0.5)*32,lane:b.lane,hp:d.hp*mult,maxHp:d.hp*mult,level:b.level,cooldown:this.random()*0.2,attack:0};if(supportsAutonomousAir(this.ruleset)&&d.flying)u.airTargetId=null;if(supportsFlightOrders(this.ruleset)&&type==='gryphon'&&b.flightPlan!=null&&b.flightPlan!==b.lane)u.airRoute={from:b.lane,to:b.flightPlan,phase:'approach',remaining:this.ruleset.movement.flightOrders.warningSeconds};s.units.push(u);this._effect(u.x,u.y,'spawn',u.side,0.45);}
   _advanceAirRoute(u,dt){
     if(!supportsFlightOrders(this.ruleset)||u.type!=='gryphon')return false;
     const route=u.airRoute;if(!route||route.phase==='done')return false;
@@ -114,7 +116,7 @@ export class Game {
     }
     return true;
   }
-  _damage(target,amount,side){if(this.damageQueue){this.damageQueue.push([target,amount,side]);return;}if(target.hp<=0)return;const damage=Math.min(target.hp,amount);target.hp=Math.max(0,target.hp-amount);this.state.stats.damage[side]+=damage;target.hit=0.16;if(target.hp===0){if(this.units[target.type]){this.state.stats.kills[side]++;this.state.gold[side]+=2;}this._effect(target.x,target.y,'death',target.side,0.7,this.units[target.type]?18:52);}}
+  _damage(target,amount,side){if(this.damageQueue){this.damageQueue.push([target,amount,side]);return;}if(target.hp<=0)return;const damage=Math.min(target.hp,amount);target.hp=Math.max(0,target.hp-amount);this.state.stats.damage[side]+=damage;target.hit=0.16;if(target.hp===0){if(supportsAutonomousAir(this.ruleset))for(const u of this.state.units)if(u.airTargetId===target.id)releaseAirTarget(u);if(this.units[target.type]){this.state.stats.kills[side]++;this.state.gold[side]+=2;}this._effect(target.x,target.y,'death',target.side,0.7,this.units[target.type]?18:52);}}
   _fire(attacker,target,damage,type){const s=this.state;attacker.attack=0.22;this._damage(target,damage,attacker.side);if(type!=='warrior'&&type!=='rootwarden'&&s.projectiles.length<256)s.projectiles.push({x:attacker.x,y:attacker.y,sx:attacker.x,sy:attacker.y,tx:target.x,ty:target.y,side:attacker.side,type,sourceAir:!!this.units[attacker.type]?.flying,targetAir:!!this.units[target.type]?.flying,life:0.28,maxLife:0.28});else this._effect(target.x,target.y,'hit',attacker.side,0.2,16);}
   update(dt){if(!Number.isFinite(dt)||dt<=0||this.state.winner!==null)return;const limit=this._limitFor(dt);if(limit)return {ok:false,code:'save-safety-limit',reason:limit};this.accumulator+=Math.min(dt,0.25);while(this.accumulator>=0.05){this._step(0.05);this.accumulator-=0.05;if(this.state.winner!==null)break;}}
   _step(dt){
@@ -126,13 +128,19 @@ export class Game {
       if(d.range){b.cooldown=Math.max(-1,b.cooldown-dt);const enemies=s.units.filter(u=>u.side!==b.side&&u.hp>0&&Math.hypot(u.x-b.x,u.y-b.y)<d.range);enemies.sort((a,c)=>Math.hypot(a.x-b.x,a.y-b.y)-Math.hypot(c.x-b.x,c.y-b.y));if(enemies[0]&&b.cooldown<=0){const t=enemies[0];this._fire(b,t,d.damage*(1+0.3*(b.level-1))*(t.type==='warrior'?0.72:1),'tower');b.cooldown=0.85;}}
     }
     // Preserve the structure-first snapshot, then resolve all routes before unit combat.
-    const flightOrders=supportsFlightOrders(this.ruleset),routing=new Set();
+    const flightOrders=supportsFlightOrders(this.ruleset),autoAir=supportsAutonomousAir(this.ruleset),routing=new Set();
+    const airTargets=autoAir?new Map(s.units.map(u=>[u.id,u])):null;
     if(flightOrders)for(const u of s.units)if(u.hp>0&&this._advanceAirRoute(u,dt))routing.add(u.id);
     const pendingMoves=[];
     for(const u of (this.tick%2?s.units:[...s.units].reverse())){if(u.hp<=0)continue;const d=this.units[u.type],dir=u.side? -1:1;u.cooldown=Math.max(-1,u.cooldown-dt);u.attack=Math.max(0,u.attack-dt);u.hit=Math.max(0,(u.hit||0)-dt);
       if(routing.has(u.id))continue;
       let target=null,best=Infinity;
-      for(const e of s.units){if(e.side===u.side||e.hp<=0||(e.lane!==u.lane&&!(flightOrders&&d.canAttackAir&&e.type==='gryphon'&&e.airRoute?.phase==='transit'&&[e.airRoute.from,e.airRoute.to].includes(u.lane))&&Math.abs(u.x-(u.side?110:this.map.width-110))>220)||(this.units[e.type].flying&&!d.canAttackAir)||(!this.units[e.type].flying&&!d.canAttackGround))continue;const dist=Math.hypot(e.x-u.x,e.y-u.y);if(dist<best&&dist<Math.max(d.range+80,190)){target=e;best=dist;}}
+      const autonomousFlyer=autoAir&&d.flying;
+      if(autonomousFlyer){
+        target=autonomousAirTarget(this,u,airTargets);
+        if(target)best=Math.hypot(target.x-u.x,target.y-u.y);
+      }
+      if(!autonomousFlyer)for(const e of s.units){if(e.side===u.side||e.hp<=0||(e.lane!==u.lane&&!(autoAir&&d.canAttackAir&&this.units[e.type].flying)&&!(flightOrders&&d.canAttackAir&&e.type==='gryphon'&&e.airRoute?.phase==='transit'&&[e.airRoute.from,e.airRoute.to].includes(u.lane))&&Math.abs(u.x-(u.side?110:this.map.width-110))>220)||(this.units[e.type].flying&&!d.canAttackAir)||(!this.units[e.type].flying&&!d.canAttackGround)||(autoAir&&!d.flying&&this.units[e.type].flying&&Math.abs(e.y-this.map.lanes[u.lane])>d.range&&Math.hypot(e.x-u.x,e.y-u.y)>d.range))continue;const dist=Math.hypot(e.x-u.x,e.y-u.y);if(dist<best&&dist<Math.max(d.range+80,190)){target=e;best=dist;}}
       if(!target){for(const b of s.buildings){if(b.side===u.side||b.hp<=0||b.lane!==u.lane||(b.x-u.x)*dir < -90)continue;const dist=Math.hypot(b.x-u.x,b.y-u.y)-35;if(dist<best){target=b;best=dist;}}}
       if(!target){target=s.bases[1-u.side];best=Math.hypot(target.x-u.x,target.y-u.y)-55;}
       const structure=!this.units[target.type];
@@ -141,9 +149,13 @@ export class Game {
         const dx=flightGateX(this.map,this.ruleset,u.side)-u.x,dy=this.map.lanes[u.lane]-u.y,length=Math.hypot(dx,dy)||1,step=Math.min(d.speed*dt,length);
         pendingMoves.push([u,u.x+dx/length*step,u.y+dy/length*step]);
       }
+      else if(autoAir&&!d.flying&&this.units[target.type]?.flying){
+        const dx=target.x-u.x,dy=this.map.lanes[u.lane]-u.y,length=Math.hypot(dx,dy)||1,step=Math.min(d.speed*dt,length);
+        pendingMoves.push([u,clamp(u.x+dx/length*step,75,this.map.width-75),clamp(u.y+dy/length*step,180,720)]);
+      }
       else {const targetY=target.type==='base'&&Math.abs(target.x-u.x)>180?this.map.lanes[u.lane]:target.y;let dx=target.x-u.x,dy=targetY-u.y;const length=Math.hypot(dx,dy)||1;pendingMoves.push([u,clamp(u.x+dx/length*d.speed*dt,75,this.map.width-75),clamp(u.y+dy/length*d.speed*dt,180,720)]);}
     }
-    for(const [unit,x,y] of pendingMoves){unit.x=x;unit.y=y;}
+    for(const [unit,x,y] of pendingMoves){unit.x=x;unit.y=y;if(autoAir&&this.units[unit.type].flying)unit.lane=laneFor(this.map,y);}
     for(const base of s.bases){
       base.cooldown=Math.max(-1,base.cooldown-dt);base.hit=Math.max(0,(base.hit||0)-dt);base.attack=Math.max(0,(base.attack||0)-dt);
       const nearby=s.units.filter(u=>u.side!==base.side&&Math.hypot(u.x-base.x,u.y-base.y)<310).sort((a,b)=>Math.hypot(a.x-base.x,a.y-base.y)-Math.hypot(b.x-base.x,b.y-base.y));
@@ -151,6 +163,7 @@ export class Game {
     }
     const pendingDamage=this.damageQueue;this.damageQueue=null;for(const hit of pendingDamage)this._damage(...hit);
     s.units=s.units.filter(u=>u.hp>0);s.buildings=s.buildings.filter(b=>b.hp>0);
+    if(autoAir)for(const u of s.units)if(this.units[u.type].flying&&u.airTargetId!==null&&!retainedAirTarget(this,u,airTargets))releaseAirTarget(u);
     if(s.units.length){const left=s.units.filter(u=>u.side===0),right=s.units.filter(u=>u.side===1);const a=left.length?Math.max(...left.map(u=>u.x)):110;const b=right.length?Math.min(...right.map(u=>u.x)):this.map.width-110;s.frontline=clamp((a+b)/2,110,this.map.width-110);}
     if(this.ruleset.endgame.forcedDecay&&s.time>420){for(const b of s.bases)b.hp=Math.max(0,b.hp-dt*(20+(s.time-420)*0.3));}
     if(s.bases[0].hp<=0||s.bases[1].hp<=0){if(s.bases[0].hp===0&&s.bases[1].hp===0)s.winner='draw';else s.winner=s.bases[0].hp<=0?1:0;return;}
@@ -270,7 +283,17 @@ function validateSave(data){
     num(e.lane,0,map.lanes.length-1,kind+'.lane',true);num(e.level,1,3,kind+'.level',true);num(e.cooldown,-1,20,kind+'.cooldown');
     const maxHp=types[e.type].hp*(1+(kind==='building'?.4:.12)*(e.level-1));if(Math.abs(e.maxHp-maxHp)>.001)fail(kind+' health does not match its level');
     if(kind==='building'){if(supportsFlightOrders(ruleset)&&e.type==='aerie'){num(e.flightPlan,0,map.lanes.length-1,'flightPlan',true);if(Math.abs(e.flightPlan-e.lane)>1)fail('flight plan is not adjacent');}num(e.progress,0,1,'progress');num(e.invested,types[e.type].cost,2000,'invested');const bounds=buildBounds(map,e.side);num(e.x,bounds.minX,bounds.maxX,'building.x');num(e.y,bounds.minY,bounds.maxY,'building.y');if(e.lane!==laneFor(map,e.y))fail('building lane does not match position');if(map.id!=='classic'){if(!isBuildSite(map,e.side,e.x,e.y))fail('building is not on an owned site');const site=e.side+':'+e.x+':'+e.y;if(occupiedSites.has(site))fail('duplicate occupied building site');occupiedSites.add(site);}}
-    else {if(e.flying!==types[e.type].flying)fail('unit flight does not match its type');num(e.attack,0,1,'unit.attack');num(e.x,75,map.width-75,'unit.x');num(e.y,180,720,'unit.y');if(supportsFlightOrders(ruleset))validateAirRoute(e);}
+    else {if(e.flying!==types[e.type].flying)fail('unit flight does not match its type');num(e.attack,0,1,'unit.attack');num(e.x,75,map.width-75,'unit.x');num(e.y,180,720,'unit.y');if(supportsFlightOrders(ruleset))validateAirRoute(e);if(supportsAutonomousAir(ruleset)&&types[e.type].flying)validateAirTarget(e);}
+  }
+  function validateAirTarget(u){
+    if(u.lane!==laneFor(map,u.y))fail('autonomous flyer lane does not match position');
+    if(u.airTargetId===null)return;
+    num(u.airTargetId,1,data.nextId-1,'airTargetId',true);
+    const target=s.units.find(e=>e.id===u.airTargetId);
+    if(!target||target.id===u.id||target.side===u.side||target.hp<=0)fail('invalid air target');
+    const distance=Math.hypot(target.x-u.x,target.y-u.y);
+    if(distance>ruleset.movement.autonomousAir.retention||
+      (Math.abs(laneFor(map,target.y)-u.lane)>1&&distance>ruleset.units[u.type].range))fail('air target is outside local retention');
   }
   function validateAirRoute(u){
     if(!Object.hasOwn(u,'airRoute'))return;
@@ -311,7 +334,7 @@ function strictFields(value,required,optional,fail){if(!value||typeof value!=='o
 function strictStateFields(s,fail,ruleset){
   strictFields(s,['time','gold','income','bases','buildings','units','projectiles','effects','frontline','winner','spellCooldown','overtime','stats'],[],fail);
   strictFields(s.stats,['kills','built','damage'],[],fail);
-  const entity=['id','type','side','hp','maxHp','cooldown','x','y'],flight=supportsFlightOrders(ruleset);
+  const entity=['id','type','side','hp','maxHp','cooldown','x','y'],flight=supportsFlightOrders(ruleset),autoAir=supportsAutonomousAir(ruleset);
   for(const [name,required,optional] of [
     ['bases',entity,['hit','attack']],['buildings',[...entity,'lane','level','progress','invested'],['hit','attack']],
     ['units',[...entity,'lane','level','flying','attack'],['hit']],['effects',['x','y','type','side','life','maxLife','radius'],[]],
@@ -319,7 +342,7 @@ function strictStateFields(s,fail,ruleset){
   ]){
     if(!Array.isArray(s[name]))fail('invalid entity collection');
     for(const e of s[name])strictFields(e,
-      flight&&name==='buildings'&&e?.type==='aerie'?[...required,'flightPlan']:required,
+      flight&&name==='buildings'&&e?.type==='aerie'?[...required,'flightPlan']:autoAir&&name==='units'&&ruleset.units[e?.type]?.flying?[...required,'airTargetId']:required,
       flight&&name==='units'&&e?.type==='gryphon'?[...optional,'airRoute']:optional,fail);
   }
 }

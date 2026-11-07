@@ -1,8 +1,8 @@
 import {Game, BUILDINGS, MAPS, getRuleset} from './engine.js';
-import {CAMPAIGN_RULESET_IDS, deepFreeze} from './rulesets.js';
+import {CAMPAIGN_RULESET_IDS, AUTHORED_AIR_RULESET_ID, deepFreeze} from './rulesets.js';
 import {ONBOARDING_CHAPTER, ONBOARDING_MISSIONS, isOnboardingMission} from './campaign-onboarding.js';
 export {ONBOARDING_CHAPTER, ONBOARDING_MISSIONS, isOnboardingMission} from './campaign-onboarding.js';
-import {INTRO_CHAPTER, INTRO_MISSIONS, introMedalMet} from './intro-campaign.js';
+import {INTRO_CHAPTER, INTRO_MISSIONS, introMedalMet, isIntroMission} from './intro-campaign.js';
 export {INTRO_CHAPTER, INTRO_MISSIONS, isIntroMission} from './intro-campaign.js';
 
 /** Campaign rules sit above the ordinary simulation, like field-trial objectives. */
@@ -10,8 +10,8 @@ export const CAMPAIGN_VERSION = 1;
 export const CAMPAIGN_STORAGE_KEY = 'ironroot.campaign.v1';
 export const CAMPAIGN_CHAPTERS = [
   {id:'embers',number:1,name:'Embers of the Vale',subtitle:'Rally the valley villages',theme:'woodland',description:'Marshal Vey has sealed the northern road. Captain Rowan gathers the scattered villages before winter closes the valley.',epilogue:'The granaries are full and the roads are open. For the first time since the invasion, the valley answers the same signal fire.'},
-  {id:'highpass',number:2,name:'The High Pass',subtitle:'Carry the signal over the mountains',theme:'highland',description:'Scout Sera brings word of an army beyond Stonegate. Keep the signal stations alive and win a passage through the highlands.',epilogue:'Stonegate opens. Beyond the pass, the smoke of a hundred furnaces darkens the sky.'},
-  {id:'furnace',number:3,name:'The Furnace March',subtitle:'Cut the marshal’s reinforcements',theme:'ashlands',description:'Vey’s foundries keep his army supplied. Destroy them and cut his supply lines before the army reaches the valley.',epilogue:'The furnaces fall silent. Vey retreats to the Crownworks, taking the last of his host with him.'},
+  {id:'highpass',number:2,name:'The High Pass',subtitle:'Carry the signal over the mountains',theme:'highland',description:'Scout Sera brings word of an army beyond Stonegate. Keep the signal stations alive and win a passage through the highlands.',epilogue:'Beyond the open gates of Stonegate, smoke from a hundred furnaces darkens the sky.'},
+  {id:'furnace',number:3,name:'The Furnace March',subtitle:'Cut the marshal’s reinforcements',theme:'ashlands',description:'Vey’s foundries keep his army supplied. Destroy them and cut his supply lines before the army reaches the valley.',epilogue:'Vey retreats from the silent furnaces to the Crownworks with the last of his host.'},
   {id:'crownworks',number:4,name:'The Last Crown',subtitle:'End the war at its source',theme:'citadel',description:'The Crownworks command all three roads. Secure a foothold, hold against the counterattack, and break the marshal’s final citadel.',epilogue:'The iron crown is lowered. Rowan opens all three roads, and the villages take turns keeping watch.'},
   {id:'frontier',number:5,name:'The Open Frontier',subtitle:'Reopen the roads and river crossings',theme:'woodland',description:'Toll forts still block the frontier after the crown’s fall. Rowan, Sera and Iona set out to reopen the long road and river crossings so the settlements can trade again.',epilogue:'The settlements share the bridges under the river charter. The distant beacons answer, and each village takes its turn on watch.'},
 ];
@@ -31,7 +31,7 @@ export const CAMPAIGN_MISSIONS = [
   {
     id:'emberwatch',chapterId:'embers',number:1,name:'Emberwatch',subtitle:'Light the first watchfire',
     description:'The last village bell is still ringing. Rowan must drive a raiding company from the crossing before reinforcements arrive.',
-    dialogue:{speaker:'Captain Rowan',text:'Build a barracks near the crossing. We need warriors there before the next raid.'},
+    dialogue:{speaker:'Captain Rowan',text:'We’ll need warriors at the crossing before the next raid, so get a barracks up there.'},
     victoryText:'The crossing is ours. Families begin to leave their hiding places, following the light of Emberwatch.',
     objective:'Destroy the marked enemy barracks within 3:00. Destroying the enemy citadel also wins.',
     hint:'Put warriors in front and ranged support behind. Keep your troop buildings alive so they can send reinforcements.',
@@ -43,7 +43,7 @@ export const CAMPAIGN_MISSIONS = [
   {
     id:'three-roads',chapterId:'embers',number:2,name:'Three Roads',subtitle:'Choose where to answer',
     description:'The raiders divide around the village. Clear both outer roads so the valley can send food to Emberwatch.',
-    dialogue:{speaker:'Scout Sera',text:'They’re coming around both sides of the village. Watch the north and south roads.'},
+    dialogue:{speaker:'Scout Sera',text:'Watch the north and south roads for raiders coming around the village.'},
     victoryText:'Both roadblocks are gone. Sera’s scouts carry the news to every farm between the ridges.',
     objective:'Destroy both marked outer-lane barracks within 3:30, or destroy the enemy citadel.',
     hint:'Split your production between the north and south. A tower can protect the middle while your armies push outward.',
@@ -54,8 +54,8 @@ export const CAMPAIGN_MISSIONS = [
   },
   {
     id:'winter-stores',chapterId:'embers',number:3,name:'Winter Stores',subtitle:'Save what the valley needs',
-    description:'The first snow is days away. Two working mines can fund the valley’s relief, but Vey’s outriders are already on the road.',
-    dialogue:{speaker:'Quartermaster Iona',text:'The relief wagons need an escort. Keep those mines working so we can pay for one.'},
+    description:'With the first snow days away and Vey’s outriders on the road, two working mines must fund the valley’s relief.',
+    dialogue:{speaker:'Quartermaster Iona',text:'Keep those mines working so we can pay an escort for the relief wagons.'},
     victoryText:'The relief wagons leave under guard. Iona has enough coin and grain to bring the valley through winter.',
     objective:'Keep both marked starting mines alive and have 15 gold/sec at 2:30. Destroying the enemy citadel wins early only if both mines survive.',
     hint:'Protect the outer lanes, add a third mine, and upgrade two mines. Never salvage a protected starting mine.',
@@ -67,7 +67,7 @@ export const CAMPAIGN_MISSIONS = [
   {
     id:'wings-of-ash',chapterId:'highpass',number:4,name:'Wings of Ash',subtitle:'Take back the open sky',
     description:'Veteran gryphon riders hunt anyone crossing the high pass. Their two aeries must fall before the valley’s army can climb.',
-    dialogue:{speaker:'Scout Sera',text:'Gryphons over both roads. Get archers up here before we move through the pass.'},
+    dialogue:{speaker:'Scout Sera',text:'Bring archers forward to clear the gryphons over both roads before we enter the pass.'},
     victoryText:'The aeries fall. Sera signals the army to enter the pass.',
     objective:'Destroy both marked level-3 aeries within 3:30, or destroy the enemy citadel.',
     hint:'Archers can answer flyers in both outer lanes. Wizards and siege engines cannot target them.',
@@ -79,7 +79,7 @@ export const CAMPAIGN_MISSIONS = [
   {
     id:'stonegate',chapterId:'highpass',number:5,name:'Stonegate',subtitle:'Find the seam in the wall',
     description:'Three towers guard Stonegate’s middle road. Bram needs siege engines and enough cover to bring them into range.',
-    dialogue:{speaker:'Engineer Bram',text:'My engines can reach those towers. Keep their infantry off us while we work.'},
+    dialogue:{speaker:'Engineer Bram',text:'My engines can reach those towers if you keep the infantry off us while we aim.'},
     victoryText:'Bram’s engines break through the gate. The garrison retreats, leaving the road open.',
     objective:'Destroy all three marked level-2 watchtowers within 4:00, or destroy the enemy citadel.',
     hint:'Siege engines outrange towers and deal triple structure damage. Warriors keep enemy infantry off the engines.',
@@ -91,7 +91,7 @@ export const CAMPAIGN_MISSIONS = [
   {
     id:'long-vigil',chapterId:'highpass',number:6,name:'The Long Vigil',subtitle:'Keep the signal burning',
     description:'The army is through the pass, but the rear guard is trapped at a signal station. Keep its sanctum alive until the last company arrives.',
-    dialogue:{speaker:'Captain Rowan',text:'They are watching for that light. If it goes out, the army comes back for us.'},
+    dialogue:{speaker:'Captain Rowan',text:'Keep that light burning, or the army will turn back through the pass to look for us.'},
     victoryText:'The final company clears the pass. The signal never falters, and no one has to turn back.',
     objective:'Survive 2:30 while keeping the marked starting sanctum alive. An early enemy-citadel victory still requires the sanctum to survive.',
     hint:'The signal station is in the middle lane. Screen it with towers and troops, and answer the northern flyers with archers.',
@@ -103,8 +103,8 @@ export const CAMPAIGN_MISSIONS = [
   {
     id:'cold-forge',chapterId:'furnace',number:7,name:'The Cold Forge',subtitle:'Silence the siege line',
     description:'Vey’s engines are already rolling toward the pass. Destroy the two forward foundries before their crews find the range.',
-    dialogue:{speaker:'Engineer Bram',text:'Those foundries are sending engines toward the pass. Hit them before they get their infantry into place.'},
-    victoryText:'The forward foundries are cold. Bram turns their abandoned tools toward repairing the road.',
+    dialogue:{speaker:'Engineer Bram',text:'Hit those foundries before their crews bring up infantry to cover the engines coming toward the pass.'},
+    victoryText:'Bram puts the abandoned tools from the silent foundries to work repairing the road.',
     objective:'Destroy both marked level-2 foundries within 4:00, or destroy the enemy citadel.',
     hint:'Gryphons avoid siege fire, but enemy archers can shoot them down. Mix an air raid with ground pressure or overwhelm one lane first.',
     difficulty:'normal',seed:3101,timeLimit:240,startingGold:710,startingHealth:4800,prerequisites:['long-vigil'],
@@ -115,8 +115,8 @@ export const CAMPAIGN_MISSIONS = [
   {
     id:'black-ledger',chapterId:'furnace',number:8,name:'The Black Ledger',subtitle:'Cut the marshal’s supply',
     description:'Iona has found the accounts that feed Vey’s army. Three protected mines fund an enemy commander who rebuilds and adapts.',
-    dialogue:{speaker:'Quartermaster Iona',text:'Those three mines pay for Vey’s reinforcements. Hit them to slow his reinforcements.'},
-    victoryText:'The mines fall. Vey’s quartermasters can no longer afford the reinforcements he needs.',
+    dialogue:{speaker:'Quartermaster Iona',text:'Vey pays for his reinforcements with those three mines, so that’s where we hit him.'},
+    victoryText:'With the mines lost, Vey’s quartermasters can no longer afford the reinforcements he needs.',
     objective:'Destroy all three marked enemy mines within 4:30, or destroy the enemy citadel. The enemy can build and upgrade throughout the mission.',
     hint:'Attack with a screened siege force and expand your own income. The enemy reacts to your army, so check every lane before spending.',
     difficulty:'normal',seed:3203,timeLimit:270,startingGold:900,startingHealth:6000,enemyGold:80,ai:true,prerequisites:['long-vigil'],
@@ -127,7 +127,7 @@ export const CAMPAIGN_MISSIONS = [
   {
     id:'furnace-heart',chapterId:'furnace',number:9,name:'Heart of the Furnace',subtitle:'Make the march count',
     description:'The marshal gathers his surviving regiments around a single strongpoint. Break its siege works while keeping a fighting force for the road ahead.',
-    dialogue:{speaker:'Captain Rowan',text:'Take out the siege works. Keep our troops covered on the way in.'},
+    dialogue:{speaker:'Captain Rowan',text:'Cover our troops as they move in to take out the siege works.'},
     victoryText:'The last great foundry falls. Across the march, soldiers abandon their posts and follow the roads home.',
     objective:'Destroy the marked foundry and sanctum within 4:30 while keeping at least 2,000 citadel HP. An enemy-citadel victory also requires 2,000 HP.',
     hint:'Build income early behind a solid front, then combine siege and wizard support. Do not leave your side lanes uncovered.',
@@ -139,8 +139,8 @@ export const CAMPAIGN_MISSIONS = [
   {
     id:'crown-foothold',chapterId:'crownworks',number:10,name:'A Foothold in Iron',subtitle:'Build what the final push needs',
     description:'The Crownworks are in sight. Iona needs a self-sustaining camp before Rowan can risk an assault on the inner walls.',
-    dialogue:{speaker:'Quartermaster Iona',text:'We’ll need food and reinforcements for the siege. Get the mines working before Rowan attacks.'},
-    victoryText:'The camp holds. Every regiment receives its rations, and the siege crews prepare for the final road.',
+    dialogue:{speaker:'Quartermaster Iona',text:'Get the mines working before Rowan attacks; the siege crews will need food and reinforcements.'},
+    victoryText:'With the camp secure and every regiment fed, the siege crews prepare for the final road.',
     objective:'Have at least 17.5 gold/sec at 3:00 with your citadel alive. Destroying the enemy citadel wins early.',
     hint:'Three mines with four total upgrades reach 17.5 gold/sec. Start with defense, then improve the mines before the enemy pressure peaks.',
     difficulty:'normal',seed:4101,timeLimit:180,startingGold:1050,startingHealth:4200,enemyGold:0,ai:true,prerequisites:['furnace-heart'],
@@ -152,7 +152,7 @@ export const CAMPAIGN_MISSIONS = [
     id:'last-light',chapterId:'crownworks',number:11,name:'The Last Light',subtitle:'Weather the counterattack',
     description:'Vey sends his reserve against the signal stations. If the lights fall, the army will lose its route through the smoke.',
     dialogue:{speaker:'Scout Sera',text:'I have kept a light for every company on this road. Keep these two for me.'},
-    victoryText:'Both lights are still burning. Vey has no reserve left, and the army knows exactly where to go.',
+    victoryText:'Both lights guide the army toward Vey, whose last reserves have been spent.',
     objective:'Survive 3:00 while keeping both marked starting watchtowers alive. An early enemy-citadel victory still requires both towers.',
     hint:'Upgrade the protected towers, put troops ahead of them, and counter enemy siege before it gets a clean shot. Salvaging either tower fails.',
     difficulty:'normal',seed:4201,timeLimit:180,startingGold:1100,startingHealth:3200,enemyGold:0,ai:true,prerequisites:['furnace-heart'],
@@ -163,8 +163,8 @@ export const CAMPAIGN_MISSIONS = [
   {
     id:'ironroot',chapterId:'crownworks',number:12,name:'Ironroot',subtitle:'Open the three roads',
     description:'Vey has gathered his last army at the Crownworks. Break through and destroy his citadel.',
-    dialogue:{speaker:'Captain Rowan',text:'Vey is behind those walls. Once his citadel falls, we can open the roads for good.'},
-    victoryText:'The Crownworks fall. The war is over, and the frontier belongs to the people who kept its watchfires burning.',
+    dialogue:{speaker:'Captain Rowan',text:'Bring down Vey’s citadel behind those walls so we can open these roads for good.'},
+    victoryText:'The fall of the Crownworks ends the war, leaving the frontier in the hands of those who kept its watchfires burning.',
     objective:'Destroy the enemy citadel within 5:00. The marshal builds, upgrades and uses arrow volleys. Your citadel must survive.',
     hint:'Use the opening treasury to establish income and a balanced main push. Siege breaks structures, archers answer air, and warriors keep both alive.',
     difficulty:'hard',seed:4303,timeLimit:300,startingGold:1400,startingHealth:6000,enemyGold:120,ai:true,prerequisites:['crown-foothold','last-light'],
@@ -175,7 +175,7 @@ export const CAMPAIGN_MISSIONS = [
   {
     id:'open-horizon',chapterId:'frontier',number:13,mapId:'long-march',name:'Open Horizon',subtitle:'Carry the peace beyond the valley',
     description:'Beyond the Crownworks, abandoned toll towers still close the long road. The relief column has established a field barracks, but holdout gryphons circle the outer tracks.',
-    dialogue:{speaker:'Captain Rowan',text:'The war is over, but the relief wagons still can’t get through. Clear those toll towers.'},
+    dialogue:{speaker:'Captain Rowan',text:'Now the war’s over, clear those toll towers so the relief wagons can finally get through.'},
     victoryText:'The toll towers fall and the relief column takes the long road. Sera turns toward the beacons while Iona follows the river.',
     objective:'Destroy both marked middle-lane toll towers within 4:00 while keeping the marked starting barracks alive. An enemy-citadel victory still requires the barracks.',
     hint:'Your starting mine already brings income to 7.5 gold/sec. Place a forward middle watchtower and archers ahead of the marked barracks before buying more mines. Once that screen holds the gryphons, send siege toward the toll towers and cover the outer lanes with archers.',
@@ -188,7 +188,7 @@ export const CAMPAIGN_MISSIONS = [
   {
     id:'river-charter',chapterId:'frontier',number:14,mapId:'twin-span',name:'The River Charter',subtitle:'Fund the river settlements',
     description:'Two bridges serve every settlement along the river. Iona must keep their watchposts standing and fund a shared granary without filling every site with soldiers.',
-    dialogue:{speaker:'Quartermaster Iona',text:'Keep both bridge watchposts standing. We need room for mines as well as troops.'},
+    dialogue:{speaker:'Quartermaster Iona',text:'Leave room for mines as well as troops, and keep both bridge watchposts standing.'},
     victoryText:'The watchposts hold and the granary is funded. Both banks sign the river charter and agree to share the crossings.',
     objective:'Keep both marked starting watchtowers alive and reach 17.5 gold/sec at 3:30. An early enemy-citadel victory still requires both towers.',
     hint:'Three mines fit on either bank, but leave space for counters. Northern siege threatens the watchpost; southern gryphons demand archers. Upgrade instead of filling every site.',
@@ -214,7 +214,7 @@ export const CAMPAIGN_MISSIONS = [
   {
     id:'common-ground',chapterId:'frontier',number:16,mapId:'twin-span',name:'Common Ground',subtitle:'Keep the bridges open for everyone',
     description:'The last toll commander attacks the meeting of the river and beacon settlements. Their shared camp must survive while Rowan breaks the two works that supply the attack.',
-    dialogue:{speaker:'Captain Rowan',text:'Hold the camp. Iona and Sera are bringing the delegates here, and they need both bridges open.'},
+    dialogue:{speaker:'Captain Rowan',text:'Iona and Sera are bringing the delegates here, so hold the camp and keep both bridges open.'},
     victoryText:'The last toll works fall. The river and beacon delegates meet at the camp to agree on how to keep the roads open.',
     objective:'Destroy the marked northern foundry and southern sanctum within 5:00 while keeping the marked starting mine and southern barracks alive. An enemy-citadel victory still requires both protected buildings.',
     hint:'The commander pays for every reinforcement and reacts to your army. Keep ground troops ahead of the northern mine and archers against the southern flyers. Upgrade your army before using all sixteen sites.',
@@ -264,8 +264,8 @@ for(const mission of CAMPAIGN_PROGRESS_MISSIONS) {
   if(!mission.optional&&!isOnboardingMission(mission.id))mission.reward=`Unlocks ${CAMPAIGN_MISSIONS.filter(m=>m.prerequisites.includes(mission.id)).map(m=>m.name).join(' / ')||'the campaign epilogue'}`;
 }
 
-// Revision 1 and revision 2 remain their exact published contracts. New starts
-// opt into a separate flight catalog only after the existing full-roster opening.
+// Published revision 1/2/3 descriptors stay exact. Current starts select a
+// separate automatic-air revision without changing old saves or replay records.
 export const PROGRESSION_CAMPAIGN_MISSIONS=CAMPAIGN_MISSIONS.map(mission=>deepFreeze({
   ...JSON.parse(JSON.stringify(mission)),scenarioRevision:2,mapRevision:1,
   rulesetId:'frontier-campaign-open',rulesetRevision:1,
@@ -285,20 +285,46 @@ export const FLIGHT_CAMPAIGN_MISSIONS=deepFreeze(FLIGHT_CAMPAIGN_MISSION_IDS.map
   }
   return mission;
 }));
+// Automatic air is a full-roster combat revision, not another unlock stage.
+export const AUTONOMOUS_AIR_CAMPAIGN_REVISION=4;
+export const AUTONOMOUS_AIR_CAMPAIGN_RULESET_ID='frontier-campaign-air-local';
+const autonomousAirBriefing='Gryphons spot nearby enemies on their own, including on an adjacent road, and fly toward them to fight at their normal range. They do not take route orders. Archers stay on their road; archers and towers can hit flyers when they are within range.';
+export const AUTONOMOUS_AIR_CAMPAIGN_MISSIONS=deepFreeze([...ONBOARDING_MISSIONS,...PROGRESSION_CAMPAIGN_MISSIONS].map(original=>{
+  const mission={...JSON.parse(JSON.stringify(original)),scenarioRevision:AUTONOMOUS_AIR_CAMPAIGN_REVISION,
+    mapRevision:1,rulesetId:AUTONOMOUS_AIR_CAMPAIGN_RULESET_ID,rulesetRevision:1};
+  if(['roadside-watch','shield-at-the-fork','open-three-roads','wings-of-ash','stonegate'].includes(mission.id)) {
+    mission.briefing.push(autonomousAirBriefing);
+    if(mission.id==='roadside-watch')mission.briefing[0]='One road and 420 starting gold. All eight earned buildings are available at their normal prices.';
+    if(mission.id==='shield-at-the-fork')mission.briefing[0]='Two roads and 740 starting gold. All eight earned buildings are available at their normal prices.';
+    if(['open-three-roads','wings-of-ash','stonegate'].includes(mission.id))
+      mission.hint+=' Gryphons may pursue nearby enemies on an adjacent road. Archers and towers can hit them within range; Rootwardens cannot attack air.';
+  }
+  return mission;
+}));
+// Optional legacy lessons keep their seven-building roster and separate records,
+// but deliberate fresh attempts use the same automatic targeting as other modes.
+export const AUTONOMOUS_AIR_INTRO_MISSIONS=deepFreeze(INTRO_MISSIONS.map(original=>({
+  ...JSON.parse(JSON.stringify(original)),scenarioRevision:AUTONOMOUS_AIR_CAMPAIGN_REVISION,
+  rulesetId:AUTHORED_AIR_RULESET_ID,
+})));
 export function getCampaignMission(id,revision=1) {
-  const catalog=revision===1?CAMPAIGN_PROGRESS_MISSIONS:revision===2?PROGRESSION_CAMPAIGN_MISSIONS:revision===3?FLIGHT_CAMPAIGN_MISSIONS:[];
+  const catalog=revision===1?CAMPAIGN_PROGRESS_MISSIONS:revision===2?PROGRESSION_CAMPAIGN_MISSIONS:revision===3?FLIGHT_CAMPAIGN_MISSIONS:revision===AUTONOMOUS_AIR_CAMPAIGN_REVISION?[...AUTONOMOUS_AIR_CAMPAIGN_MISSIONS,...AUTONOMOUS_AIR_INTRO_MISSIONS]:[];
   const mission=catalog.find(m=>m.id===id);
   if(!mission)throw new RangeError('Unknown campaign mission or revision: '+String(id)+'@'+String(revision));
   return mission;
 }
 /** Current deliberate starts/previews only. Existing attempts use their rules. */
-export function getCurrentCampaignRevision(id) {
+export function getCurrentCampaignRevision(id,progress) {
   getCampaignMission(id,1);
-  return FLIGHT_CAMPAIGN_MISSION_IDS.includes(id)?3:CAMPAIGN_MISSIONS.some(m=>m.id===id)?2:1;
+  if(isOnboardingMission(id))return onboardingLaunchStage(id,progress)===3?AUTONOMOUS_AIR_CAMPAIGN_REVISION:1;
+  return CAMPAIGN_MISSIONS.some(m=>m.id===id)||isIntroMission(id)?AUTONOMOUS_AIR_CAMPAIGN_REVISION:1;
+}
+function onboardingLaunchStage(id,progress) {
+  return Math.max(ONBOARDING_MISSIONS.findIndex(m=>m.id===id)+1,getCampaignRoster(progress).stage);
 }
 /** One exact identity resolver for saves, histories, targets and restarts.
- * The opening retains only its original three roster identities, even after a
- * profile earns flight. An arbitrary campaignOnly ruleset is never a fallback. */
+ * Old opening attempts keep their original roster identities; automatic air
+ * has its own scenario revision. Arbitrary campaignOnly rules are no fallback. */
 export function getCampaignRevisionForRuleset(id,rulesetId,rulesetRevision=1) {
   if(typeof rulesetId!=='string'||!Number.isSafeInteger(rulesetRevision))throw new RangeError('Campaign ruleset identity is required.');
   let rules;
@@ -306,10 +332,15 @@ export function getCampaignRevisionForRuleset(id,rulesetId,rulesetRevision=1) {
   let revision;
   if(isOnboardingMission(id)) {
     const minimum=ONBOARDING_MISSIONS.findIndex(m=>m.id===id),stage=CAMPAIGN_RULESET_IDS.indexOf(rules.id);
-    if(stage>=minimum)revision=1;
+    if(rules.id===AUTONOMOUS_AIR_CAMPAIGN_RULESET_ID)revision=AUTONOMOUS_AIR_CAMPAIGN_REVISION;
+    else if(stage>=minimum)revision=1;
+  } else if(isIntroMission(id)) {
+    if(rules.id===AUTHORED_AIR_RULESET_ID)revision=AUTONOMOUS_AIR_CAMPAIGN_REVISION;
+    else if(rules.id==='frontier-legacy')revision=1;
   } else if(rules.id==='frontier-legacy')revision=1;
   else if(rules.id==='frontier-campaign-open')revision=2;
   else if(rules.id==='frontier-campaign-flight')revision=3;
+  else if(rules.id===AUTONOMOUS_AIR_CAMPAIGN_RULESET_ID)revision=AUTONOMOUS_AIR_CAMPAIGN_REVISION;
   if(revision===undefined)throw new RangeError('Ruleset does not match campaign mission: '+String(id));
   const mission=getCampaignMission(id,revision);
   if(rules.revision!==(mission.rulesetRevision??1))throw new RangeError('Ruleset revision does not match campaign mission: '+String(id));
@@ -335,7 +366,7 @@ function missionGameOptions(mission) {
 }
 export function createCampaignMission(id,{revision=1,progress}={}) {
   const base=missionFor(id,revision);
-  const mission=progress!==undefined&&isOnboardingMission(id)?{...base,rulesetId:CAMPAIGN_RULESET_IDS[Math.max(ONBOARDING_MISSIONS.findIndex(m=>m.id===id),getCampaignRoster(progress).stage-1)]}:base;
+  const mission=revision===1&&progress!==undefined&&isOnboardingMission(id)?{...base,rulesetId:CAMPAIGN_RULESET_IDS[Math.max(ONBOARDING_MISSIONS.findIndex(m=>m.id===id),getCampaignRoster(progress).stage-1)]}:base;
   return createAuthoredCampaignMission(mission,missionGameOptions(mission));
 }
 function createAuthoredCampaignMission(mission,options) {
@@ -467,19 +498,19 @@ function hasReturningProgress(clean) {return CAMPAIGN_MISSIONS.some(m=>clean.mis
 export function getCampaignRoster(progress) {
   const clean=normalizeCampaignProgress(progress),returning=hasReturningProgress(clean);
   const stage=returning||clean.missions['shield-at-the-fork']?3:clean.missions['roadside-watch']?2:1;
-  const rulesetId=CAMPAIGN_RULESET_IDS[stage-1];
+  const rulesetId=stage===3?AUTONOMOUS_AIR_CAMPAIGN_RULESET_ID:CAMPAIGN_RULESET_IDS[stage-1];
   return {stage,rulesetId,buildings:Object.keys(getRuleset(rulesetId).buildings),returning,
     unlockedBy:returning?'returning-campaign':stage===3?'shield-at-the-fork':stage===2?'roadside-watch':null};
 }
 export function isMissionUnlocked(progress,id,revision=1) {
   const mission=missionFor(id,revision),clean=normalizeCampaignProgress(progress),returning=hasReturningProgress(clean);
   if(isOnboardingMission(id)&&returning)return true;
-  if(revision>=2&&!returning&&!clean.missions['open-three-roads'])return false;
+  if(!isOnboardingMission(id)&&!isIntroMission(id)&&revision>=2&&!returning&&!clean.missions['open-three-roads'])return false;
   return mission.prerequisites.every(id=>clean.missions[id]?.completed);
 }
-// Flight is another full-roster identity, never a fourth progression stage.
+// Both air revisions use the earned full roster, never a fourth progression stage.
 export const CAMPAIGN_RULESET_STAGES=Object.freeze({
-  'frontier-campaign-watch':1,'frontier-campaign-fork':2,'frontier-campaign-open':3,'frontier-campaign-flight':3,
+  'frontier-campaign-watch':1,'frontier-campaign-fork':2,'frontier-campaign-open':3,'frontier-campaign-flight':3,[AUTONOMOUS_AIR_CAMPAIGN_RULESET_ID]:3,
 });
 export function canUseCampaignRuleset(progress,id,revision,rulesetId) {
   if(!campaignRulesetAllowed(id,revision,rulesetId))return false;
@@ -488,8 +519,8 @@ export function canUseCampaignRuleset(progress,id,revision,rulesetId) {
 }
 /** The explicit launch path. Preview may show locked missions; launch may not. */
 export function getCampaignLaunchMission(id,progress) {
-  const revision=getCurrentCampaignRevision(id),mission=getCampaignMission(id,revision),roster=getCampaignRoster(progress);
-  return {...mission,scenarioRevision:revision,...(isOnboardingMission(id)?{rulesetId:CAMPAIGN_RULESET_IDS[Math.max(ONBOARDING_MISSIONS.findIndex(m=>m.id===id),roster.stage-1)]}:{} )};
+  const revision=getCurrentCampaignRevision(id,progress),mission=getCampaignMission(id,revision);
+  return {...mission,scenarioRevision:revision,...(isOnboardingMission(id)&&revision===1?{rulesetId:CAMPAIGN_RULESET_IDS[onboardingLaunchStage(id,progress)-1]}:{})};
 }
 export function createProgressionCampaignMission(id,progress) {
   const mission=getCampaignLaunchMission(id,progress);
@@ -506,9 +537,13 @@ export function getProgressionCampaignOverview(progress) {
   const chapters=[ONBOARDING_CHAPTER,...CAMPAIGN_CHAPTERS].map(c=>{const own=missions.filter(m=>m.chapterId===c.id);return {...c,completed:own.every(m=>m.completed),unlocked:own.some(m=>m.unlocked),cleared:own.filter(m=>m.completed).length,total:own.length,stars:own.reduce((n,m)=>n+(m.record?.stars||0),0),maxStars:own.length*3};});
   const next=missions.find(m=>m.unlocked&&!m.completed&&(!roster.returning||!isOnboardingMission(m.id)));
   const cleared=missions.filter(m=>m.completed).length,stars=missions.reduce((n,m)=>n+(m.record?.stars||0),0);
+  const historicalIntroduction=getCampaignOverview(clean).introduction;
+  const legacyIntroduction={...historicalIntroduction,missions:historicalIntroduction.missions.map(m=>({
+    ...getCampaignLaunchMission(m.id,clean),record:m.record,unlocked:m.unlocked,completed:m.completed,
+  }))};
   return {missions,chapters,cleared,total:missions.length,stars,maxStars:missions.length*3,
     completed:missions.filter(m=>!roster.returning||!isOnboardingMission(m.id)).every(m=>m.completed),
-    nextMissionId:next?.id||null,roster,returning:roster.returning,legacyIntroduction:getCampaignOverview(clean).introduction};
+    nextMissionId:next?.id||null,roster,returning:roster.returning,legacyIntroduction};
 }
 export function recordCampaignResult(progress,id,game) {
   const revision=campaignScenarioForGame(game,id).revision;

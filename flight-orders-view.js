@@ -1,4 +1,5 @@
 import { supportsFlightOrders } from './flight-orders.js';
+import { supportsAutonomousAir } from './autonomous-air.js';
 
 /** Match the visual countdown; a pending warning never displays zero. */
 export function flightWarningTime(remaining) {
@@ -14,25 +15,21 @@ export function flightRoadName(map, lane) {
   return names?.[lane] || (map.lanes.length === 1 ? 'Only road' : `Road ${lane + 1}`);
 }
 
-export function flightOrderModel(game, building) {
-  if (!supportsFlightOrders(game.ruleset) || !building || building.side !== 0 ||
-      building.type !== 'aerie' || building.hp <= 0) return null;
-  const source = building.lane, current = building.flightPlan;
-  const options = [-1, 0, 1].map(offset => {
-    const lane = source + offset;
-    return {
-      key: offset < 0 ? 'north' : offset > 0 ? 'south' : 'hold', lane,
-      available: lane >= 0 && lane < game.map.lanes.length,
-      label: offset === 0 ? 'Hold road' : flightRoadName(game.map, lane),
-      selected: lane === current,
-    };
-  });
-  return {
-    options,
-    current: current === source ? `Next launch: hold ${flightRoadName(game.map, source).toLowerCase()}.`
-      : `Next launch: shift to ${flightRoadName(game.map, current).toLowerCase()}.`,
-    detail: 'Orders affect future launches. Airborne gryphons keep their route. Crossing takes time and leaves them open to archers.',
+// All presentation is read-only, including battles retained under earlier rules.
+export function airRulesGuide(context) {
+  const ruleset = context?.ruleset || context;
+  if (supportsAutonomousAir(ruleset)) return {
+    title: 'Flying between roads',
+    detail: 'Gryphons spot nearby enemies on their road or one road over and fly toward them automatically. Following fights can carry them farther across the field. Archers stay on their road; they and watchtowers can hit a flyer whenever it comes within range.',
   };
+  return null;
+}
+
+export function airBuildingDescription(game, type) {
+  const description = game.buildings[type]?.description || '';
+  if (type !== 'aerie') return description;
+  if (supportsAutonomousAir(game.ruleset)) return 'Spawns gryphons that fly toward nearby enemies on their road or one road over. Archers and towers counter them.';
+  return description;
 }
 
 export function flightRouteRows(game) {
@@ -52,7 +49,7 @@ export function flightRouteRows(game) {
   return [...groups.values()].sort((a, b) => a.side - b.side || a.from - b.from ||
     a.to - b.to || a.phase.localeCompare(b.phase)).map(row => ({...row,
       text: `${row.side ? 'Enemy' : 'Your'} ${row.count} ${row.count === 1 ? 'gryphon' : 'gryphons'}: ` +
-        `${flightRoadName(game.map, row.from)} to ${flightRoadName(game.map, row.to)}. ` +
+        `${flightRoadName(game.map, row.from)} to ${flightRoadName(game.map, row.to)} · ` +
         (row.phase === 'approach' ? 'Approaching the crossing.' : row.phase === 'warning'
           ? `Next crossing starts in ${flightWarningTime(row.remaining)} seconds.` : 'Crossing now; cannot attack.'),
     }));
@@ -63,6 +60,6 @@ export function flightWarningSummary(game, units) {
   const destinations = [...new Set(units.filter(u => u.side === 1 && u.hp > 0 &&
     u.type === 'gryphon' && u.airRoute?.phase === 'warning').map(u => u.airRoute.to))];
   if (!destinations.length) return '';
-  return `Enemy gryphons are about to cross toward ${destinations.sort((a,b) => a-b)
-    .map(lane => flightRoadName(game.map, lane).toLowerCase()).join(' and ')}. Archers can hit them in the air.`;
+  return `Enemy gryphons are about to cross toward the ${destinations.sort((a,b) => a-b)
+    .map(lane => flightRoadName(game.map, lane).toLowerCase()).join(' and ')}, and your archers can hit them along the way.`;
 }

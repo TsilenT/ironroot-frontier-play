@@ -1,5 +1,6 @@
 import { BUILDINGS, buildSites } from './engine.js';
 import { currentIncome } from './campaign.js';
+import { supportsAutonomousAir } from './autonomous-air.js';
 
 // Presentation only: no technology locks or new fields in campaign/battle saves.
 // Optional opening missions use smaller presentation defaults.
@@ -44,25 +45,31 @@ export function drawCampaignGuidance(renderer, game, ui) {
 /** Fresh openings pause for teaching, never for a mid-battle hint.
  * Roadside Watch enters building directly and starts after its first paid barracks.
  * UI-only state: restored saves and completed replays run normally. */
-export function campaignTeaching(id, { resumed = false, completed = false, learnedBasics = false, flightOrders = false } = {}) {
+export function campaignTeaching(id, { resumed = false, completed = false, learnedBasics = false, flightOrders = false, autonomousAir = false } = {}) {
   if (resumed || completed) return null;
+  if (autonomousAir && ['wings-of-ash', 'stonegate'].includes(id)) return {
+    title: id === 'wings-of-ash' ? 'Watch the neighboring roads' : 'Cover the siege engines',
+    text: (id === 'wings-of-ash' ? 'Against the veteran flyers, lead with archers. ' : 'For the middle defenses, bring siege with troops ahead. ') +
+      'Gryphons spot nearby enemies on their own, including on an adjacent road, and fly toward them to fight at their normal range. Archers stay on their road; archers and towers can hit flyers within range. Rootwardens cannot attack air.',
+  };
   if (flightOrders && ['wings-of-ash', 'stonegate'].includes(id)) return {
     title: id === 'wings-of-ash' ? 'Take control of the sky' : 'Find a way past the towers',
-    text: (id === 'wings-of-ash' ? 'Archers can stop the veteran flyers. ' : 'Siege can break the middle defenses. ') +
-      'If you build an aerie, select it to send future gryphons to an adjacent road. They give a two-second warning before crossing and cannot attack while changing roads. Holding their road may protect the troops below. Plan your approach, then start when ready.',
+    text: (id === 'wings-of-ash' ? 'Against the veteran flyers, lead with archers. ' : 'For the middle defenses, bring siege. ') +
+      'Select an aerie to send future gryphons to an adjacent road, with a two-second warning before each crossing. They cannot attack while changing roads, so holding their road may better protect the troops below. Plan your approach before starting.',
   };
   const lessons = {
-    'roadside-watch': ['Build your first army', 'One road, two choices. Choose Barracks in the build bar, then a green site. An archery range behind the barracks adds ranged support. Spend what you want, then start the battle.'],
-    'shield-at-the-fork': ['Plan for both roads', 'Warden lodges, gold mines and watchtowers have joined the company. Rootwardens take hits but deal little damage. Add archers behind their lodge, and keep troops on the other road. Towers belong ahead of production; mines belong toward the rear.'],
-    'open-three-roads': ['Choose a force for each road', 'All eight buildings are available. Archers can hit the northern gryphons; Rootwardens cannot. Siege can reach the middle tower, but needs troops ahead of it. Keep a force on the south road too. Choose your own route.'],
-    'first-watch': ['Build your first army', 'Choose Barracks, then a green site on the road. Warriors march and fight on their own. Add an archery range behind them for support.'],
-    'forked-road': ['Plan for both roads', 'Each road needs troops. Mines fund later reinforcements; towers defend nearby ground but cannot march to the enemy camps.'],
-    'emberwatch': ['Add ranged support', 'Your barracks is already built. An archery range behind it adds support while warriors advance.'],
-    'three-roads': ['Defense and attack', 'A tower can hold nearby ground. Place it ahead of your troop buildings, and send troops down both outer roads to clear the marked camps.'],
-    'winter-stores': ['Fund the relief', 'Keep both marked mines standing. Add income and upgrade mines to reach the goal; leave gold for troops to defend them.'],
+    'roadside-watch': ['Build your first army', 'Place a barracks on a green site to send warriors down the road, with an archery range behind it for ranged support.'],
+    'shield-at-the-fork': ['Plan for both roads', 'Your new Warden lodges train durable Rootwardens who benefit from archers behind them to make up for their low damage. Cover the other road too, with watchtowers ahead of production and gold mines toward the rear.'],
+    'open-three-roads': ['Choose a force for each road', 'With all eight buildings available, you can choose your route: archers can answer the northern gryphons, while siege with a troop screen can reach the middle tower. Rootwardens cannot hit flyers, and the south road still needs a force of its own.'],
+    'first-watch': ['Build your first army', 'A barracks on a green site sends warriors down the road to fight on their own, with support from any archery range you build behind it.'],
+    'forked-road': ['Plan for both roads', 'Supply both roads with troops, using mines to fund reinforcements and towers to defend nearby ground. The towers cannot march on enemy camps for you.'],
+    'emberwatch': ['Add ranged support', 'Add an archery range behind your existing barracks to support the advancing warriors.'],
+    'three-roads': ['Defense and attack', 'Place a tower ahead of your troop buildings to hold nearby ground while your armies clear the marked camps on both outer roads.'],
+    'winter-stores': ['Fund the relief', 'Keep both marked mines standing as you add and upgrade mines to reach the income goal, leaving enough gold for troops to defend them.'],
   };
   if (!Object.hasOwn(lessons, id) || (id === 'emberwatch' && learnedBasics)) return null;
-  return { title: lessons[id][0], text: lessons[id][1],
+  return { title: lessons[id][0], text: lessons[id][1] + (id === 'open-three-roads' && autonomousAir
+    ? ' Gryphons also spot nearby enemies on an adjacent road and fly over to engage on their own. Archers stay on their road and shoot only when flyers are within range.' : ''),
     ...(id === 'roadside-watch' ? { startAfterBuild: 'barracks' } : {}) };
 }
 
@@ -101,22 +108,22 @@ export function recommendCampaignSite(game, type, preferredLane = null) {
       sites = sites.filter(p => p.x > lane.front && p.x >= (lane.front ? lane.front + 108 : 970));
       preferredX = Math.max(970, lane.front + 140);
       explanation = lane.front ? 'Ahead of your troop buildings, this tower can intercept enemies before they reach production.'
-        : 'This forward tower defends nearby ground. Add troops on this road to push toward the enemy.';
+        : 'This forward tower can defend nearby ground while troops on the same road push toward the enemy.';
     } else if (type === 'mint') {
       preferredX = 270;
-      explanation = 'A rear mine leaves forward sites for troops and defense. It still needs protection.';
+      explanation = 'A mine at the rear still needs protection, but leaves forward sites free for troops and defenses.';
     } else if (support && anchor) {
       sites = sites.filter(p => p.x < anchor.x);
       preferredX = anchor.x - 140;
       explanation = 'Behind your frontline producer, reinforcements have a chance to form up behind its troops.';
     }
-    if (support && !anchor) explanation = 'There is no barracks or Warden lodge ahead on this road yet. Add a frontline producer ahead if these troops need a screen.';
+    if (support && !anchor) explanation = 'Without a barracks or Warden lodge ahead on this road, these support troops may need a screen before they advance.';
     if (!sites.length) continue;
     const danger = p => game.state.units.filter(u => u.side === 1 && u.hp > 0 && u.lane === p.lane && Math.abs(u.x-p.x) < 240).length;
     sites.sort((a,b) => danger(a)-danger(b) || Math.abs(a.x-preferredX)-Math.abs(b.x-preferredX) || a.x-b.x);
     const site = sites[0];
     const road = game.map.lanes.length === 1 ? 'the road' : `${['first', 'second', 'third'][site.lane]} road`;
-    if (preferredLane !== null && site.lane !== preferredLane) explanation = `The requested road has no suitable free site. This is on the ${road}. ` + explanation;
+    if (preferredLane !== null && site.lane !== preferredLane) explanation = `With no suitable free site on the requested road, this suggestion uses the ${road}. ` + explanation;
     if (danger(site)) explanation += ' Enemies are already close: this placement is exposed.';
     return { site, explanation, road };
   }
@@ -129,84 +136,85 @@ export function recommendCampaignSite(game, type, preferredLane = null) {
 export function campaignCoach(game, id, choice = {}) {
   if (!['roadside-watch','shield-at-the-fork','open-three-roads','first-watch','forked-road','emberwatch','three-roads','winter-stores','wings-of-ash','stonegate'].includes(id)) return null;
   const definitions = game.buildings || BUILDINGS;
+  const automaticAir = supportsAutonomousAir(game.ruleset);
   const own = game.state.buildings.filter(b => b.side === 0 && b.hp > 0);
   const build = (type, title, text, preferredLane = null) => {
     const recommendation = recommendCampaignSite(game, type, preferredLane);
     const selected = choice.build === type;
     return { key: `build-${type}`, buildType: type, preferredLane, title,
       text: selected ? (recommendation.site
-        ? `The gold ring suggests ${recommendation.road}. ${recommendation.explanation} Other green sites remain available.`
+        ? `Suggested site (${recommendation.road}): ${recommendation.explanation} You can also choose another green site, instead of the gold ring.`
         : recommendation.reason) : text,
       control: `[data-type="${type}"]`, site: selected ? recommendation.site : null };
   };
   const goal = () => {
     if (id === 'first-watch' || id === 'roadside-watch') {
       if (!own.some(b => b.type === 'barracks'))
-        return build('barracks', 'Build a barracks', 'Choose Barracks, then a green site. Warriors will march out on their own.');
+        return build('barracks', 'Build a barracks', 'Choose Barracks and a green site to send warriors down the road on their own.');
       if (!own.some(b => b.type === 'archery'))
-        return build('archery', 'Add archers', 'Choose Archery and place it behind your barracks. Archers fire from behind your warriors.');
-      return { key: 'front', title: 'Follow your army', text: 'Use Front to follow your troops. Clear the marked enemy barracks to win.', control: '#front' };
+        return build('archery', 'Add archers', 'Place an Archery range behind your barracks so its archers can fire from behind the warriors.');
+      return { key: 'front', title: 'Follow your army', text: 'Use Front to follow your troops as they advance toward the marked enemy barracks you need to clear.', control: '#front' };
     }
     if (id === 'shield-at-the-fork') {
       if (!own.some(b => b.type === 'wardenLodge'))
-        return build('wardenLodge', 'Give the archers cover', 'Choose Warden lodge and place it toward the front of the north road. Rootwardens take hits but deal little damage.', 0);
+        return build('wardenLodge', 'Give the archers cover', 'Build a Warden lodge toward the front of the north road to train Rootwardens who take hits but deal little damage.', 0);
       if (!own.some(b => b.type === 'archery' && b.lane === 0))
-        return build('archery', 'Add damage behind the screen', 'Build an archery range behind the northern Warden lodge. Archers provide the damage while Rootwardens hold the front.', 0);
+        return build('archery', 'Add damage behind the screen', 'Place an archery range behind the northern Warden lodge to add damage while the Rootwardens hold the front.', 0);
       if (!own.some(b => b.lane === 1 && definitions[b.type]?.unit))
-        return build('barracks', 'Watch the other road', 'The southern camp keeps sending troops. Build a force on that road too.', 1);
+        return build('barracks', 'Watch the other road', 'Build a force on the south road to meet the troops still coming from that camp.', 1);
       if (!own.some(b => b.type === 'mint'))
-        return build('mint', 'Fund reinforcements', 'A gold mine pays for more troops over time. Keep it behind your front line.', 1);
-      return { key: 'fork-front', title: 'Keep both roads supplied', text: 'Watch your northern screen and the southern road. A win adds siege, wizards and gryphons; the bonus stars are optional.', control: '#front' };
+        return build('mint', 'Fund reinforcements', 'Build a gold mine behind your front line to fund more troop buildings as the battle goes on.', 1);
+      return { key: 'fork-front', title: 'Keep both roads supplied', text: 'Keep both the northern screen and the south road supplied to win access to siege, wizards and gryphons. You can collect the optional bonus stars on a replay.', control: '#front' };
     }
     if (id === 'open-three-roads') {
       if (!own.some(b => b.lane === 0 && (game.units || {})[definitions[b.type]?.unit]?.canAttackAir))
-        return build('archery', 'Answer the northern flyers', 'Archers can hit air. Rootwardens cannot. Place an archery range on the north road.', 0);
+        return build('archery', 'Answer the northern flyers', 'Place an archery range on the north road to hit the flyers that Rootwardens cannot reach.' + (automaticAir ? ' Gryphons may also approach enemies on the neighboring road; archers stay on their own road and need the flyer within range.' : ''), 0);
       if (!own.some(b => ['foundry','aerie'].includes(b.type) && b.lane === 1))
-        return build('foundry', 'Reach the middle fortifications', 'A foundry trains siege units that hit structures hard. Give them a screen, or try a different route.', 1);
+        return build('foundry', 'Reach the middle fortifications', 'Try a foundry with a troop screen to break structures, or choose a different route if you prefer.', 1);
       if (!own.some(b => b.lane === 2 && definitions[b.type]?.unit))
-        return build('barracks', 'Cover the south road', 'The southern infantry can reach your citadel while you fight elsewhere. Leave a force to meet them.', 2);
-      return { key: 'company-front', title: 'Choose where to push', text: 'All eight buildings are available. Break the marked camps or reach the enemy citadel. You do not need three stars to continue.', control: '#front' };
+        return build('barracks', 'Cover the south road', 'Leave a force on the south road to stop infantry reaching your citadel while you fight elsewhere.', 2);
+      return { key: 'company-front', title: 'Choose where to push', text: 'Use any of the eight buildings to break the marked camps or reach the enemy citadel; either victory lets you continue without collecting three stars.', control: '#front' };
     }
     if (id === 'forked-road') {
       const uncovered = game.map.lanes.findIndex((_, lane) => !own.some(b => b.lane === lane && definitions[b.type]?.unit));
       if (uncovered >= 0)
         return build('barracks', uncovered === 0 ? 'Cover the first road' : 'Cover the other road',
-          'Build troops on both roads. A barracks is a good start; archers can support it.', uncovered);
+          'Start each road with a barracks and add archers for support, or choose another force that can cover both roads.', uncovered);
       if (!own.some(b => b.type === 'mint'))
-        return build('mint', 'Build a gold mine', 'A mine adds 2.5 gold per second. Place it behind your troops.');
+        return build('mint', 'Build a gold mine', 'Build a mine behind your troops to add 2.5 gold per second for later reinforcements.');
       if (!own.some(b => b.type === 'watchtower'))
-        return build('watchtower', 'Hold a road', 'A watchtower fires at nearby enemies. Put it ahead of production; it cannot clear a distant camp on its own.');
-      return { key: 'roads', title: 'Watch both roads', text: 'Use the minimap to check each road. Keep troops moving toward both marked barracks.', control: '#front' };
+        return build('watchtower', 'Hold a road', 'Place a watchtower ahead of production to fire at nearby enemies, but use marching troops to clear a distant camp.');
+      return { key: 'roads', title: 'Watch both roads', text: 'Check both roads on the minimap as your troops move toward the marked barracks.', control: '#front' };
     }
     if (id === 'emberwatch') {
       if (!own.some(b => b.type === 'barracks'))
-        return build('barracks', 'Raise a barracks', 'Choose Barracks below, then a green site. Warriors spawn and march on their own.');
+        return build('barracks', 'Raise a barracks', 'Choose Barracks below and a green site to train warriors who will march on their own.');
       if (!own.some(b => b.type === 'archery'))
-        return build('archery', 'Add ranged support', 'Your barracks already sends warriors. Choose Archery below, then place it behind the barracks.');
-      return { key: 'front', title: 'Follow your army', text: 'Troops march and fight on their own. Use Front to follow them toward the gold-marked target. Keep building while they advance.', control: '#front' };
+        return build('archery', 'Add ranged support', 'Choose Archery below and place it behind the barracks that is already sending out warriors.');
+      return { key: 'front', title: 'Follow your army', text: 'Keep building as your troops march and fight on their own, using Front to follow them toward the gold-marked target.', control: '#front' };
     }
     if (id === 'three-roads') {
       if (!own.some(b => b.type === 'watchtower'))
-        return build('watchtower', 'Hold nearby ground', 'A watchtower holds nearby ground. Choose it below to try one, then send troops down both outer roads.');
-      return { key: 'roads', title: 'Check both roadblocks', text: 'Drag the battlefield or tap the minimap to look ahead. Build troops on each outer road to reach both marked barracks.', control: '#front' };
+        return build('watchtower', 'Hold nearby ground', 'Try a watchtower to hold nearby ground while your troops push down both outer roads.');
+      return { key: 'roads', title: 'Check both roadblocks', text: 'Look ahead by dragging the battlefield or tapping the minimap, and build troops on each outer road to reach both marked barracks.', control: '#front' };
     }
     if (id === 'winter-stores') {
       if (own.filter(b => b.type === 'mint').length < 3)
-        return build('mint', 'Build up your income', 'Two marked mines are already working. Add a third mine, then upgrade mines to reach 15 gold/sec. Keep the marked mines alive.');
+        return build('mint', 'Build up your income', 'Add a third mine and upgrade your mines to reach 15 gold/sec, keeping both marked starting mines alive.');
       if (currentIncome(game) < 15) {
         const mine = own.filter(b => b.type === 'mint' && b.level < 3).sort((a,b) => a.level - b.level)[0];
         if (mine) return { key: `upgrade-${mine.id}`, title: 'Grow your income', text: choice.selected === mine.id
-          ? 'Choose Upgrade in the building details. It costs the displayed gold and increases this mine’s income.'
-          : 'Tap the gold-ringed mine, then choose Upgrade. Aim for 15 gold/sec before the deadline.', control: choice.selected === mine.id ? '#upgrade' : '#battle', buildingId: mine.id };
+          ? 'Choose Upgrade in the building details to pay the displayed gold and increase this mine’s income.'
+          : 'Tap the gold-ringed mine and choose Upgrade to work toward 15 gold/sec before the deadline.', control: choice.selected === mine.id ? '#upgrade' : '#battle', buildingId: mine.id };
       }
-      return { key: 'protect', title: 'Keep the supply mines alive', text: 'Your income is ready. Defend both marked starting mines until the clock runs out.', control: '#front' };
+      return { key: 'protect', title: 'Keep the supply mines alive', text: 'With your income ready, defend both marked starting mines until the clock runs out.', control: '#front' };
     }
     if (id === 'wings-of-ash') {
       const lane = [0, game.map.lanes.length - 1].find(lane => !own.some(b => b.lane === lane && (game.units || {})[definitions[b.type]?.unit]?.canAttackAir));
-      if (lane !== undefined) return build('archery', 'Answer the flyers', 'Archers can hit gryphons. Cover both outer roads; ground-only troops cannot stop the air attack.', lane);
+      if (lane !== undefined) return build('archery', 'Answer the flyers', 'Cover both outer roads with archers to hit the gryphons that ground-only troops cannot stop.' + (automaticAir ? ' Gryphons choose nearby enemies themselves and may approach from a neighboring road. Archers and towers can intercept them within range.' : ''), lane);
     }
     if (id === 'stonegate' && !own.some(b => b.type === 'foundry'))
-      return build('foundry', 'Bring siege support', 'Siege engines outrange towers. Choose Foundry below and keep warriors ahead of its engines.');
+      return build('foundry', 'Bring siege support', 'Choose Foundry below for siege engines that outrange towers, keeping warriors ahead to protect them.');
     return null;
   };
   const hint = goal();
