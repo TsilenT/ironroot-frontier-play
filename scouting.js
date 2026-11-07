@@ -57,6 +57,7 @@ function markTargets(value, buildings, kind, map, field, definitions) {
     const building = buildings.find(candidate => key(candidate) === key(target));
     if (!building) throw new RangeError(`Scouting ${field} does not match a starting ${kind === 'protect' ? 'allied' : 'enemy'} building.`);
     building.targetKind = kind;
+    if (typeof target.name === 'string' && target.name) building.targetName = target.name;
     targets.add(key(target));
   }
   return targets.size;
@@ -85,7 +86,8 @@ function armyFor(buildings, side, map, definitions) {
       const count = own.filter(building => building.type === type && building.level === level && building.targetKind === targetKind).length;
       return count ? [`${count} × ${definitions[type].name} (level ${level}${targetKind ? `, ${targetKind}` : ''})`] : [];
     })));
-    return { lane, y, name: roadName(lane, map.lanes.length), count: own.length, summary: items.length ? `${items.join('; ')}.` : 'No starting buildings.' };
+    const names = own.filter(building => building.targetName).map(building => `${building.targetName}: ${building.name}`).join('; ');
+    return { lane, y, name: roadName(lane, map.lanes.length), count: own.length, summary: (items.length ? `${items.join('; ')}.` : 'No starting buildings.') + (names ? ` Named positions — ${names}.` : '') };
   });
   return {
     side, position: side === 0 ? 'left' : 'right', label: side === 0 ? 'Your army · left' : 'Enemy army · right',
@@ -119,9 +121,11 @@ export function getMissionScouting(mission, context = null) {
     summary: `${sourceMap.name} · ${sourceMap.width} × ${sourceMap.height} world units · ${sourceMap.lanes.length} roads · ${sourceMap.buildLimit}-building limit per side`,
   };
   const armies = [armyFor(left, 0, sourceMap, definitions), armyFor(right, 1, sourceMap, definitions)];
+  const required = mission.requiredTargets;
+  if (required !== undefined && (!Number.isInteger(required) || required < 1 || required > markedCount)) throw new RangeError('Scouting has an invalid required target count.');
   const objectives = {
     protectedCount, markedCount,
-    summary: `${protectedCount} allied structure${protectedCount === 1 ? '' : 's'} to protect; ${markedCount} enemy destruction target${markedCount === 1 ? '' : 's'}.`,
+    summary: required !== undefined ? `Destroy any ${required} of ${markedCount} named enemy positions; the others may remain standing.` : `${protectedCount} allied structure${protectedCount === 1 ? '' : 's'} to protect; ${markedCount} enemy destruction target${markedCount === 1 ? '' : 's'}.`,
   };
   return freeze({
     missionName: mission.name || 'Mission', map, armies, objectives, legend: LEGEND,
@@ -143,7 +147,7 @@ function svgFor(report) {
       ? '<path class="scouting-protect" d="M -54 -51 L 54 -51 L 54 7 Q 54 38 0 65 Q -54 38 -54 7 Z" fill="none" stroke="#e6c56f" stroke-width="10"/>'
       : building.targetKind === 'destroy'
         ? '<circle class="scouting-destroy" r="56" fill="none" stroke="#eee9d9" stroke-width="9" stroke-dasharray="15 9"/>' : '';
-    const label = `${army.side === 0 ? 'Allied' : 'Enemy'} ${building.name}, level ${building.level}, ${building.roadName}${building.targetKind ? `, ${building.targetKind}` : ''}`;
+    const label = `${building.targetName ? building.targetName + ': ' : ''}${army.side === 0 ? 'Allied' : 'Enemy'} ${building.name}, level ${building.level}, ${building.roadName}${building.targetKind ? `, ${building.targetKind}` : ''}`;
     return `<g class="scouting-building" data-side="${army.side}" data-lane="${building.lane}" data-kind="${building.targetKind || 'ordinary'}" transform="translate(${building.x} ${building.y})"><title>${escape(label)}</title>${objective}${glyph}</g>`;
   })).join('');
   // No IDs, event handlers, external resources, animation, or dynamic CSS.

@@ -1807,7 +1807,7 @@ button:disabled {
 }
 .challenge-choices {
   display: grid;
-  grid-template-columns: repeat(5, 1fr);
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 5px;
   margin-bottom: 15px;
 }
@@ -4083,3 +4083,9 @@ body.gamepad-active a:focus {
   grid-column: 2; grid-row: 5; min-width: 44px;
   padding-inline: 0; font-family: var(--display); font-size: 14px; letter-spacing: normal;
 }
+
+/* Three optional positions use the existing objective dock's reserved space. */
+.protected-targets.trial-targets { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.trial-targets .protected-focus-hint { display: none; }
+.trial-targets .protected-health { grid-column: 1 / -1; }
+.trial-targets .protected-target[data-state='destroyed'] { border-color: #b7d991; background: #293c2c; }

@@ -1,5 +1,5 @@
 /** Optimistic cross-tab import barrier. LocalStorage is not an atomic transaction. */
-export const CURRENT_PROFILE_PROTOCOL_VERSION = 7;
+export const CURRENT_PROFILE_PROTOCOL_VERSION = 8;
 export const PROFILE_MARKER_KEY = 'ironroot.profile.v1';
 const FORMAT = 'ironroot-profile';
 const PHASES = ['ready', 'restoring', 'failed'];
@@ -29,12 +29,12 @@ function encoded(epoch, phase, version) { return JSON.stringify({ format: FORMAT
 
 /**
  * getBackend must expose throwing getItem/setItem/removeItem methods, never swallow read errors.
- * Protocol 2 fences expanded campaigns; protocol 3 fences explicit battle identities; protocol 4 fences earned campaign rosters; protocol 5 fences flight orders and campaign revision 3; protocol 6 fences automatic adjacent-road flyers and campaign revision 4; protocol 7 fences keyboard preferences from clients that reconstruct only the older fields.
+ * Protocol 2 fences expanded campaigns; protocol 3 fences explicit battle identities; protocol 4 fences earned campaign rosters; protocol 5 fences flight orders and campaign revision 3; protocol 6 fences automatic adjacent-road flyers and campaign revision 4; protocol 7 fences keyboard preferences from clients that reconstruct only the older fields; protocol 8 fences the expanded field-trial catalog from clients that discard unknown records.
  * Only construction upgrades a ready marker; a failed or uncertain upgrade requires reload.
  */
 export function createProfileSession(getBackend, { newEpoch = nextEpoch, requiredProtocolVersion = 1 } = {}) {
   if (typeof getBackend !== 'function' || typeof newEpoch !== 'function') throw new TypeError('A storage getter and epoch factory are required.');
-  if (![1, 2, 3, 4, 5, 6, 7].includes(requiredProtocolVersion)) throw new TypeError('The required profile protocol must be version 1, 2, 3, 4, 5, 6 or 7.');
+  if (![1, 2, 3, 4, 5, 6, 7, 8].includes(requiredProtocolVersion)) throw new TypeError('The required profile protocol must be version 1, 2, 3, 4, 5, 6, 7 or 8.');
   let boundRaw, boundKnown = false, initiallyUnavailable = false, transaction = null, upgradeAttempted = false, upgradeError = null;
   function backend() {
     let value;

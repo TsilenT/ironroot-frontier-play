@@ -4,7 +4,7 @@ import {
   CAMPAIGN_PROGRESS_MISSIONS, CAMPAIGN_STORAGE_KEY, createCampaignProgress,
   normalizeCampaignProgress,
 } from './campaign.js';
-import { CHALLENGES } from './challenges.js';
+import { CURRENT_CHALLENGES as CHALLENGES } from './challenges.js';
 import { normalizeKeyboardMap } from './keyboard.js';
 
 export const BACKUP_FORMAT = 'ironroot-backup';

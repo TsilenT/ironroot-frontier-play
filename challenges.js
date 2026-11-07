@@ -60,9 +60,34 @@ export const CHALLENGES = [
   },
 ];
 
+// A new optional trial joins only the current catalog; published trials stay intact.
+const ASHEN_CROSSROADS = {
+  id:'ashen-crossroads', name:'Ashen Crossroads', subtitle:'Choose where the line breaks',
+  description:'Three garrisons guard the burnt crossroads. Take two positions to open a passage, choosing between a forward tower, a crowded barracks and a distant gryphon roost.',
+  objective:'Destroy any 2 of the 3 named positions within 4:00, or destroy the enemy citadel. The third position may remain standing.',
+  hint:'Siege can reach Pinewatch from safety; splash helps at Stonegate, while archers can answer Ember Roost. Keep enough cover on the road you leave behind.',
+  difficulty:'normal', seed:719, mode:'destroy', requiredTargets:2, timeLimit:240, startingGold:650, startingHealth:6000,
+  briefing:['650 starting gold; one allied barracks on each road',
+    'North · Pinewatch: forward level-2 tower, with archers behind it',
+    'Middle · Stonegate: veteran level-3 barracks',
+    'South · Ember Roost: distant level-2 aerie',
+    'Fixed enemy formation; no new enemy buildings'],
+  playerBuildings:[['barracks',690,0],['barracks',690,1],['barracks',690,2]],
+  enemyBuildings:[['watchtower',1950,0,2],['archery',2370,0],['barracks',2090,1,3],['aerie',2230,2,2]],
+  markedTargets:[{name:'Pinewatch',type:'watchtower',x:1950,lane:0},{name:'Stonegate',type:'barracks',x:2090,lane:1},{name:'Ember Roost',type:'aerie',x:2230,lane:2}],
+};
+
+/** Omitted counts retain the original all-targets rule. Reject malformed authored counts. */
+export function requiredChallengeTargets(challenge) {
+  const count = Object.hasOwn(challenge, 'requiredTargets') ? challenge.requiredTargets : challenge.markedTargets.length;
+  if (challenge.mode === 'destroy' && (!Number.isInteger(count) || count < 1 || count > challenge.markedTargets.length ||
+    new Set(challenge.markedTargets.map(t => `${t.type}/${t.x}/${t.lane}`)).size !== challenge.markedTargets.length))
+    throw new RangeError('Invalid required trial target count or repeated target.');
+  return count;
+}
 export const CURRENT_CHALLENGE_REVISION=2;
 // Published revision 1 remains untouched. Fresh attempts select this whole identity.
-export const CURRENT_CHALLENGES=deepFreeze(CHALLENGES.map(challenge=>({
+export const CURRENT_CHALLENGES=deepFreeze([...CHALLENGES, ASHEN_CROSSROADS].map(challenge=>({
   ...JSON.parse(JSON.stringify(challenge)),scenarioRevision:CURRENT_CHALLENGE_REVISION,
   rulesetId:AUTHORED_AIR_RULESET_ID,rulesetRevision:1,mapId:'classic',mapRevision:1
 })));
@@ -74,11 +99,11 @@ export function getChallenge(id,revision=1) {
   return challenge;
 }
 export function challengeScenarioForGame(game,id) {
-  getChallenge(id);
   const revision=game?.ruleset?.id===AUTHORED_AIR_RULESET_ID?CURRENT_CHALLENGE_REVISION:
     game?.ruleset?.id===LEGACY_RULESET_ID?1:null;
   if(revision===null||game.ruleset.revision!==1||game.map.id!=='classic'||game.map.revision!==1)
     throw new Error('This game does not match a supported trial identity.');
+  getChallenge(id,revision);
   return {kind:'trial',id,revision};
 }
 export const getChallengeForGame=(game,id)=>getChallenge(id,challengeScenarioForGame(game,id).revision);
@@ -92,6 +117,7 @@ export function createChallenge(id,revision=1) {
   return makeChallenge(getChallenge(id,revision),revision!==1);
 }
 function makeChallenge(challenge,explicitIdentity) {
+  requiredChallengeTargets(challenge);
   const game=new Game({difficulty:challenge.difficulty,seed:challenge.seed,ai:false,
     ...(explicitIdentity?{rulesetId:challenge.rulesetId??LEGACY_RULESET_ID,rulesetRevision:challenge.rulesetRevision??1}:{} )});
   const state=game.state;
@@ -125,17 +151,18 @@ export function evaluateChallenge(game,id) {
   const income=5+s.buildings.filter(b=>b.side===0&&b.type==='mint'&&b.hp>0)
     .reduce((total,b)=>total+BUILDINGS.mint.income*(1+0.5*(b.level-1)),0);
   const targets=getChallengeTargets(game,id),destroyed=targets.filter(t=>!t.building).length;
-  let progress=challenge.mode==='destroy'?destroyed/targets.length:challenge.mode==='economy'?Math.min(duration,income/challenge.incomeTarget):duration;
+  const required=requiredChallengeTargets(challenge);
+  let progress=challenge.mode==='destroy'?Math.min(1,destroyed/required):challenge.mode==='economy'?Math.min(duration,income/challenge.incomeTarget):duration;
   const atDeadline=s.time+1e-7>=challenge.timeLimit;
   const defeated=s.winner===1||s.bases[0].hp<=0;
   const coreVictory=s.winner===0||s.bases[1].hp<=0;
-  const objectiveMet=challenge.mode==='destroy'?destroyed===targets.length:atDeadline&&(challenge.mode==='survive'||income>=challenge.incomeTarget);
+  const objectiveMet=challenge.mode==='destroy'?destroyed>=required:atDeadline&&(challenge.mode==='survive'||income>=challenge.incomeTarget);
   const completed=!defeated&&(coreVictory||objectiveMet);
   const failed=defeated||(!completed&&atDeadline);
   let label;
   if(defeated)label='Your citadel fell.';
   else if(coreVictory)label='Enemy citadel destroyed.';
-  else if(challenge.mode==='destroy')label=`${destroyed}/${targets.length} targets destroyed${failed?' · Time expired.':''}`;
+  else if(challenge.mode==='destroy')label=`${Math.min(destroyed,required)}/${required} targets destroyed${challenge.requiredTargets && completed?' · Complete.':''}${failed?' · Time expired.':''}`;
   else if(challenge.mode==='economy')label=`${income.toFixed(1)}/${challenge.incomeTarget} gold/sec${failed?' · Time expired.':completed?' · Citadel held.':''}`;
   else label=completed?'Citadel held for 2:20.':`${Math.min(Math.floor(s.time),challenge.timeLimit)}/${challenge.timeLimit}s survived`;
   if(completed)progress=1;

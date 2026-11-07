@@ -1124,6 +1124,18 @@ function start(
   save();
   globalThis.queueMicrotask?.(syncMenuHistory);
 }
+// Named optional trial positions share the existing stable focus controls and mobile dock.
+function objectiveFocusTargets() {
+  if (protectedMonitor) return protectedMonitor.read();
+  if (!currentChallenge) return [];
+  return getChallengeTargets(game, currentChallenge).filter(target => target.name).map(target => ({
+    ...target, originalId: `${target.type}-${target.x}-${target.lane}`, label: target.name,
+    road: ['North', 'Middle', 'South'][target.lane],
+    hp: target.building?.hp ?? 0, maxHp: target.building?.maxHp ?? 0,
+    percent: target.building ? Math.ceil(100 * target.building.hp / target.building.maxHp) : 0,
+    status: target.building ? 'standing' : 'destroyed',
+  }));
+}
 function beginProtectedObjectives() {
   protectedMonitor = currentCampaign
     ? createProtectedObjectiveMonitor(game, currentCampaign) : null;
@@ -1133,7 +1145,7 @@ function beginProtectedObjectives() {
   $('protectedAlert').textContent = '';
   $('resultProtectedLoss').textContent = '';
   $('resultProtectedLoss').classList.add('hidden');
-  const targets = protectedMonitor?.read() || [];
+  const targets = objectiveFocusTargets();
   protectedAlerts = protectedMonitor && targets.length
     ? createObjectiveAlertPolicy({battleKey:protectedMonitor,targetIds:targets.map(target=>target.originalId)}) : null;
   protectedAlerts?.observe(targets,{battleKey:protectedMonitor});
@@ -1146,13 +1158,15 @@ function beginProtectedObjectives() {
   $('objectiveHUD').classList.toggle('protect-hud', !!targets.length);
   $('protectedTargets').classList.toggle('hidden', !targets.length);
   $('objectiveIdentity').classList.toggle('hidden', !targets.length);
-  $('objectiveIdentity').textContent = targets.length ? `${game.difficulty.toUpperCase()} · PROTECT` : '';
+  $('objectiveIdentity').textContent = targets.length ? currentChallenge ? `FIELD TRIAL · ANY ${getChallengeForGame(game, currentChallenge).requiredTargets} OF ${targets.length}` : `${game.difficulty.toUpperCase()} · PROTECT` : '';
+  $('protectedTargets').classList.toggle('trial-targets', !!currentChallenge && !!targets.length);
+  $('protectedTargets').setAttribute('aria-label', currentChallenge ? 'Choose any two enemy positions; activate a standing position to focus camera' : 'Protected original structures; activate to focus camera');
   for (const target of targets) {
     const button = document.createElement('button');
     button.type = 'button';
     button.className = 'protected-target';
     button.dataset.protectedId = String(target.originalId);
-    button.setAttribute('aria-label', `Focus ${target.label}`);
+    button.setAttribute('aria-label', `Focus ${target.label}${target.road ? ', ' + target.road + ' road' : ''}`);
     button.setAttribute('aria-describedby', `protected-health-${target.originalId}`);
     button.title = `Show ${target.label} on the battlefield. Cancels placement.`;
     const name = document.createElement('span');
@@ -1287,11 +1301,14 @@ function canFocusProtectedObjective() {
 }
 function focusProtectedObjective(originalId) {
   if (!canFocusProtectedObjective()) return;
-  const target = protectedMonitor?.observe().find(item => item.originalId === originalId);
-  if (!target || target.status === 'lost') return;
+  protectedMonitor?.observe();
+  const target = objectiveFocusTargets().find(item => item.originalId === originalId);
+  if (!target || ['lost', 'destroyed'].includes(target.status)) return;
   cancel();
   setCompactBuildOpen(false);
   resetBattleGesture();
+  // Cancelling placement can resize the deck; clamp against its final field size.
+  renderer.resize();
   renderer.camera = target.x;
   renderer.clampCamera();
   follow = false;
@@ -1306,7 +1323,7 @@ document.addEventListener('pointerdown', event => {
 document.addEventListener('pointercancel', () => { armedProtectedControl = null; }, true);
 window.addEventListener('blur', () => { armedProtectedControl = null; });
 function updateProtectedObjectives() {
-  const targets = protectedMonitor?.read() || [];
+  const targets = objectiveFocusTargets();
   if (!targets.length) return;
   const enabled = canFocusProtectedObjective();
   const announcements = [];
@@ -1315,16 +1332,20 @@ function updateProtectedObjectives() {
     if (!control) continue;
     // Keep these exact nodes mounted: damage must not steal focus or change a
     // held touch's target. Announce status transitions, never every HP tick.
-    const health = target.status === 'lost' ? 'Original missing'
+    const health = target.status === 'destroyed' ? 'Destroyed'
+      : target.status === 'standing' ? `${target.road} · ${target.percent}%`
+      : target.status === 'lost' ? 'Original missing'
       : `${target.percent}% HP${target.status === 'critical' ? ' · Critical' : ''}`;
     if (control.health.textContent !== health) control.health.textContent = health;
-    control.health.setAttribute('aria-label', target.status === 'lost' ? 'Original structure missing; health unavailable.'
+    control.health.setAttribute('aria-label', target.status === 'destroyed' ? 'Position destroyed.' : target.status === 'lost' ? 'Original structure missing; health unavailable.'
       : `${Math.ceil(target.hp)} of ${Math.ceil(target.maxHp)} health. ${target.status}.`);
     control.fill.style.width = `${target.percent ?? 0}%`;
     control.button.dataset.state = target.status;
-    control.button.disabled = !enabled || target.status === 'lost';
+    control.button.disabled = !enabled || ['lost', 'destroyed'].includes(target.status);
     if (control.status !== target.status && target.status === 'lost')
       announcements.push(`${target.label}: original structure lost.`);
+    if (control.status !== target.status && target.status === 'destroyed')
+      announcements.push(`${target.label} destroyed. ${evaluateChallenge(game, currentChallenge).label}`);
     control.status = target.status;
   }
   if (announcements.length) $('protectedAlert').textContent = announcements.join(' ');
@@ -1682,8 +1703,15 @@ function finish() {
   $('resultKills').textContent = game.state.stats.kills[0];
   $('resultBuilt').textContent = game.state.stats.built[0];
   finishBattleReport();
-  $('resultObjectives').classList.toggle('hidden', !mission);
+  $('resultObjectives').classList.toggle('hidden', !mission && !trial?.requiredTargets);
   $('resultObjectives').textContent = '';
+  if (trial?.requiredTargets) {
+    for (const target of getChallengeTargets(game, currentChallenge)) {
+      const p = document.createElement('p');
+      p.textContent = `${target.name}: ${target.building ? won ? 'standing · not needed' : 'standing' : 'destroyed'}`;
+      $('resultObjectives').append(p);
+    }
+  }
   if (mission) {
     const stars = document.createElement('div');
     stars.className = 'result-stars';
@@ -2347,6 +2375,7 @@ function renderChallenge() {
   $('challengeBriefing').innerHTML = challenge.briefing
     .map((t) => `<li>${t}</li>`)
     .join('');
+  $('challengeScouting').innerHTML = renderMissionScouting(challenge);
   $('challengeMedal').textContent = trialRecords[challenge.id]?.completed
     ? `✓ Best ${timeText(trialRecords[challenge.id].bestTime)}`
     : '';
@@ -3392,7 +3421,7 @@ $('backupFile').onchange = async () => {
         : admitted.challengeId ? CHALLENGES.find(c => c.id === admitted.challengeId).name
           : `Skirmish · ${admitted.game.map.name}` : null;
     $('backupSummary').textContent =
-      `${overview.cleared}/${overview.total} campaign missions · ${overview.stars}/${overview.maxStars} stars · ${Object.keys(parsed.data.trials).length}/5 trial records. ${battle ? `Saved battle: ${battleName} at ${timeText(battle.game.state.time)}.` : 'No battle in this file. Your current saved battle will be removed.'}`;
+      `${overview.cleared}/${overview.total} campaign missions · ${overview.stars}/${overview.maxStars} stars · ${Object.keys(parsed.data.trials).length}/${CHALLENGES.length} trial records. ${battle ? `Saved battle: ${battleName} at ${timeText(battle.game.state.time)}.` : 'No battle in this file. Your current saved battle will be removed.'}`;
     $('backupImportStatus').textContent = '';
     $('backupRecoveryConsent').checked = false;
     updateRecoveryUI();
