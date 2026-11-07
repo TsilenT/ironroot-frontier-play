@@ -34,22 +34,23 @@ export function battleByteLength(text){
   if(typeof text!=='string'||text.length>MAX_BATTLE_BYTES)fail('Saved battle exceeds the 1 MiB limit.','too-large');
   let bytes=0;for(let i=0;i<text.length;i++){const c=text.charCodeAt(i);if(c<128)bytes++;else if(c<2048)bytes+=2;else if(c>=0xd800&&c<=0xdbff&&i+1<text.length&&text.charCodeAt(i+1)>=0xdc00&&text.charCodeAt(i+1)<=0xdfff){bytes+=4;i++;}else bytes+=3;if(bytes>MAX_BATTLE_BYTES)fail('Saved battle exceeds the 1 MiB limit.','too-large');}return bytes;
 }
-export function scenarioForBattle(challengeId=null,campaignId=null){
+export function scenarioForBattle(challengeId=null,campaignId=null,game=null){
   if(challengeId!==null&&campaignId!==null)fail('A battle cannot be both a trial and a campaign mission.');
-  const ref=campaignId!==null?{kind:'campaign',id:campaignId,revision:1}:challengeId!==null?{kind:'trial',id:challengeId,revision:1}:{kind:'skirmish',id:'standard',revision:1};
+  const ref=campaignId!==null?(game?campaign.campaignScenarioForGame(game,campaignId):{kind:'campaign',id:campaignId,revision:1}):challengeId!==null?{kind:'trial',id:challengeId,revision:1}:{kind:'skirmish',id:'standard',revision:1};
   resolveScenario(ref);return ref;
 }
 const scenarioCache=new Map();
 export function resolveScenario(ref){
   fields(ref,['kind','id','revision']);
-  if(typeof ref.kind!=='string'||!['skirmish','campaign','trial','lesson'].includes(ref.kind)||typeof ref.id!=='string'||!Number.isSafeInteger(ref.revision)||ref.revision!==1)fail('This save needs a compatible scenario version.','unsupported-identity');
+  if(typeof ref.kind!=='string'||!['skirmish','campaign','trial','lesson'].includes(ref.kind)||typeof ref.id!=='string'||!Number.isSafeInteger(ref.revision)||ref.revision<1||(ref.kind!=='campaign'&&ref.revision!==1))fail('This save needs a compatible scenario version.','unsupported-identity');
   const key=`${ref.kind}/${ref.id}@${ref.revision}`;
   if(scenarioCache.has(key))return scenarioCache.get(key);
   let mission;
   if(ref.kind==='skirmish'){if(ref.id!=='standard')fail('Unknown skirmish scenario.','unsupported-identity');}
   else {
-    const catalog=ref.kind==='campaign'?(campaign.ALL_CAMPAIGN_MISSIONS??campaign.CAMPAIGN_MISSIONS):ref.kind==='trial'?CHALLENGES:TRAINING_LESSONS;
-    mission=catalog.find(item=>item.id===ref.id);
+    if(ref.kind==='campaign'){
+      try{mission=campaign.getCampaignMission(ref.id,ref.revision);}catch{fail('This save needs a compatible scenario version.','unsupported-identity');}
+    }else mission=(ref.kind==='trial'?CHALLENGES:TRAINING_LESSONS).find(item=>item.id===ref.id);
     if(!mission||(mission.scenarioRevision??1)!==ref.revision)fail('This save needs a compatible scenario version.','unsupported-identity');
   }
   const descriptor=deepFreeze({...ref,...(mission?{mapId:mission.mapId??'classic',mapRevision:mission.mapRevision??1,rulesetId:mission.rulesetId??LEGACY_RULESET_ID,rulesetRevision:mission.rulesetRevision??1,mission:JSON.parse(JSON.stringify(mission))}:{})});
@@ -60,8 +61,8 @@ export function validateBattleIdentity(identity){
   fields(identity,['ruleset','map','scenario']);identityRef(identity.ruleset,'ruleset');identityRef(identity.map,'battlefield');
   let rules,map;try{rules=getRuleset(identity.ruleset.id,identity.ruleset.revision);map=getMap(identity.map.id,identity.map.revision);}catch{fail('This save needs a compatible ruleset or battlefield version.','unsupported-identity');}
   const scenario=resolveScenario(identity.scenario);
-  if(scenario.kind==='skirmish'){if(!own(MAPS,map.id))fail('This battlefield is only available in its authored scenario.');}
-  else {if(map.id!==scenario.mapId||map.revision!==scenario.mapRevision)fail(`Authored missions require the ${getMap(scenario.mapId,scenario.mapRevision).name} battlefield.`);if(rules.id!==scenario.rulesetId||rules.revision!==scenario.rulesetRevision)fail('Saved battle does not match its scenario rules.');}
+  if(scenario.kind==='skirmish'){if(rules.campaignOnly)fail('This roster is only available in its authored campaign.');if(!own(MAPS,map.id))fail('This battlefield is only available in its authored scenario.');}
+  else {if(map.id!==scenario.mapId||map.revision!==scenario.mapRevision)fail(`Authored missions require the ${getMap(scenario.mapId,scenario.mapRevision).name} battlefield.`);if(rules.revision!==scenario.rulesetRevision||(scenario.kind==='campaign'?!campaign.campaignRulesetAllowed(scenario.id,scenario.revision,rules.id):rules.id!==scenario.rulesetId))fail('Saved battle does not match its scenario rules.');}
   return deepFreeze({ruleset:{id:rules.id,revision:rules.revision},map:{id:map.id,revision:map.revision},scenario:{kind:scenario.kind,id:scenario.id,revision:scenario.revision}});
 }
 export function identityOf(game,scenario=scenarioForBattle()){
@@ -85,8 +86,11 @@ export function decodeBattle(value,{campaignProgress=campaign.createCampaignProg
   if(resolved.mission){
     const mission=resolved.mission;
     if(game.difficulty!==mission.difficulty||game.ai!==(mission.ai===true))fail('Saved battle does not match its mission rules.');
-    if(resolved.kind==='campaign'&&!campaign.isMissionUnlocked(campaignProgress,resolved.id))fail('Saved campaign battle is locked by campaign progress.','locked-mission');
-    const result=resolved.kind==='campaign'?campaign.evaluateCampaignMission(game,resolved.id):evaluateChallenge(game,resolved.id);
+    if(resolved.kind==='campaign'){
+      if(!campaign.isMissionUnlocked(campaignProgress,resolved.id,resolved.revision))fail('Saved campaign battle is locked by campaign progress.','locked-mission');
+      if(!campaign.canUseCampaignRuleset(campaignProgress,resolved.id,resolved.revision,game.ruleset.id))fail('Saved campaign roster has not been earned by this profile.','locked-roster');
+    }
+    const result=resolved.kind==='campaign'?campaign.evaluateCampaignMission(game,resolved.id,resolved.revision):evaluateChallenge(game,resolved.id);
     if(result.completed||result.failed)fail('Saved mission has already ended.','ended-battle');
   }
   return {game,scenario:identity.scenario,identity,challengeId:resolved.kind==='trial'?resolved.id:null,campaignId:resolved.kind==='campaign'?resolved.id:null};

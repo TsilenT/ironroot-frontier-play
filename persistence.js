@@ -178,7 +178,7 @@ export const getBattleWriteFailure=storage=>battleWriteFailures.get(storage)??nu
 export function writeBattle(storage,key,game,challengeId=null,campaignId=null,options={}) {
   let value;
   try {
-    value=JSON.stringify(encodeBattle(game,scenarioForBattle(challengeId,campaignId),options));
+    value=JSON.stringify(encodeBattle(game,scenarioForBattle(challengeId,campaignId,game),options));
     battleByteLength(value);
   } catch(error) {
     battleWriteFailures.set(storage,{code:'invalid-battle',message:error.message||'This battle cannot be saved safely.'});

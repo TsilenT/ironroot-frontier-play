@@ -2644,6 +2644,72 @@ button:disabled {
     0 0 0 3px #18281caa,
     0 0 15px #e5cb7955;
 }
+/* Campaign browsing: story > chapter > a focused mission briefing. */
+.campaign-mode h1 { font-size: 28px; margin-bottom: 12px; }
+.campaign-mode .mode-tabs { gap: 8px; }
+.campaign-mode .mode-tabs button { min-height: 44px; font-size: 10px; letter-spacing: .5px; }
+.campaign-mode h1 span { display: inline; font-size: 14px; letter-spacing: 3px; margin-left: 8px; }
+.campaign-mode #campaignConfig { text-align: left; overscroll-behavior: contain; }
+.campaign-path { display: flex; align-items: center; flex-wrap: wrap; gap: 0 8px; margin-bottom: 12px; color: #c3cdb7; font-size: 12px; }
+.campaign-path button, .campaign-mission-nav button, .campaign-return {
+  min-height: 44px; border: 1px solid #657657; background: #253b2b; color: #eddfb7;
+  padding: 9px 12px; font: 600 13px var(--font); text-align: left;
+}
+.campaign-path button { border-color: transparent; background: transparent; padding: 7px 4px; text-decoration: underline; text-underline-offset: 4px; }
+.campaign-path button[aria-current] { color: #f2e7c9; text-decoration: none; }
+.campaign-path #campaignMissionPosition { white-space: nowrap; }
+#campaignStoryPage h2, #campaignChapterPage h2, #campaignMissionPage h2 { font: 600 32px/1.1 var(--display); color: #f0e7cb; margin: 0 0 10px; }
+#campaignConfig h2:focus-visible { outline: 2px solid #f4d68d; outline-offset: 3px; }
+#campaignConfig h3 { font: 600 21px var(--display); color: #e1d7b9; margin: 20px 0 10px; }
+#campaignConfig .campaign-kicker { font-size: 11px; line-height: 1.4; letter-spacing: 1px; color: #d4c18e; margin: 8px 0; }
+.campaign-story-copy, #campaignChapterStory, #campaignChapterProgress, .campaign-progress p { font-size: 13px; line-height: 1.65; color: #c3d0ba; }
+#campaignStoryPage .campaign-chapters { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; overflow: visible; }
+#campaignStoryPage .campaign-chapters button { min-width: 0; min-height: 88px; padding: 12px; }
+#campaignStoryPage .campaign-chapters span { font-size: 10px; }
+#campaignStoryPage .campaign-chapters b { font-size: 21px; }
+#campaignStoryPage .campaign-chapters small { display: block; margin-top: 6px; font-size: 11px; color: #c1ceb3; }
+.campaign-progress { margin: 20px 0 12px; border-top: 1px solid #536344; }
+#campaignConfig summary { font-size: 13px; line-height: 1.5; min-height: 44px; padding: 12px 0; color: #e5cf94; cursor: pointer; }
+#campaignConfig summary:focus-visible { outline: 2px solid #f4d68d; outline-offset: -2px; }
+#campaignChapterPage .campaign-missions { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+#campaignChapterPage .campaign-missions button { display: flex; padding: 14px; min-height: 76px; }
+#campaignChapterPage .campaign-missions b { font-size: 21px; }
+#campaignChapterPage .campaign-missions small { font-size: 10px; }
+#campaignChapterPage .campaign-missions button.locked { opacity: 1; color: #c3c9b9; }
+#campaignMissionPage { padding: 0; border: 0; background: transparent; }
+.campaign-mission-nav { display: flex; gap: 8px; align-items: center; justify-content: space-between; margin-bottom: 12px; }
+.campaign-mission-nav > span { text-align: center; font-size: 11px; color: #d4c18e; }
+.campaign-mission-nav button:disabled { opacity: .45; }
+#campaignMissionPage p { font-size: 13px; line-height: 1.6; color: #c3d0ba; }
+.campaign-goal { padding: 14px 16px; margin: 16px 0; border: 1px solid #8f8b53; background: #33432a; }
+#campaignConfig .campaign-goal h3 { font: 600 12px var(--font); text-transform: uppercase; letter-spacing: 1px; margin: 0 0 6px; color: #dfce96; }
+#campaignMissionPage #campaignGoal { font-size: 17px; line-height: 1.45; font-weight: 600; color: #f3e9cc; margin: 0 0 10px; }
+#campaignGoalFacts { display: flex; flex-wrap: wrap; gap: 6px 16px; list-style: none; padding: 0; margin: 0; color: #ebd69d; font-size: 13px; }
+#campaignMissionPage #campaignProtection { border-top: 1px solid #747d4e; padding-top: 10px; margin-top: 12px; color: #f0d2ac; font-size: 12px; }
+#campaignMissionPage .campaign-dialogue { margin: 18px 0 12px; }
+#campaignMissionPage .campaign-dialogue b { font-size: 11px; }
+#campaignMissionPage .campaign-unlock { font-size: 12px; }
+#campaignMissionPage details { border-top: 1px solid #4c6042; margin-top: 0; }
+#campaignMissionPage details ul, #campaignMissionPage .campaign-medals { font-size: 12px; }
+#campaignMissionPage .campaign-scout { margin: 0; border: 0; border-top: 1px solid #4c6042; padding: 0; background: transparent; }
+#campaignConfig .text-button { min-height: 44px; font-size: 13px; }
+@media (max-width: 700px) {
+  .campaign-mode { padding: 15px 16px; }
+  .campaign-mode h1 { font-size: 23px; margin-bottom: 10px; }
+  .campaign-mode h1 span { font-size: 11px; letter-spacing: 2px; margin-left: 5px; }
+  .campaign-path { gap: 0 5px; margin-bottom: 8px; font-size: 11px; }
+  .campaign-path button { font-size: 11px; }
+  #campaignStoryPage .campaign-chapters, #campaignChapterPage .campaign-missions { grid-template-columns: minmax(0, 1fr); }
+  #campaignStoryPage h2, #campaignChapterPage h2, #campaignMissionPage h2 { font-size: 28px; }
+  .campaign-mission-nav { gap: 4px; }
+  .campaign-mission-nav button { padding: 8px; font-size: 12px; }
+  .campaign-mission-nav > span { font-size: 10px; }
+  .campaign-goal { padding: 12px; }
+  #campaignMissionPage #campaignGoal { font-size: 16px; }
+  .campaign-mode .welcome-foot { display: none; }
+  .campaign-mode .welcome-links { flex-wrap: wrap; gap: 0 12px; margin-top: 7px; }
+  .campaign-mode .welcome-links :is(button, a) { min-height: 32px; font-size: 10px; padding: 5px 0; }
+}
 .controller-cursor::before,
 .controller-cursor::after {
   content: '';
@@ -3120,6 +3186,23 @@ body.gamepad-active a:focus {
 .result .result-actions .text-button {margin: 0; min-height: 36px;}
 .result #resultMenu {margin-right: 0;}
 .welcome-links {flex-wrap: wrap;}
+/* One optional fullscreen control shares the existing footer, without a new
+   fixed toolbar or taking space from the essential in-battle gold/health HUD. */
+.welcome-links .welcome-fullscreen-status {
+  flex-basis: 100%;
+  margin: 0;
+  color: #c3cdb7;
+  font-size: 11px;
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+}
+.welcome-links #welcomeFullscreen {
+  min-height: 44px;
+  color: #e8d39b;
+}
+.welcome-links #welcomeFullscreen:disabled { color: #b3bba8; }
+.welcome-links #welcomeFullscreen:focus-visible { outline: 2px solid #f4d68d; outline-offset: 3px; }
+
 @media(max-width:700px) {
   .result-body {padding: 20px 17px 14px;}
   .result-actions {padding: 12px 17px 14px; gap: 5px 10px;}
@@ -3554,7 +3637,7 @@ body.gamepad-active a:focus {
 .viewport-actions { display: grid; gap: 8px; }
 .viewport-actions button { min-height: 44px; margin: 0; padding: 8px 12px; }
 
-/* Campaign hints live in the same command deck as every real build action. */
+/* Desktop hints accompany the same command deck as every real build action. */
 .campaign-coach {
   display: flex;
   align-items: baseline;
@@ -3568,7 +3651,7 @@ body.gamepad-active a:focus {
 }
 .campaign-coach b {color: #f3d895; flex-shrink: 0;}
 .deck-tools {display: flex; gap: 10px; margin: -4px 0 8px;}
-.deck-tools:has(> .hidden:only-child), .deck-tools:has(> .hidden + .hidden) {display: none;}
+.deck-tools:not(:has(> button:not(.hidden))) {display: none;}
 .deck-tools button {
   background: #25352b;
   color: #e9d49e;
@@ -3586,8 +3669,8 @@ body.gamepad-active a:focus {
 }
 
 
-/* Hints use only the existing drawer. They do not consume the reserved world,
-   protected-objective or navigation rows. The drawer may scroll deliberately. */
+/* Uncoached mobile battles retain the original drawer. Active planning moves
+   the same hint/actions into the measured teaching rail below. */
 .protected-mobile .command-deck.inspecting-building > .deck-tools { display: none; }
 .protected-mobile .campaign-coach { margin: 0 12px 6px; }
 .protected-mobile .deck-tools { margin: 0 12px 6px; }
@@ -3686,6 +3769,11 @@ body.gamepad-active a:focus {
 .protected-short-portrait #objectiveProgress { grid-column: 1; grid-row: 1; line-height: 12px; }
 .protected-short-portrait #objectiveTime { grid-column: 2; grid-row: 1; line-height: 12px; }
 .protected-short-portrait .protected-targets { grid-column: 1 / -1; grid-row: 2; }
+.protected-mobile.protected-short-portrait .protected-target {
+  /* Two readable lines plus the 3px gap and borders need 32.6px. Keep
+     vertical padding within the 44px row instead of forcing/clipping height. */
+  padding: 4px 5px 7px;
+}
 .protected-mobile.protected-short-portrait.mobile-ordinary .protected-dock .objective-hud { grid-template-rows: minmax(0,1fr); padding: 4px 6px; align-items: center; }
 .protected-short-portrait.mobile-ordinary #objectiveProgress, .protected-short-portrait.mobile-ordinary #objectiveTime { grid-row: 1; }
 
@@ -3704,3 +3792,205 @@ body.gamepad-active a:focus {
 .protected-mobile .protected-target[data-state='lost'] .protected-focus-hint { display: none; }
 .protected-mobile.protected-short-portrait.mobile-ordinary #objectiveProgress { grid-column: 1; }
 .protected-mobile.protected-short-portrait.mobile-ordinary #objectiveTime { grid-column: 2; }
+
+/* Pause/options dialogs live outside .app so compact battlefield rails never
+   constrain their size. Keep these rules scoped when integrating phone fixes. */
+.pause-veil.modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 10;
+  gap: 0;
+  background: #081611c9;
+  padding: max(16px, env(safe-area-inset-top)) max(16px, env(safe-area-inset-right)) max(16px, env(safe-area-inset-bottom)) max(16px, env(safe-area-inset-left));
+}
+.pause-menu, .menu-confirm {
+  width: min(100%, 440px);
+  padding: 28px;
+  border-radius: 14px;
+  max-height: 100%;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+}
+.menu-heading h2, .menu-confirm h2 {
+  font: 600 38px/1.1 var(--display);
+  margin: 8px 0;
+  color: #f3e8c8;
+}
+.menu-heading p {
+  font-size: 12px;
+  line-height: 1.5;
+  color: #b9c7b0;
+  margin: 0;
+}
+.pause-briefing {
+  padding: 16px 0;
+  margin: 16px 0;
+  border-block: 1px solid #506344;
+}
+.pause-briefing h3 {font: 600 23px/1.2 var(--display); margin: 0 0 6px;}
+.pause-briefing p {font-size: 12px; line-height: 1.6; color: #d1d8be; margin: 0;}
+.pause-menu #resume {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 15px;
+}
+.pause-utilities {display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; margin: 12px 0;}
+.pause-menu .secondary-button {font-size: 13px; text-transform: none; letter-spacing: 0;}
+.pause-utilities .secondary-button {text-align: left; padding: 12px;}
+.pause-utilities small {display: block; font-size: 10px; color: #bccbad; line-height: 1.4; margin-top: 4px; font-weight: 400;}
+.menu-status {font-size: 11px; line-height: 1.6; color: #afc7a0; margin: 14px 0;}
+.menu-status.save-warning {color: #f4c7a5;}
+.pause-exit-actions {display: grid; gap: 8px;}
+.pause-exit-actions .text-button {color: #d8bc9f; font-size: 12px; margin: 0;}
+.pause-veil .pause-menu button, .menu-confirm button {min-height: 44px; padding: 10px 14px;}
+.menu-confirm > p {font-size: 13px; line-height: 1.7; color: #d1d8be;}
+.menu-confirm-actions {display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; margin-top: 20px;}
+.menu-confirm #confirmRestart {border-color: #ae8060; color: #f3c9ac;}
+.pause-menu button:focus-visible, .menu-confirm button:focus-visible,
+.settings-modal :is(button, input, select, summary):focus-visible {outline: 2px solid #f4d68d; outline-offset: 3px;}
+.settings-modal {border-radius: 14px; display: flex; flex-direction: column; padding: 0; overflow: hidden;}
+.settings-content {min-height: 0; overflow: auto; padding: 0 32px 20px; overscroll-behavior: contain; scrollbar-gutter: stable; scroll-padding-block: 12px;}
+.settings-modal .menu-heading {padding: 26px 64px 18px 32px; margin: 0; flex-shrink: 0;}
+.settings-modal .menu-heading h2 {margin: 8px 0;}
+.settings-modal .setting-row {min-height: 60px; font-size: 13px;}
+.settings-modal .setting-row small {font-size: 11px; line-height: 1.4;}
+.settings-modal .setting-row select {min-height: 44px;}
+.settings-modal input[type='range'] {min-height: 36px;}
+.settings-modal .history-details summary {font-size: 12px; min-height: 24px; line-height: 1.5;}
+.settings-modal .history-details p, .settings-modal .settings-note {font-size: 11px;}
+.settings-modal .settings-footer {flex-shrink: 0; margin: 0; padding: 14px 32px 20px; background: #17271f; border-top: 1px solid #4b5e41;}
+.settings-footer .gold-button {width: 100%; min-height: 44px;}
+@media (max-width: 700px) {
+  .pause-menu, .menu-confirm {padding: 22px;}
+  .settings-content {padding: 0 23px 20px;}
+  .settings-modal .menu-heading {padding: 24px 60px 16px 23px;}
+  .settings-modal .settings-footer {padding: 12px 23px 20px;}
+}
+@media (max-height: 500px) and (orientation: landscape) {
+  .pause-menu {width: min(100%, 620px); padding: 18px 22px; display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); column-gap: 24px; align-items: start;}
+  .pause-menu .menu-heading, .pause-menu .pause-briefing {grid-column: 1;}
+  .pause-menu .pause-briefing {grid-row: 2 / 5; margin: 12px 0 0; padding: 12px 0;}
+  .pause-menu #resume {grid-column: 2; grid-row: 1;}
+  .pause-menu .pause-utilities {grid-column: 2; grid-row: 2; margin: 10px 0;}
+  .pause-menu .pause-utilities .secondary-button {padding: 8px; font-size: 12px;}
+  .pause-menu .pause-utilities small {display: none;}
+  .pause-menu .menu-status {grid-column: 2; grid-row: 3; margin: 0 0 10px;}
+  .pause-menu .battle-limit-warning {grid-column: 1 / -1;}
+  .pause-menu .pause-exit-actions {grid-column: 2; grid-row: 4; gap: 4px;}
+  .pause-menu .menu-heading h2 {font-size: 32px;}
+  .menu-confirm {padding: 20px 24px;}
+  .settings-modal .menu-heading {padding: 14px 60px 12px 24px;}
+  .settings-modal .menu-heading h2 {font-size: 28px; margin-block: 6px;}
+  .settings-content {padding: 0 24px 16px;}
+  .settings-modal .settings-footer {padding: 10px 24px 12px;}
+}
+@media (prefers-reduced-motion: reduce) {
+  .pause-menu *, .menu-confirm *, .settings-modal * {scroll-behavior: auto;}
+}
+
+.settings-modal .modal-close {min-width: 44px; min-height: 44px;}
+
+/* Teaching stays below pause, viewport safety and recovery dialogs. */
+#coachingModal {z-index: 8;}
+.coaching-modal {max-width: 560px; padding: 20px; display: flex; flex-direction: column; gap: 12px; overflow: hidden;}
+.coaching-copy {min-height: 0; overflow-y: auto; overscroll-behavior: contain;}
+.coaching-copy:focus-visible {outline: 2px solid var(--gold); outline-offset: -2px;}
+.coaching-actions {flex-shrink: 0; display: grid; gap: 8px;}
+.coaching-modal h2 {margin: 8px 0 14px; font: 700 30px var(--display);}
+.coaching-modal p {line-height: 1.5; color: #e1e6d3;}
+.coaching-modal button {min-height: 44px; width: 100%; margin: 0;}
+.deck-tools {flex-wrap: wrap;}
+
+/* The real hint and Start/Resume controls leave the Build drawer on phones.
+   This is reserved grid space, never an overlay on placement sites or tools. */
+.campaign-teaching {display: contents;}
+.coach-next, .coach-rail-status {display: none;}
+.campaign-coach:focus-visible {outline: 2px solid var(--gold); outline-offset: -2px;}
+.app.protected-mobile.mobile-coaching {--mobile-teaching: 64px;}
+.protected-mobile .campaign-teaching {display: contents;}
+.protected-mobile.mobile-coaching .campaign-teaching {
+  display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 6px;
+  min-width: 0; min-height: 0; height: var(--mobile-teaching); padding: 4px 6px;
+  background: #203429; border-block: 1px solid #7f7952; overflow: hidden;
+}
+.protected-mobile.mobile-coaching .campaign-coach {
+  /* DM Sans text ranges extend 1px above the first compact line box. Keep
+     that ink inside this scroller without changing the reserved rail. */
+  display: block; min-width: 0; min-height: 0; height: 100%; margin: 0; padding: 1px 4px;
+  overflow-y: auto; overscroll-behavior: contain; scrollbar-width: thin;
+  font-size: 12px; line-height: 15px;
+}
+.protected-mobile.mobile-coaching .coach-next {display: block; color: #fff0be; font-size: 12px; line-height: 15px; font-weight: 600; margin-bottom: 5px;}
+.protected-mobile.mobile-coaching .campaign-coach b {display: block; margin: 0 0 3px;}
+.protected-mobile.mobile-coaching .teaching-actions {margin: 0; gap: 4px; align-self: center; flex-wrap: nowrap;}
+.protected-mobile.mobile-coaching .teaching-actions button {padding: 4px; min-width: 44px; height: 44px; font-size: 12px;}
+.protected-mobile.mobile-coaching #coachResume {min-width: 56px; background: #e5ca88; color: #17261c; font-weight: 700;}
+.protected-mobile.mobile-coaching .coach-rail-status {display: block; margin: 0; align-self: center; font-size: 12px; line-height: 16px;}
+/* Landscape keeps the full-height protected HUD/navigation at right. Only the
+   left field is shortened: 320px becomes 256px, above the 212px safety floor. */
+.protected-mobile.protected-sidebar.mobile-coaching .battlefield {margin-top: var(--mobile-teaching);}
+.protected-mobile.protected-sidebar.mobile-coaching .campaign-teaching {grid-column: 1; grid-row: 1; align-self: start;}
+.protected-mobile.protected-sidebar.mobile-coaching .command-deck {
+  max-height: calc(100% - var(--mobile-teaching) - var(--mobile-inset-top) - var(--mobile-inset-bottom));
+}
+.app.protected-mobile.protected-portrait.mobile-coaching {
+  --mobile-teaching: 88px;
+  grid-template-rows: var(--mobile-header) minmax(0, 1fr) var(--mobile-teaching) var(--mobile-dock) var(--mobile-navigation);
+}
+.protected-mobile.protected-portrait.mobile-coaching .campaign-teaching {grid-column: 1; grid-row: 3;}
+.protected-mobile.protected-portrait.mobile-coaching .protected-dock {grid-row: 4;}
+.protected-mobile.protected-portrait.mobile-coaching .protected-navigation {grid-row: 5;}
+.protected-mobile.protected-portrait.mobile-coaching .command-deck {
+  bottom: calc(var(--mobile-teaching) + var(--mobile-dock) + var(--mobile-navigation) + var(--mobile-inset-bottom));
+  max-height: calc(100% - var(--mobile-header) - var(--mobile-teaching) - var(--mobile-dock) - var(--mobile-navigation) - var(--mobile-inset-top) - var(--mobile-inset-bottom));
+}
+.app.protected-mobile.protected-short-portrait.mobile-coaching {--mobile-teaching: 44px;}
+.protected-mobile.protected-short-portrait.mobile-coaching .campaign-teaching {padding-block: 0; border-block: 0; box-shadow: inset 0 1px #7f7952;}
+.protected-mobile.protected-short-portrait.mobile-coaching .coach-next {line-height: 14px;}
+@media (max-height: 500px) and (orientation: landscape) {
+  .coaching-modal {padding: 16px;}
+  .coaching-actions {grid-template-columns: 1fr 1fr;}
+}
+
+/* Short coached portrait shares the field row with navigation instead of
+   stacking another 96px below it. At 320x430 the field is 216x278, with a
+   separate full-width teaching strip and original-objective dock. Every
+   existing control remains mounted, visible and at least 44px; no zoom or
+   safety threshold changes are needed. Safe-area padding still belongs to
+   the outer mobile grid, and genuinely undersized layouts still pause. */
+.app.protected-mobile.protected-short-portrait.mobile-coaching {
+  --mobile-navigation: 0px;
+  --mobile-rail: 104px;
+  grid-template-columns: minmax(0, 1fr) var(--mobile-rail);
+  grid-template-rows: var(--mobile-header) minmax(0, 1fr) var(--mobile-teaching) var(--mobile-dock);
+}
+.protected-mobile.protected-short-portrait.mobile-coaching .campaign-teaching {
+  grid-column: 1 / -1;
+}
+.protected-mobile.protected-short-portrait.mobile-coaching .protected-dock {
+  grid-column: 1 / -1;
+}
+.protected-mobile.protected-short-portrait.mobile-coaching .protected-navigation {
+  grid-column: 2; grid-row: 2;
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-rows: 44px 92px minmax(92px, 1fr);
+  gap: 4px; padding: 6px;
+}
+.protected-mobile.protected-short-portrait.mobile-coaching .protected-navigation .compact-build {
+  grid-column: 1; grid-row: 1; width: 100%; height: 44px;
+}
+.protected-mobile.protected-short-portrait.mobile-coaching .protected-navigation .toolbelt {
+  grid-column: 1; grid-row: 2; position: static; transform: none;
+  justify-self: center; grid-template-columns: repeat(2, 44px);
+  grid-template-rows: repeat(2, 44px); gap: 4px;
+}
+.protected-mobile.protected-short-portrait.mobile-coaching .protected-navigation .bottom-map {
+  grid-column: 1; grid-row: 3; position: static; transform: none;
+  align-self: end; width: 100%;
+  grid-template-columns: repeat(2, 44px); grid-template-rows: repeat(2, 44px); gap: 4px;
+}
+.protected-mobile.protected-short-portrait.mobile-coaching #home { grid-column: 1; grid-row: 1; }
+.protected-mobile.protected-short-portrait.mobile-coaching #front { grid-column: 2; grid-row: 1; }
+.protected-mobile.protected-short-portrait.mobile-coaching #minimap { grid-column: 1 / -1; grid-row: 2; }

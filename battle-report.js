@@ -171,7 +171,7 @@ export function createBattleJournal(game, { resumed = false, mode = 'skirmish', 
   const roster = getRuleset(game.ruleset.id, game.ruleset.revision);
   if (game.units !== roster.units || game.buildings !== roster.buildings) fail('game definitions do not match its ruleset.');
   const identity = suppliedIdentity === null
-    ? identityOf(game, mode === 'lesson' ? { kind: 'lesson', id, revision: 1 } : scenarioForBattle(['challenge', 'trial'].includes(mode) ? id : null, mode === 'campaign' ? id : null))
+    ? identityOf(game, mode === 'lesson' ? { kind: 'lesson', id, revision: 1 } : scenarioForBattle(['challenge', 'trial'].includes(mode) ? id : null, mode === 'campaign' ? id : null, game))
     : validateBattleIdentity(suppliedIdentity);
   if (identity.ruleset.id !== roster.id || identity.ruleset.revision !== roster.revision || identity.map.id !== map.id || identity.map.revision !== map.revision) fail('identity does not match the recorded game.');
   if (id !== null && (identity.scenario.id !== id || identity.scenario.kind !== (mode === 'challenge' ? 'trial' : mode))) fail('scenario identity does not match the recording context.');

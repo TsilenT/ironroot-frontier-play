@@ -1,6 +1,7 @@
 import { createViewportPause, inspectMobileGeometry, visibleViewportRect, insetViewportRect, fitMobileViewport, protectedToastTop } from './mobile-battlefield.js';
 import { createProfileSession, PROFILE_MARKER_KEY } from './profile-session.js';
 import { createInputScopeGuard } from './input-scope.js';
+import { createMenuHistory, seedMenuAncestors } from './menu-history.js';
 import {
   GamepadInput,
   moveCursor,
@@ -57,23 +58,33 @@ import {
 import { decodeBattle, encodeBattle, scenarioForBattle, identityOf } from './battle-codec.js';
 import { GameAudio } from './audio.js';
 import { advanceObjectiveBattle } from './objectives.js';
-import { campaignBuildChoices, campaignCoach, drawCampaignGuidance, guidancePointVisible } from './campaign-flow.js';
+import { campaignBuildChoices, campaignTeaching, campaignCoach, drawCampaignGuidance, guidancePointVisible } from './campaign-flow.js';
+import { missionBriefing } from './campaign-presentation.js';
 import { createProtectedObjectiveMonitor, protectedLossDetails } from './protected-objectives.js';
 import { createObjectiveAlertPolicy } from './objective-alerts.js';
 import {
-  ALL_CAMPAIGN_CHAPTERS as CAMPAIGN_CHAPTERS,
-  ALL_CAMPAIGN_MISSIONS as CAMPAIGN_MISSIONS,
+  ALL_CAMPAIGN_CHAPTERS as LEGACY_CAMPAIGN_CHAPTERS,
+  ONBOARDING_CHAPTER,
+  CAMPAIGN_PROGRESS_MISSIONS as CAMPAIGN_MISSIONS,
   isIntroMission,
   createCampaignMission,
+  createCampaignRestart,
+  createProgressionCampaignMission,
+  getCampaignLaunchMission,
+  getCampaignMission,
+  campaignScenarioForGame,
+  getCampaignRoster,
   evaluateCampaignMission,
   getCampaignTargets,
   readCampaignProgress,
+  readCampaignProgressState,
   mergeCampaignProgress,
   writeCampaignProgress,
   recordCampaignResult,
-  getCampaignOverview,
+  getProgressionCampaignOverview as getCampaignOverview,
   isMissionUnlocked,
 } from './campaign.js';
+const CAMPAIGN_CHAPTERS = [ONBOARDING_CHAPTER, ...LEGACY_CAMPAIGN_CHAPTERS];
 const $ = (id) => document.getElementById(id);
 const renderer = new Renderer($('battle'), $('minimap'));
 
@@ -127,7 +138,7 @@ function populateFieldGuide(context = null) {
     <div class="codex-body"><p><b>Upgrades:</b> ${b.upgradeCosts.map(n).join(' / ')} gold</p><p><b>Use it for:</b> ${esc(b.advantages)}</p><p><b>Watch out for:</b> ${esc(b.cautions)}</p>${list(b.mechanics)}</div></details>`,
   ).join('');
   $('economyCodex').innerHTML = `${stats([
-    ['Starting gold', n(ECONOMY_GUIDE.startingGold)],
+    [ECONOMY_GUIDE.startingGoldLabel || 'Starting gold', n(ECONOMY_GUIDE.startingGold)],
     ['Base income', `${n(ECONOMY_GUIDE.baseIncome)} /s`],
     ['Citadel health', n(ECONOMY_GUIDE.citadelHp)],
     ['Mine cap', n(ECONOMY_GUIDE.mineCap)],
@@ -172,6 +183,14 @@ let mode = 'campaign',
   selectedCampaign = CAMPAIGN_MISSIONS[0].id,
   selectedChapter = CAMPAIGN_CHAPTERS[0].id;
 let expandedBuilds = false, resumedBattle = false, coachEnabled = true;
+let campaignPage = 'mission', briefingMission = null;
+// A teaching hold stops simulation, while ordinary battle commands remain available.
+// Manual, visibility, viewport and storage pauses keep their existing guards.
+let coachingHold = false;
+let navigationAttempt = 0, navigationGame = null;
+var menuHistory = null;
+let navigationAway = false;
+function syncMenuHistory() { if (!navigationAway && !document.hidden) menuHistory?.sync(); }
 const labels = {
   barracks: ['Barracks', 'Shielded warriors', '9s / wave'],
   archery: ['Archery', 'Ranged support', '10s / wave'],
@@ -180,8 +199,9 @@ const labels = {
   mint: ['Gold mine', 'Grow your economy', '+2.5 gold /s'],
   sanctum: ['Sanctum', 'Magic & splash', '14s / wave'],
   aerie: ['Aerie', 'Flying raiders', '15s / wave'],
+  wardenLodge: ['Warden lodge', 'Durable front line', '12s / wave'],
 };
-const profileSession = createProfileSession(() => localStorage, { requiredProtocolVersion: 3 });
+const profileSession = createProfileSession(() => localStorage, { requiredProtocolVersion: 4 });
 const storage = createStorage(() => profileSession.storage);
 let recoveryHold = null,
   profileGate = null,
@@ -203,8 +223,7 @@ let knownHistory = historySession.snapshot().rows,
 let campaignProgress = readCampaignProgress(storage),
   progressDirty = false;
 const initialOverview = getCampaignOverview(campaignProgress);
-const nextCampaign = initialOverview.introduction.recommended
-  ? initialOverview.introduction.nextMissionId : initialOverview.nextMissionId;
+const nextCampaign = initialOverview.nextMissionId || initialOverview.missions[0].id;
 if (nextCampaign) {
   selectedCampaign = nextCampaign;
   selectedChapter = CAMPAIGN_MISSIONS.find(
@@ -397,6 +416,9 @@ function canInteract() {
   return (
     started &&
     !paused &&
+    !document.hidden &&
+    !viewportPause.active &&
+    $('coachingModal').classList.contains('hidden') &&
     !recoveryHold &&
     !profileGate &&
     !battleSafetyReason &&
@@ -407,12 +429,16 @@ function canInteract() {
 }
 function selectBuild(type) {
   if (!canInteract()) return;
+  if (!Object.hasOwn(game.buildings || BUILDINGS, type)) {
+    toast('That building is not available in this battle.');
+    return;
+  }
   if (!campaignBuildChoices(currentCampaign, { expanded: expandedBuilds, resumed: resumedBattle, buildings: game.buildings || BUILDINGS }).includes(type)) {
     toast('Choose All buildings in the build bar to use this building.');
     return;
   }
   if (game.state.gold[0] < (game.buildings || BUILDINGS)[type].cost) {
-    toast(`Need ${(game.buildings || BUILDINGS)[type].cost} gold for ${(game.buildings || BUILDINGS)[type].name}.`);
+    toast(`Need ${(game.buildings || BUILDINGS)[type].cost} gold for ${(game.buildings || BUILDINGS)[type].name}.${coachingHold ? ' Resume battle to earn more gold.' : ''}`);
     sound('error');
     return;
   }
@@ -422,6 +448,10 @@ function selectBuild(type) {
   follow = false;
   updateSelection();
   syncChoice();
+  if (coachingHold && coachEnabled && ui.build) {
+    const site = campaignCoach(game, currentCampaign, ui)?.site;
+    if (site) { renderer.camera = site.x; renderer.clampCamera(); }
+  }
   setCompactBuildOpen(false);
   sound('click');
 }
@@ -464,24 +494,49 @@ function updateCampaignDeck() {
   $('allBuildings').setAttribute('aria-expanded', String(expandedBuilds));
   for (const card of document.querySelectorAll('.build-card'))
     card.classList.toggle('hidden', started && !choices.includes(card.dataset.type));
+  $('coachResume').classList.toggle('hidden', !coachingHold || !canInteract());
+  $('coachReplay').classList.toggle('hidden', coachingHold || !canInteract() || !campaignTeaching(currentCampaign));
   const hint = started && !objectiveOutcome && game.state.winner === null ? campaignCoach(game, currentCampaign, ui) : null;
   const show = coachEnabled && !!hint && canInteract() && !dialogLayers.some(layer => !layer.classList.contains('hidden'));
   const compact = $('app').classList.contains('protected-compact');
   const open = $('app').classList.contains('compact-build-open');
   $('campaignCoach').classList.toggle('hidden', !show);
   $('toggleCoach').classList.toggle('hidden', !hint);
-  $('toggleCoach').textContent = coachEnabled ? 'Hide hints' : 'Show hints';
+  $('toggleCoach').textContent = compact ? coachEnabled ? 'Hide' : 'Show' : coachEnabled ? 'Hide hints' : 'Show hints';
+  $('toggleCoach').setAttribute('aria-label', coachEnabled ? 'Hide hints' : 'Show hints');
+  $('toggleCoach').title = coachEnabled ? 'Hide hints' : 'Show hints';
   $('toggleCoach').setAttribute('aria-pressed', String(coachEnabled));
+  const teaching = $('campaignTeaching');
+  // Any enabled applicable hint belongs outside the mobile drawer, including
+  // a restored tutorial. Latch it so Hide/Show remains reachable. This is only
+  // presentation: resumed battles never gain a teaching hold from their hints.
+  if (coachingHold || (coachEnabled && hint)) teaching.classList.add('coach-started');
+  const available = started && !objectiveOutcome && game.state.winner === null &&
+    (coachingHold || (!!hint && teaching.classList.contains('coach-started')));
+  const rail = compact && available;
+  const layoutChanged = $('app').classList.contains('mobile-coaching') !== rail;
+  $('app').classList.toggle('mobile-coaching', rail);
+  const parent = rail ? $('app') : $('commandDeck');
+  if (teaching.parentNode !== parent) parent.insertBefore(teaching, rail ? $('commandDeck') : $('deckHeading'));
+  teaching.classList.toggle('hidden', !rail && !show && !coachingHold && !hint);
+  $('coachResume').textContent = compact ? game.state.time === 0 ? 'Start' : 'Resume'
+    : game.state.time === 0 ? 'Start battle' : 'Resume battle';
+  $('coachResume').setAttribute('aria-label', game.state.time === 0 ? 'Start battle' : 'Resume battle');
+  $('coachRailStatus').classList.toggle('hidden', !rail || show);
+  $('coachRailStatus').textContent = coachingHold ? 'Paused. Start when ready.' : 'Hints hidden. Battle continues.';
+
   let highlighted = show ? document.querySelector(hint.control) : null;
   let text = hint?.text || '';
+  if (show && coachingHold && ui.build && game.state.gold[0] < (game.buildings || BUILDINGS)[ui.build]?.cost)
+    text += ' Time and income are stopped during this teaching pause. Resume when you want to earn more gold.';
   if (show && compact && !open && hint.control.startsWith('[data-type=') && !ui.build) {
     highlighted = $('compactBuild');
     text = 'Open Build, then ' + text.charAt(0).toLowerCase() + text.slice(1);
   }
   const point = hint?.site || game.state.buildings.find(b => b.id === hint?.buildingId && b.hp > 0);
   if (show && point && !guidancePointVisible(renderer, game, point) && !open) {
-    highlighted = $('home');
-    text = 'Use Home to return to your buildings. ' + text;
+    highlighted = $('minimap');
+    text = 'Pan along the road or use the minimap to bring the suggested site into view. ' + text;
   }
   if (!coachControlVisible(highlighted)) highlighted = null;
   for (const element of document.querySelectorAll('.coach-highlight'))
@@ -489,10 +544,25 @@ function updateCampaignDeck() {
   ui.coachSite = show ? hint.site : null;
   ui.coachBuilding = show ? hint.buildingId : null;
   if (show) {
+    let next = hint.title;
+    if (ui.spell) next = 'Tap enemy troops to fire Arrow volley.';
+    else if (ui.build) next = hint.site ? 'Tap a green site. Gold ring suggested.'
+      : game.state.gold[0] < (game.buildings || BUILDINGS)[ui.build]?.cost
+        ? 'Need more gold. Resume to earn income.' : 'No suggested site. Choose another site or building.';
+    else if (hint.buildType) next = `${ui.selected ? 'Close details, then Build → ' : compact && !open ? 'Build → ' : 'Choose '}${(game.buildings || BUILDINGS)[hint.buildType].name}.`;
+    else if (hint.control === '#upgrade') next = 'Upgrade the selected building.';
+    else if (hint.buildingId) next = 'Tap your marked building to manage it.';
+    else if (hint.control === '#front') next = coachingHold ? 'Start when ready. Front follows your army.' : 'Use Front to follow your army.';
+    if (show && point && !guidancePointVisible(renderer, game, point) && !open) next = 'Pan or use the minimap to find the marked site.';
+    if (coachingHold) next = 'Paused. ' + next;
+    if ($('coachNext').textContent !== next || $('coachTitle').textContent !== hint.title || $('coachText').textContent !== text)
+      $('campaignCoach').scrollTop = 0;
+    $('coachNext').textContent = next;
     if ($('coachTitle').textContent !== hint.title) $('coachTitle').textContent = hint.title;
     if ($('coachText').textContent !== text) $('coachText').textContent = text;
     highlighted?.classList.add('coach-highlight');
   }
+  if (layoutChanged) syncProtectedLayout();
 }
 $('allBuildings').onclick = () => {
   if (!canInteract()) return;
@@ -507,8 +577,52 @@ $('allBuildings').onclick = () => {
 $('toggleCoach').onclick = () => {
   if (!canInteract()) return;
   coachEnabled = !coachEnabled;
+  if (coachEnabled) $('campaignTeaching').classList.add('coach-started');
+  if (!coachEnabled && $('campaignCoach').contains(document.activeElement)) $('toggleCoach').focus({ preventScroll: true });
   updateCampaignDeck();
 };
+function beginCampaignCoaching({ manual = false } = {}) {
+  const lesson = campaignTeaching(currentCampaign, manual ? {} : {
+    resumed: resumedBattle,
+    completed: !!campaignProgress.missions[currentCampaign]?.completed,
+    learnedBasics: !!campaignProgress.missions['roadside-watch']?.completed || !!campaignProgress.missions['first-watch']?.completed,
+  });
+  if (!lesson || !started || game.state.winner !== null || objectiveOutcome ||
+      (manual && (!canInteract() || viewportPause.active))) return;
+  coachingHold = true;
+  coachEnabled = true;
+  inputScope.interrupt();
+  resetBattleGesture();
+  $('coachingTitle').textContent = lesson.title;
+  $('coachingText').textContent = lesson.text;
+  $('coachingModal').classList.remove('hidden');
+  pauseControl('resume');
+  $('battleClockLabel').textContent = 'TEACHING PAUSE';
+  if (manual) updateHUD();
+  else updateCampaignDeck();
+  syncDialogs();
+  if (manual) save();
+}
+function planWithCoaching() {
+  inputScope.interrupt();
+  $('coachingModal').classList.add('hidden');
+  syncDialogs();
+  if (!canInteract() || viewportPause.active) return;
+  setCompactBuildOpen(false);
+  updateHUD();
+  const hint = campaignCoach(game, currentCampaign, ui);
+  const target = hint && document.querySelector(hint.control);
+  if (coachControlVisible(target)) target.focus({ preventScroll: true });
+  else if ($('app').classList.contains('protected-compact')) $('compactBuild').focus({ preventScroll: true });
+  else $('battle').focus();
+}
+$('coachingPlan').onclick = planWithCoaching;
+$('coachingPlay').onclick = () => pause(false, { explicit: true });
+$('coachResume').onclick = () => pause(false, { explicit: true });
+$('coachReplay').onclick = () => beginCampaignCoaching({ manual: true });
+function toggleBattlePause() {
+  pause(coachingHold && !paused ? false : !paused, { explicit: true });
+}
 function coachControlVisible(element) {
   if (!element || !controlIsVisible(element)) return false;
   const rect = element.getBoundingClientRect();
@@ -614,7 +728,7 @@ $('rally').onclick = () => {
   setCompactBuildOpen(false);
   sound('click');
 };
-function pauseControl(mode = 'pause') {
+function pauseControl(mode = coachingHold ? 'resume' : 'pause') {
   const b = $('pause');
   b.innerHTML =
     mode === 'pause'
@@ -639,6 +753,7 @@ function pauseControl(mode = 'pause') {
 }
 pauseControl();
 function pause(value, { explicit = false } = {}) {
+  if (!value && document.hidden) return;
   if (!value && (recoveryHold || profileGate)) {
     showRecoverySettings();
     return;
@@ -660,14 +775,21 @@ function pause(value, { explicit = false } = {}) {
     $('viewportModal').classList.add('hidden');
     interruptMobileInput();
   }
+  if (!value && explicit && coachingHold) {
+    coachingHold = false;
+    $('coachingModal').classList.add('hidden');
+    inputScope.interrupt();
+    resetBattleGesture();
+    setCompactBuildOpen(false);
+  }
   if (value) setCompactBuildOpen(false);
   paused = value;
   $('pauseVeil').classList.toggle('hidden', !paused);
-  pauseControl(paused ? 'resume' : 'pause');
+  pauseControl(paused || coachingHold ? 'resume' : 'pause');
   if (paused) save();
   syncDialogs();
 }
-$('pause').onclick = () => pause(!paused, { explicit: true });
+$('pause').onclick = toggleBattlePause;
 $('resume').onclick = () => pause(false, { explicit: true });
 $('saveExit').onclick = () => {
   if (recoveryHold || profileGate) {
@@ -683,6 +805,8 @@ $('saveExit').onclick = () => {
   }
   if (!save() || (progressDirty && !persistProgress())) {
     if (viewportPause.active || battleSafetyReason) $('viewportSaveStatus').textContent = 'Saving failed. This battle remains paused on this page. Keep it open and try again.';
+    $('pauseSaveStatus').textContent = 'Could not save. This battle stays paused here. Keep this page open, free some storage and try again.';
+    $('pauseSaveStatus').classList.add('save-warning');
     toast(
       'Could not save on this browser. Keep this battle open or free some storage, then try again.',
     );
@@ -716,13 +840,9 @@ $('front').onclick = () => {
 };
 function showHelp() {
   helpWasPaused = paused;
-  if (started && game.state.winner === null) {
-    setCompactBuildOpen(false);
-    paused = true;
-    $('pauseVeil').classList.add('hidden');
-  }
+  if (started && game.state.winner === null && !objectiveOutcome) pause(true);
   $('helpModal').classList.remove('hidden');
-  $('closeHelp').focus();
+  syncDialogs();
 }
 function hideHelp() {
   $('helpModal').classList.add('hidden');
@@ -800,6 +920,7 @@ function start(
   restored = null,
   restoredChallenge = null,
   restoredCampaign = null,
+  { fresh = false, scenarioRevision = null } = {},
 ) {
   syncProfileSafety();
   if (recoveryHold || profileGate) {
@@ -816,16 +937,29 @@ function start(
     : mode === 'campaign'
       ? selectedCampaign
       : null;
-  if (cid && !isMissionUnlocked(campaignProgress, cid)) {
+  const campaignRevision = cid
+    ? restored ? campaignScenarioForGame(restored, cid).revision
+      : scenarioRevision ?? (isIntroMission(cid) ? 1 : getCampaignLaunchMission(cid, campaignProgress).scenarioRevision)
+    : 1;
+  if (cid && !isMissionUnlocked(campaignProgress, cid, campaignRevision)) {
     toast('Complete the preceding missions to unlock this one.');
+    return;
+  }
+  // A restart already owns its verified candidate checkpoint. Recheck before
+  // replacing the retained game; claiming here could adopt another tab's save.
+  if (fresh && battleSession.status() !== 'current') {
+    $('restartStatus').textContent = 'The checkpoint changed or storage is unavailable. Your current battle stays paused here. Return to title to continue the newer checkpoint.';
     return;
   }
   battleSafetyReason = null;
   $('battleLimitWarning').classList.add('hidden');
   $('resume').disabled = false;
+  coachingHold = false;
+  $('campaignTeaching').classList.remove('coach-started');
+  $('coachingModal').classList.add('hidden');
   currentCampaign = cid;
   expandedBuilds = !!campaignProgress.missions[cid]?.completed;
-  resumedBattle = !!restored;
+  resumedBattle = !!restored && !fresh;
   coachEnabled = !campaignProgress.missions[cid]?.completed;
   currentChallenge = restored
     ? restoredChallenge
@@ -835,7 +969,9 @@ function start(
   game =
     restored ||
     (currentCampaign
-      ? createCampaignMission(currentCampaign)
+      ? (isIntroMission(currentCampaign) || (scenarioRevision === 1 && !getCampaignMission(currentCampaign).rulesetId?.startsWith('frontier-campaign-'))
+        ? createCampaignMission(currentCampaign)
+        : createProgressionCampaignMission(currentCampaign, campaignProgress))
       : currentChallenge
         ? createChallenge(currentChallenge)
         : new Game({ difficulty, seed: Date.now() >>> 0, mapId: selectedMap, mapRevision: 1, rulesetId: selectedRuleset, rulesetRevision: 1 }));
@@ -854,8 +990,10 @@ function start(
   viewportPause.clear();
   $('viewportModal').classList.add('hidden');
   beginProtectedObjectives();
-  beginBattleReport(!!restored);
-  battleSession.claim();
+  beginBattleReport(!!restored && !fresh);
+  // Keep the exact verified ownership state on restart. Every later save still
+  // checks it, so a write arriving during setup cannot be reclaimed/overwritten.
+  if (!fresh) battleSession.claim();
   padHud = false;
   padPoint = { x: renderer.width / 2, y: renderer.height / 2 };
   started = true;
@@ -869,6 +1007,7 @@ function start(
   renderer.vfx?.reset();
   cancel();
   $('welcome').classList.add('hidden');
+  $('restartModal').classList.add('hidden');
   $('resultModal').classList.add('hidden');
   $('pauseVeil').classList.add('hidden');
   const mission =
@@ -903,14 +1042,14 @@ function start(
   );
   $('speed').textContent = '1×';
   pauseControl();
-  $('pause').onclick = () => pause(!paused, { explicit: true });
-  renderer.camera = restored ? game.state.frontline : 450;
+  $('pause').onclick = toggleBattlePause;
+  renderer.camera = restored && !fresh ? game.state.frontline : 450;
   renderer.clampCamera();
   initAudio();
   sound('build');
   $('toast').classList.remove('show');
   if (!mission || !coachEnabled || !campaignCoach(game, mission.id, ui)) toast(
-    restored
+    restored && !fresh
       ? 'Battle resumed.'
       : mission
         ? mission.objective
@@ -923,7 +1062,9 @@ function start(
   updateHUD();
   syncViewportSafety();
   if (game.limitReason) holdBattleSafety(game.limitReason);
+  beginCampaignCoaching();
   save();
+  globalThis.queueMicrotask?.(syncMenuHistory);
 }
 function beginProtectedObjectives() {
   protectedMonitor = currentCampaign
@@ -995,9 +1136,9 @@ function syncProtectedLayout() {
   const landscape = !!window.matchMedia?.('(max-height: 500px) and (orientation: landscape)').matches;
   const portrait = !!window.matchMedia?.('(max-width: 700px) and (orientation: portrait)').matches;
   const viewport = visibleViewportRect(window.innerWidth, window.innerHeight, window.visualViewport);
-  const sidebar = landscape && viewport.height < 360;
+  const sidebar = landscape && (viewport.height < 360 || $('app').classList.contains('mobile-coaching'));
   const shortPortrait = portrait && viewport.height < 560;
-  const next = sidebar ? 'sidebar' : shortPortrait ? 'portrait-short' : landscape ? 'landscape' : portrait ? 'portrait' : 'ordinary';
+  const next = (sidebar ? 'sidebar' : shortPortrait ? 'portrait-short' : landscape ? 'landscape' : portrait ? 'portrait' : 'ordinary') + ($('app').classList.contains('mobile-coaching') ? ':coaching' : '');
   const fitted = fitMobileViewport($('app'), viewport, landscape || portrait);
   const changed = mobileLayout !== next;
   const focused = document.activeElement;
@@ -1166,7 +1307,7 @@ function beginBattleReport(resumed) {
   try {
     battleJournal = createBattleJournal(game, {
       resumed,
-      identity: identityOf(game, scenarioForBattle(currentChallenge, currentCampaign)),
+      identity: identityOf(game, scenarioForBattle(currentChallenge, currentCampaign, game)),
       mode: currentCampaign ? 'campaign' : currentChallenge ? 'challenge' : 'skirmish',
       id: currentCampaign || currentChallenge,
       name: authored?.name || `${game.map.name} skirmish`,
@@ -1257,11 +1398,15 @@ function showTitle({ focusStart = false, focusResume = false } = {}) {
   padHud = false;
   started = false;
   paused = false;
+  coachingHold = false;
+  $('coachingModal').classList.add('hidden');
   cancel();
   renderer.vfx?.reset();
   $('resultModal').classList.add('hidden');
+  $('restartModal').classList.add('hidden');
   $('pauseVeil').classList.add('hidden');
   $('welcome').classList.remove('hidden');
+  campaignPage = 'mission';
   setMode(mode);
   updateResume();
   syncDialogs();
@@ -1275,7 +1420,7 @@ $('playAgain').onclick = () => {
   if (currentCampaign && objectiveOutcome?.failed) {
     mode = 'campaign';
     selectedCampaign = currentCampaign;
-    start();
+    start(null, null, null, { scenarioRevision: campaignScenarioForGame(game, currentCampaign).revision });
     return;
   }
   if (currentChallenge && objectiveOutcome?.failed) {
@@ -1287,7 +1432,7 @@ $('playAgain').onclick = () => {
   if (currentCampaign) {
     mode = 'campaign';
     const overview = getCampaignOverview(campaignProgress);
-    selectedCampaign = (isIntroMission(currentCampaign) ? overview.introduction.nextMissionId : null)
+    selectedCampaign = (isIntroMission(currentCampaign) ? overview.legacyIntroduction.nextMissionId : null)
       || overview.nextMissionId || currentCampaign;
     selectedChapter = CAMPAIGN_MISSIONS.find(
       (m) => m.id === selectedCampaign,
@@ -1300,7 +1445,7 @@ $('replayMission').onclick = () => {
   if (!currentCampaign || !objectiveOutcome?.completed || objectiveOutcome.stars >= 3) return;
   mode = 'campaign';
   selectedCampaign = currentCampaign;
-  start();
+  start(null, null, null, { scenarioRevision: campaignScenarioForGame(game, currentCampaign).revision });
 };
 $('resultMenu').onclick = () => showTitle({ focusStart: true });
 $('inspectBattle').onclick = () => {
@@ -1365,7 +1510,7 @@ function save() {
   }
   if (!ok && !saveWarning) {
     toast(
-      paused ? 'Saving unavailable. Your battle remains paused on this page; keep it open.' : 'Autosave unavailable. Your battle is still running, but keep this page open.',
+      paused || coachingHold ? 'Saving unavailable. Your battle remains paused on this page; keep it open.' : 'Autosave unavailable. Your battle is still running, but keep this page open.',
     );
     saveWarning = true;
   }
@@ -1502,7 +1647,7 @@ function finish() {
     won,
     draw,
     ...(game.schemaVersion === 3
-      ? { identity: identityOf(game, scenarioForBattle(currentChallenge, currentCampaign)) }
+      ? { identity: identityOf(game, scenarioForBattle(currentChallenge, currentCampaign, game)) }
       : { challengeId: currentChallenge, campaignId: currentCampaign, ...(game.map.id !== 'classic' ? { mapId: game.map.id } : {}) }),
     difficulty: game.difficulty,
     time: game.state.time,
@@ -1521,11 +1666,20 @@ function finish() {
     renderChallenge();
   }
   if (mission && won) {
+    const priorRoster = getCampaignRoster(campaignProgress);
     campaignProgress = recordCampaignResult(
       campaignProgress,
       currentCampaign,
       game,
     );
+    const earnedRoster = getCampaignRoster(campaignProgress);
+    const newBuildings = earnedRoster.buildings.filter(type => !priorRoster.buildings.includes(type));
+    if (newBuildings.length) {
+      const unlock = document.createElement('p');
+      unlock.className = 'campaign-earned';
+      unlock.textContent = 'New buildings: ' + newBuildings.map(type => getRuleset(earnedRoster.rulesetId).buildings[type].name).join(', ') + '.';
+      $('resultObjectives').append(unlock);
+    }
     persistProgress();
     renderCampaign();
   }
@@ -1618,13 +1772,14 @@ $('battle').addEventListener('pointerup', (e) => {
   ui.dragging = false;
   $('battle').classList.remove('dragging');
   if (panOnly || moved || !canInteract()) return;
-  activateBattlePoint(w);
+  // Repeat is an explicit mouse gesture, never a touch/pen or controller modifier.
+  activateBattlePoint(w, { repeatBuild: e.pointerType === 'mouse' && e.shiftKey });
 });
 $('battle').addEventListener('mouseup', (e) => {
   // pointerup only fires after the final button in a chord is released.
   if (pointer?.button === e.button) resetBattleGesture();
 });
-function activateBattlePoint(w) {
+function activateBattlePoint(w, { repeatBuild = false } = {}) {
   if (!canInteract() || $('app').classList.contains('compact-build-open')) return;
   if (ui.build) {
     const bounds = buildBounds(game.map, 0);
@@ -1645,9 +1800,10 @@ function activateBattlePoint(w) {
       toast(
         `${(game.buildings || BUILDINGS)[ui.build].name} raised. ${(game.buildings || BUILDINGS)[ui.build].unit ? 'First troops in a moment.' : 'Your frontier grows.'}`,
       );
-      if (game.state.gold[0] < (game.buildings || BUILDINGS)[ui.build].cost) {
+      if (!repeatBuild || game.state.gold[0] < (game.buildings || BUILDINGS)[ui.build].cost) {
         ui.build = null;
         syncChoice();
+        setCompactBuildOpen(false);
       }
     } else {
       toast(result.reason);
@@ -1725,17 +1881,26 @@ $('minimap').addEventListener('click', (e) => {
 window.addEventListener('keydown', (e) => {
   if (e.repeat && e.code !== 'ArrowLeft' && e.code !== 'ArrowRight') return;
   if (e.code === 'Escape') {
-    if (!$('backupModal').classList.contains('hidden')) hideBackup();
+    e.preventDefault();
+    if (!$('restartModal').classList.contains('hidden')) hideRestart();
+    else if (!$('backupModal').classList.contains('hidden')) hideBackup();
     else if (!$('settingsModal').classList.contains('hidden')) hideSettings();
     else if (!$('helpModal').classList.contains('hidden')) hideHelp();
     else if (!$('resultModal').classList.contains('hidden') && $('resultReport').querySelector('details')?.open) {
       const report = $('resultReport').querySelector('details');
       report.open = false;
       report.querySelector('summary').focus();
-    } else cancel();
+    } else if (!$('viewportModal').classList.contains('hidden')) return;
+    else if (!$('pauseVeil').classList.contains('hidden')) pause(false, { explicit: true });
+    else if (!$('coachingModal').classList.contains('hidden')) planWithCoaching();
+    else if (started && game.state.winner === null && !objectiveOutcome && !ui.build && !ui.spell && !ui.selected) pause(true);
+    else cancel();
+    return;
   }
   if (
     !started ||
+    !$('coachingModal').classList.contains('hidden') ||
+    !$('restartModal').classList.contains('hidden') ||
     !$('backupModal').classList.contains('hidden') ||
     !$('settingsModal').classList.contains('hidden') ||
     !$('helpModal').classList.contains('hidden') ||
@@ -1743,10 +1908,13 @@ window.addEventListener('keydown', (e) => {
     !$('viewportModal').classList.contains('hidden')
   )
     return;
+  // Space/Page/arrow keys scroll the focused lesson; they are not battle commands.
+  if ($('campaignCoach').contains(e.target)) return;
   if (e.code === 'Space' && !nativeSpaceTarget(e.target)) {
     e.preventDefault();
-    pause(!paused, { explicit: true });
+    toggleBattlePause();
   }
+  if (paused) return;
   if (e.code === 'ArrowLeft') {
     e.preventDefault();
     renderer.pan(75);
@@ -1841,6 +2009,7 @@ function updateHUD() {
   $('army').textContent = army >= 70 ? '70/70' : army;
   $('army').title = `${army} / 70 army capacity`;
   $('time').textContent = timeText(s.time);
+  $('battleClockLabel').textContent = coachingHold ? 'TEACHING PAUSE' : 'BATTLE TIME';
   for (const [i, prefix] of [
     [0, 'your'],
     [1, 'enemy'],
@@ -1920,7 +2089,7 @@ let heardEffects = new WeakSet(),
 function updateAudio() {
   const ended = game.state.winner !== null || objectiveOutcome;
   audio.setScene(
-    document.hidden || paused
+    document.hidden || paused || coachingHold
       ? 'paused'
       : !started
         ? 'menu'
@@ -1930,7 +2099,7 @@ function updateAudio() {
             : 'defeat'
           : 'battle',
   );
-  if (!started || paused || ended) return;
+  if (!started || paused || coachingHold || ended) return;
   const s = game.state;
   audio.setIntensity(
     Math.min(
@@ -1981,7 +2150,7 @@ function frame(now) {
   updateController(now);
   const dt = Math.min((now - last) / 1000, 0.1);
   last = now;
-  if (started && !paused && game.state.winner === null && !objectiveOutcome) {
+  if (started && !paused && !coachingHold && game.state.winner === null && !objectiveOutcome) {
     if (currentCampaign || currentChallenge) {
       const authored = currentCampaign
         ? CAMPAIGN_MISSIONS.find((m) => m.id === currentCampaign)
@@ -2018,7 +2187,7 @@ function frame(now) {
   }
   updateAudio();
   ui.paused =
-    paused || !started || game.state.winner !== null || !!objectiveOutcome;
+    paused || coachingHold || !started || game.state.winner !== null || !!objectiveOutcome;
   const missionTargets = currentCampaign
     ? getCampaignTargets(game, currentCampaign)
     : [];
@@ -2107,6 +2276,7 @@ function setMode(value) {
     .querySelector('.welcome')
     .classList.toggle('campaign-mode', mode === 'campaign');
   $('start').disabled = false;
+  $('start').classList.remove('hidden');
   $('start').innerHTML =
     mode === 'campaign'
       ? 'BEGIN MISSION <span>→</span>'
@@ -2115,6 +2285,7 @@ function setMode(value) {
         : 'BEGIN SKIRMISH <span>→</span>';
   renderChallenge();
   renderCampaign();
+  globalThis.queueMicrotask?.(syncMenuHistory);
 }
 function updateSkirmishRules() {
   const rules = getRuleset(selectedRuleset, 1);
@@ -2136,43 +2307,77 @@ for (const button of document.querySelectorAll('[data-mode]'))
     setMode(button.dataset.mode);
     sound('click');
   };
-function revealCampaignChapter() {
-  const strip = $('campaignChapters'), active = strip.querySelector('.active');
-  if (mode !== 'campaign' || !active || strip.clientWidth <= 0) return;
-  const frame = strip.getBoundingClientRect(), item = active.getBoundingClientRect();
-  // Only move this horizontal strip. scrollIntoView also moves the briefing/page.
-  if (item.left < frame.left) strip.scrollLeft += item.left - frame.left;
-  else if (item.right > frame.right) strip.scrollLeft += item.right - frame.right;
+function showCampaignPage(page, focusId) {
+  campaignPage = page;
+  renderCampaign();
+  $('campaignConfig').scrollTop = 0;
+  if (focusId) $(focusId).focus({ preventScroll: true });
+  globalThis.queueMicrotask?.(syncMenuHistory);
+}
+function selectCampaignMission(id) {
+  const mission = CAMPAIGN_MISSIONS.find(m => m.id === id);
+  if (!mission) return;
+  selectedCampaign = id;
+  selectedChapter = mission.chapterId;
+  showCampaignPage('mission', 'campaignMissionTitle');
 }
 function renderCampaign() {
   const overview = getCampaignOverview(campaignProgress),
-    chapters = [overview.introduction.chapter, ...overview.chapters],
-    missions = [...overview.introduction.missions, ...overview.missions],
-    mission =
-      CAMPAIGN_MISSIONS.find((m) => m.id === selectedCampaign) ||
-      CAMPAIGN_MISSIONS[0],
-    chapter =
-      CAMPAIGN_CHAPTERS.find((c) => c.id === selectedChapter) ||
-      CAMPAIGN_CHAPTERS[0];
+    legacy = overview.legacyIntroduction,
+    showLegacy = legacy.cleared > 0 || isIntroMission(selectedCampaign) || isIntroMission(currentCampaign),
+    chapters = [...overview.chapters, ...(showLegacy ? [legacy.chapter] : [])],
+    missions = [...overview.missions, ...(showLegacy ? legacy.missions : [])],
+    mission = missions.find((m) => m.id === selectedCampaign) || overview.missions[0],
+    chapter = chapters.find((c) => c.id === selectedChapter) || chapters.find(c => c.id === mission.chapterId);
+  selectedCampaign = mission.id;
+  selectedChapter = chapter.id;
+  const chapterMissions = missions.filter(m => m.chapterId === chapter.id),
+    chapterOverview = chapters.find(c => c.id === chapter.id),
+    position = chapterMissions.findIndex(m => m.id === mission.id),
+    missionIndex = missions.findIndex(m => m.id === mission.id),
+    record = campaignProgress.missions[mission.id];
+  for (const page of ['story', 'chapter', 'mission'])
+    $(`campaign${page[0].toUpperCase() + page.slice(1)}Page`).classList.toggle('hidden', campaignPage !== page);
+  $('campaignStoryNav').toggleAttribute('aria-current', campaignPage === 'story');
+  if (campaignPage === 'story') $('campaignStoryNav').setAttribute('aria-current', 'page');
+  $('campaignChapterNav').classList.toggle('hidden', campaignPage === 'story');
+  $('campaignStoryNav').nextElementSibling.classList.toggle('hidden', campaignPage === 'story');
+  $('campaignChapterNav').textContent = chapter.optional || chapter.id === ONBOARDING_CHAPTER.id ? chapter.name : `Chapter ${chapter.number} · ${chapter.name}`;
+  $('campaignChapterNav').toggleAttribute('aria-current', campaignPage === 'chapter');
+  if (campaignPage === 'chapter') $('campaignChapterNav').setAttribute('aria-current', 'page');
+  document.querySelectorAll('[data-mission-path]').forEach(el => el.classList.toggle('hidden', campaignPage !== 'mission'));
+  $('campaignMissionPosition').textContent = `Mission ${position + 1} of ${chapterMissions.length}`;
+  $('campaignChapterLabel').textContent = chapter.optional ? 'LEGACY LESSONS' : chapter.id === ONBOARDING_CHAPTER.id ? 'START HERE' : `CHAPTER ${chapter.number} · ${chapter.name}`;
+  $('campaignChapterProgress').textContent = `${chapterOverview.cleared}/${chapterOverview.total} missions complete · ${chapterOverview.stars}/${chapterOverview.maxStars} stars`;
+  $('campaignMissionStatus').textContent = record?.completed ? `${'★'.repeat(record.stars)}${'☆'.repeat(3 - record.stars)} · Complete` : mission.unlocked ? 'Ready to play' : 'Locked';
+  for (const [id, offset] of [['campaignPrevious', -1], ['campaignNext', 1]]) {
+    const neighbor = missions[missionIndex + offset];
+    $(id).disabled = !neighbor;
+    $(id).setAttribute('aria-label', neighbor ? `${offset < 0 ? 'Previous' : 'Next'} mission: ${neighbor.name}` : offset < 0 ? 'No previous mission' : 'No next mission');
+    $(id).onclick = () => neighbor && selectCampaignMission(neighbor.id);
+  }
+  $('campaignReturnMission').textContent = `Return to ${mission.name} →`;
   $('campaignProgressText').textContent =
     `${overview.cleared}/${overview.total} missions · ${overview.stars}/${overview.maxStars} stars`;
   $('campaignCount').textContent = String(overview.total);
   $('campaignChapters').textContent = '';
-  $('campaignIntroProgressText').textContent = `Optional opening missions: ${overview.introduction.cleared}/${overview.introduction.total} · ${overview.introduction.stars}/${overview.introduction.maxStars} stars`;
+  $('campaignIntroProgressText').textContent = `Company roster: ${overview.roster.buildings.length}/8 buildings` +
+    (overview.returning ? ' · Your earlier campaign progress keeps the full roster available.' : overview.roster.stage < 3 ? ' · Win the next opening mission to add more.' : ' · Full roster unlocked.') +
+    (legacy.cleared ? ` Legacy lessons: ${legacy.stars}/${legacy.maxStars} stars retained.` : '');
   $('skipIntroduction').classList.toggle('hidden', !isIntroMission(mission.id));
   for (const c of chapters) {
     const button = document.createElement('button');
     button.dataset.chapter = c.id;
     button.className = c.id === chapter.id ? 'active' : '';
-    button.innerHTML = `<span>${c.optional ? 'START HERE' : 'CHAPTER ' + c.number} · ${c.stars}/${c.maxStars} ★</span><b>${c.name}</b>`;
+    button.setAttribute('aria-pressed', String(c.id === chapter.id));
+    button.innerHTML = `<span>${c.optional ? 'LEGACY LESSONS' : c.id === ONBOARDING_CHAPTER.id ? 'START HERE' : 'CHAPTER ' + c.number} · ${c.stars}/${c.maxStars} ★</span><b>${c.name}</b><small>${c.cleared}/${c.total} missions complete</small>`;
     button.onclick = () => {
       selectedChapter = c.id;
       const candidates = missions.filter((m) => m.chapterId === c.id);
       selectedCampaign = (
         candidates.find((m) => m.unlocked && !m.completed) || candidates[0]
       ).id;
-      renderCampaign();
-      $('campaignChapters').querySelector(`[data-chapter="${c.id}"]`)?.focus();
+      showCampaignPage('chapter', 'campaignChapterTitle');
     };
     $('campaignChapters').append(button);
   }
@@ -2183,7 +2388,7 @@ function renderCampaign() {
     ? chapter.epilogue
     : chapter.description;
   $('campaignMissions').textContent = '';
-  for (const m of missions.filter((m) => m.chapterId === chapter.id)) {
+  for (const m of chapterMissions) {
     const button = document.createElement('button');
     button.dataset.mission = m.id;
     button.className = [
@@ -2191,20 +2396,36 @@ function renderCampaign() {
       !m.unlocked ? 'locked' : '',
       m.completed ? 'complete' : '',
     ].join(' ');
+    button.setAttribute('aria-pressed', String(m.id === mission.id));
     button.innerHTML = `<span class="mission-number">${String(m.number).padStart(2, '0')}</span><span><b>${m.name}</b><small>${m.completed ? '★'.repeat(m.record.stars) + '☆'.repeat(3 - m.record.stars) : m.unlocked ? 'READY TO PLAY' : 'LOCKED'}</small></span>`;
     button.onclick = () => {
-      selectedCampaign = m.id;
-      renderCampaign();
-      $('campaignMissions').querySelector(`[data-mission="${m.id}"]`)?.focus();
+      selectCampaignMission(m.id);
     };
     $('campaignMissions').append(button);
   }
   $('campaignMissionTitle').textContent = mission.name;
+  $('campaignMissionSubtitle').textContent = mission.subtitle;
   $('campaignMissionDescription').textContent = mission.description;
   $('campaignSpeaker').textContent = mission.dialogue.speaker;
   $('campaignDialogue').textContent = mission.dialogue.text;
+  const brief = missionBriefing(mission);
+  $('campaignGoal').textContent = brief.goal;
+  $('campaignGoalFacts').replaceChildren(...brief.facts.map(fact => {
+    const li = document.createElement('li');
+    li.textContent = fact;
+    return li;
+  }));
+  $('campaignProtection').textContent = brief.protection;
+  $('campaignProtection').classList.toggle('hidden', !brief.protection);
+  // A newly selected mission always starts with its optional details folded.
+  if (briefingMission !== mission.id) {
+    for (const id of ['campaignRules', 'campaignScout', 'campaignHintDetails']) $(id).open = false;
+    briefingMission = mission.id;
+  }
   $('campaignObjective').textContent = mission.objective;
-  $('campaignBriefing').innerHTML = mission.briefing
+  const roster = getRuleset(mission.rulesetId || 'frontier-legacy', mission.rulesetRevision || 1);
+  const rosterLine = 'Available here: ' + Object.values(roster.buildings).map(b => b.name).join(', ') + '.';
+  $('campaignBriefing').innerHTML = [rosterLine, ...mission.briefing]
     .map((t) => `<li>${t}</li>`)
     .join('');
   $('campaignHint').textContent = mission.hint;
@@ -2212,41 +2433,115 @@ function renderCampaign() {
   $('campaignScoutReport').innerHTML = renderMissionScouting(mission);
   $('campaignMedals').textContent =
     'Bonus stars: ' + mission.medals.map((m) => m.label).join(' · ');
-  const unlocked = isMissionUnlocked(campaignProgress, mission.id);
+  const unlocked = mission.unlocked;
+  const needed = mission.scenarioRevision === 2 && !overview.returning && !campaignProgress.missions['open-three-roads']
+    ? ['open-three-roads'] : mission.prerequisites;
   $('campaignUnlock').textContent = unlocked
     ? mission.reward
     : 'Complete ' +
-      mission.prerequisites
+      needed
         .map((id) => CAMPAIGN_MISSIONS.find((m) => m.id === id).name)
         .join(' and ') +
       ' to unlock.';
   $('campaignUnlock').classList.toggle('locked', !unlocked);
   if (mode === 'campaign') {
+    if (!started) populateFieldGuide(roster);
+    $('start').classList.toggle('hidden', campaignPage !== 'mission');
     $('start').disabled = !unlocked;
     $('start').innerHTML =
-      (unlocked ? 'BEGIN MISSION' : 'MISSION LOCKED') + ' <span>→</span>';
-    requestAnimationFrame(revealCampaignChapter);
+      (unlocked ? record?.completed ? 'REPLAY MISSION' : 'BEGIN MISSION' : 'MISSION LOCKED') + ' <span>→</span>';
   }
 }
+$('campaignStoryNav').onclick = () => showCampaignPage('story', 'campaignStoryTitle');
+$('campaignChapterNav').onclick = () => showCampaignPage('chapter', 'campaignChapterTitle');
+$('campaignReturnMission').onclick = () => showCampaignPage('mission', 'campaignMissionTitle');
 $('skipIntroduction').onclick = () => {
   const overview = getCampaignOverview(campaignProgress);
   selectedCampaign = overview.nextMissionId || overview.missions[0].id;
   selectedChapter = CAMPAIGN_MISSIONS.find(mission => mission.id === selectedCampaign).chapterId;
-  renderCampaign();
-  $('start').focus();
+  showCampaignPage('mission', 'campaignMissionTitle');
 };
 setMode(mode);
-new ResizeObserver(revealCampaignChapter).observe($('campaignChapters'));
-let settingsWasPaused = false;
-function showSettings() {
-  settingsWasPaused = paused;
-  if (started && game.state.winner === null && !objectiveOutcome) {
-    setCompactBuildOpen(false);
-    paused = true;
-    $('pauseVeil').classList.add('hidden');
+// The pause menu is a top-level dialog, independent of battlefield sizing.
+function syncPauseMenu() {
+  const mission = currentCampaign && CAMPAIGN_MISSIONS.find(m => m.id === currentCampaign);
+  const trial = currentChallenge && CHALLENGES.find(c => c.id === currentChallenge);
+  const noun = mission ? 'mission' : trial ? 'field trial' : 'battle';
+  $('pauseBattleName').textContent = mission?.name || trial?.name || game.map.name;
+  $('pauseContext').textContent = `${mission ? 'Campaign' : trial ? 'Field trial' : 'Skirmish'} · ${timeText(game.state.time)} · ${speed}× speed`;
+  $('pauseObjective').textContent = mission?.objective || trial?.objective || 'Destroy the enemy citadel.';
+  $('restartBattle').textContent = `Restart ${noun}…`;
+  $('restartTitle').textContent = `Restart ${noun}?`;
+  $('confirmRestart').textContent = `Restart ${noun}`;
+  const status = battleSession.status();
+  const unsafe = !!(battleSafetyReason || game.limitReason || viewportPause.active);
+  $('restartBattle').disabled = status !== 'current' || unsafe || !!(recoveryHold || profileGate);
+  const text = status === 'stale'
+    ? 'A newer battle is saved in another tab. Return to title to resume it.'
+    : status !== 'current' || saveWarning
+      ? 'Saving unavailable. Keep this page open. Your battle remains here until it can be saved.'
+      : 'Checkpoint saved on this device. You can return to this battle from the title screen.';
+  // Avoid repeatedly announcing an unchanged status when other dialogs change.
+  if ($('pauseSaveStatus').textContent !== text) $('pauseSaveStatus').textContent = text;
+  $('pauseSaveStatus').classList.toggle('save-warning', status !== 'current' || saveWarning);
+}
+function hideRestart() {
+  $('restartModal').classList.add('hidden');
+  syncDialogs();
+}
+$('restartBattle').onclick = () => {
+  syncProfileSafety();
+  if (recoveryHold || profileGate) { showRecoverySettings(); return; }
+  if (!started || !paused || game.state.winner !== null || objectiveOutcome ||
+      battleSafetyReason || game.limitReason || viewportPause.active || battleSession.status() !== 'current') return;
+  $('restartStatus').textContent = '';
+  $('restartModal').classList.remove('hidden');
+  syncDialogs();
+};
+$('cancelRestart').onclick = hideRestart;
+$('confirmRestart').onclick = () => {
+  syncProfileSafety();
+  if (recoveryHold || profileGate) { hideRestart(); showRecoverySettings(); return; }
+  if (!started || !paused || game.state.winner !== null || objectiveOutcome ||
+      battleSafetyReason || game.limitReason || viewportPause.active) return;
+  if (battleSession.status() !== 'current') {
+    $('restartStatus').textContent = 'The checkpoint changed or storage is unavailable. Keep this battle open. Return to the pause menu to continue safely.';
+    return;
   }
+  try {
+    const candidate = currentCampaign ? createCampaignRestart(game, currentCampaign)
+      : currentChallenge ? createChallenge(currentChallenge)
+        : new Game({ difficulty: game.difficulty, ai: game.ai, seed: Date.now() >>> 0,
+          mapId: game.map.id, mapRevision: game.map.revision,
+          ...(game.schemaVersion === 3 ? {rulesetId: game.ruleset.id, rulesetRevision: game.ruleset.revision} : {}) });
+    // Use the existing profile/ownership boundary. Never discard the retained
+    // battle until a fresh attempt has a verified checkpoint. No progress reward
+    // or completed-history row is produced by abandoning an unfinished battle.
+    if ((progressDirty && !persistProgress()) ||
+        !writeBattle(battleSession, SAVE, candidate, currentChallenge, currentCampaign, { campaignProgress })) {
+      $('restartStatus').textContent = 'Restart could not be saved or verified. Your current battle stays paused on this page. Keep it open and try again when storage is available.';
+      return;
+    }
+    start(candidate, currentChallenge, currentCampaign, { fresh: true });
+  } catch {
+    $('restartStatus').textContent = 'Restart is unavailable. Your current battle stays paused on this page.';
+  }
+};
+let settingsWasPaused = false;
+function showSettings(event) {
+  // Touch may not focus its button. Capture the actual opener before pause()
+  // focuses Resume, and retain it through the intermediate pause dialog.
+  const opener = event?.currentTarget || document.activeElement;
+  settingsWasPaused = paused;
+  if (started && game.state.winner === null && !objectiveOutcome) pause(true);
+  $('settingsContext').textContent = started && !objectiveOutcome && game.state.winner === null
+    ? 'Battle paused. Changes apply immediately.' : 'Changes apply immediately.';
+  $('settingsDone').textContent = started && !objectiveOutcome && game.state.winner === null
+    ? settingsWasPaused ? 'Back to pause menu' : coachingHold ? 'Back to planning' : 'Resume battle' : 'Done';
   syncSettings();
   $('settingsModal').classList.remove('hidden');
+  syncDialogs();
+  if (opener) dialogFocus.set($('settingsModal'), opener);
 }
 function hideSettings() {
   if (recoveryHold || profileGate) {
@@ -2306,29 +2601,34 @@ $('welcomeSettings').onclick = showSettings;
 $('pauseSettings').onclick = showSettings;
 $('closeSettings').onclick = hideSettings;
 $('settingsDone').onclick = hideSettings;
-// Fullscreen must start synchronously inside the button's user gesture. Target
-// the document root so sibling dialogs, pause controls and status remain visible.
+// Fullscreen is optional and must start synchronously inside a button gesture.
+// Target the document root so sibling dialogs and pause controls stay visible.
 const fullscreenRoot = document.documentElement;
 const fullscreenButtons = [...document.querySelectorAll('[data-fullscreen]')];
+const fullscreenStatuses = [...document.querySelectorAll('[data-fullscreen-status]')];
+const fullscreenAppView = window.matchMedia('(display-mode: standalone), (display-mode: fullscreen)');
 let fullscreenPending = false;
+let fullscreenFailure = '';
 function fullscreenElement() {
   return document.fullscreenElement || document.webkitFullscreenElement;
 }
 function fullscreenAPI() {
   if (typeof fullscreenRoot.requestFullscreen === 'function') return {
     enabled: document.fullscreenEnabled === true,
-    enter: () => fullscreenRoot.requestFullscreen(),
-    exit: () => document.exitFullscreen(),
+    enter: () => fullscreenRoot.requestFullscreen({ navigationUI: 'hide' }),
+    exit: typeof document.exitFullscreen === 'function' ? () => document.exitFullscreen() : null,
   };
   if (typeof fullscreenRoot.webkitRequestFullscreen === 'function') return {
     enabled: document.webkitFullscreenEnabled === true,
     enter: () => fullscreenRoot.webkitRequestFullscreen(),
-    exit: () => document.webkitExitFullscreen(),
+    exit: typeof document.webkitExitFullscreen === 'function' ? () => document.webkitExitFullscreen() : null,
   };
   return { enabled: false };
 }
 function syncFullscreenControls() {
-  const active = !!fullscreenElement(), available = fullscreenAPI().enabled;
+  const active = !!fullscreenElement(), api = fullscreenAPI();
+  const available = active ? !!api.exit : api.enabled;
+  const appView = fullscreenAppView.matches || navigator.standalone === true;
   const label = active ? 'Exit fullscreen' : 'Enter fullscreen';
   for (const button of fullscreenButtons) {
     // Keep keyboard focus during an asynchronous request. Native disabled
@@ -2338,29 +2638,37 @@ function syncFullscreenControls() {
     button.setAttribute('aria-pressed', String(active));
     button.setAttribute('aria-label', label);
     button.title = label;
-    if (button === $('settingsFullscreen')) button.textContent = label;
+    button.textContent = label;
   }
-  if (!available) $('fullscreenStatus').textContent =
-    'Fullscreen is unavailable in this browser or embedded view. Keep playing in this window, or use your browser’s fullscreen option if available.';
+  const status = fullscreenFailure || (active
+    ? 'Fullscreen is on. Use Exit fullscreen or your browser’s exit control.'
+    : appView
+      ? available
+        ? 'App view is already active. Fullscreen is optional; system controls may remain.'
+        : 'App view is already active. Extra fullscreen is unavailable; keep playing here.'
+      : available
+        ? 'Optional. Fullscreen can hide browser bars; system controls may remain.'
+        : 'Fullscreen is unavailable here. Keep playing in this window.');
+  for (const node of fullscreenStatuses) node.textContent = status;
 }
 function fullscreenFailed() {
   const message = fullscreenElement()
     ? 'Could not leave fullscreen. Use your browser’s exit fullscreen control.'
     : 'Could not enter fullscreen. Try again or keep playing in this window.';
-  $('fullscreenStatus').textContent = message;
-  if ($('settingsModal').classList.contains('hidden')) toast(message);
+  const changed = fullscreenFailure !== message;
+  fullscreenFailure = message;
+  syncFullscreenControls();
+  if (changed && $('settingsModal').classList.contains('hidden') && $('welcome').classList.contains('hidden')) toast(message);
 }
 for (const button of fullscreenButtons) button.addEventListener('click', async () => {
-  const api = fullscreenAPI();
-  if (fullscreenPending || !api.enabled) return;
+  const api = fullscreenAPI(), active = !!fullscreenElement();
+  if (fullscreenPending || (active ? !api.exit : !api.enabled)) return;
   fullscreenPending = true;
+  fullscreenFailure = '';
   syncFullscreenControls();
   try {
     // No await before the API call: transient user activation must survive.
-    await (fullscreenElement() ? api.exit() : api.enter());
-    $('fullscreenStatus').textContent = fullscreenElement()
-      ? 'Fullscreen is on. Esc or Exit fullscreen returns to the window.'
-      : 'Fullscreen is off. You can keep playing in this window.';
+    await (active ? api.exit() : api.enter());
   } catch {
     fullscreenFailed();
   } finally {
@@ -2370,12 +2678,13 @@ for (const button of fullscreenButtons) button.addEventListener('click', async (
 });
 for (const name of ['fullscreenchange', 'webkitfullscreenchange']) document.addEventListener(name, () => {
   resetBattleGesture();
+  fullscreenFailure = '';
   syncFullscreenControls();
-  $('fullscreenStatus').textContent = fullscreenElement()
-    ? 'Fullscreen is on. Esc or Exit fullscreen returns to the window.'
-    : 'Fullscreen is off. You can keep playing in this window.';
 });
 for (const name of ['fullscreenerror', 'webkitfullscreenerror']) document.addEventListener(name, fullscreenFailed);
+const syncFullscreenAppView = () => { fullscreenFailure = ''; syncFullscreenControls(); };
+if (fullscreenAppView.addEventListener) fullscreenAppView.addEventListener('change', syncFullscreenAppView);
+else fullscreenAppView.addListener?.(syncFullscreenAppView);
 syncFullscreenControls();
 $('audioEnabled').onchange = () => {
   soundOn = $('audioEnabled').checked;
@@ -2423,12 +2732,15 @@ $('effectQuality').onchange = () => {
 };
 // Dialog focus never escapes into a live battlefield behind the overlay.
 const dialogLayers = [
+  $('coachingModal'),
+  $('pauseVeil'),
   $('viewportModal'),
   $('welcome'),
   $('helpModal'),
   $('settingsModal'),
   $('resultModal'),
   $('backupModal'),
+  $('restartModal'),
 ];
 let activeDialog = null;
 const dialogFocus = new WeakMap();
@@ -2509,6 +2821,14 @@ function dialogDefaultFocus(layer) {
 }
 function syncDialogs() {
   syncInputScope();
+  globalThis.queueMicrotask?.(syncMenuHistory);
+  // A safety/recovery interruption takes precedence over a destructive prompt.
+  if (!$('restartModal').classList.contains('hidden') &&
+      (recoveryHold || profileGate || viewportPause.active || battleSafetyReason)) {
+    $('restartModal').classList.add('hidden');
+    syncInputScope();
+  }
+  if (!$('pauseVeil').classList.contains('hidden')) syncPauseMenu();
   const visible = dialogLayers.filter((x) => !x.classList.contains('hidden')),
     next = visible.at(-1) || null;
   document.querySelector('.app').inert = !!next;
@@ -2522,12 +2842,15 @@ function syncDialogs() {
   const previous = activeDialog;
   activeDialog = next;
   if (next) {
-    dialogFocus.set(next, document.activeElement);
-    const target = dialogDefaultFocus(next);
-    target?.focus();
+    const returning = previous && dialogFocus.get(previous);
+    const target = returning && next.contains(returning) && !returning.disabled && controlIsVisible(returning)
+      ? returning : null;
+    if (!target) dialogFocus.set(next, document.activeElement);
+    (target || dialogDefaultFocus(next))?.focus();
   } else {
     const target = previous && dialogFocus.get(previous);
-    if (target?.isConnected && !target.closest('.hidden')) target.focus();
+    if (target?.isConnected && target !== document.body && target !== document.documentElement &&
+        !target.closest('.hidden,[inert]')) target.focus();
     else $('battle').focus();
   }
 }
@@ -2621,9 +2944,12 @@ function syncViewportSafety() {
       ...[...protectedControls.values()].map(c => c.button.id)].filter(Boolean).map(id => $(id).getBoundingClientRect());
     // Protected buttons use stable authored IDs in data attributes, not DOM IDs.
     for (const {button} of protectedControls.values()) if (!button.id) controls.push(button.getBoundingClientRect());
+    const teaching = $('app').classList.contains('mobile-coaching');
+    if (teaching) for (const id of ['coachResume', 'toggleCoach'])
+      if (!$(id).classList.contains('hidden')) controls.push($(id).getBoundingClientRect());
     const safeContent = insetViewportRect(viewport, getComputedStyle($('app')));
     geometry = inspectMobileGeometry({viewport:safeContent,canvas:$('battle').getBoundingClientRect(),
-      regions:['topbar','protectedDock','protectedNavigation'].map(id => $(id).getBoundingClientRect()),controls});
+      regions:['topbar','protectedDock','protectedNavigation', ...(teaching ? ['campaignTeaching'] : [])].map(id => $(id).getBoundingClientRect()),controls});
   }
   const wasActive = viewportPause.active;
   const changed = viewportPause.measure(!geometry.safe);
@@ -2754,7 +3080,7 @@ $('exportRecovery').onclick = () => {
   try {
     const battle =
       started && game.state.winner === null && !objectiveOutcome
-        ? encodeBattle(game, scenarioForBattle(currentChallenge, currentCampaign), { campaignProgress })
+        ? encodeBattle(game, scenarioForBattle(currentChallenge, currentCampaign, game), { campaignProgress })
         : null;
     // Every domain is explicit, so unavailable/partly replaced local storage is never read.
     const text = createBackup(
@@ -2807,7 +3133,9 @@ $('exportBackup').onclick = () => {
       options.history = historySession.view(history.rows);
     }
     if (progressDirty) {
-      options.campaign = campaignProgress;
+      const storedCampaign = readCampaignProgressState(storage);
+      if (!storedCampaign.ok) throw new Error('Stored campaign progress cannot be read safely. Use Export in-memory session to retain this tab’s known progress; it is not a complete saved-profile backup.');
+      options.campaign = mergeCampaignProgress(campaignProgress, storedCampaign.progress);
       options.trials = trialRecords;
     }
     if (
@@ -2817,13 +3145,8 @@ $('exportBackup').onclick = () => {
       !objectiveOutcome &&
       battleSession.isCurrent()
     )
-      options.battle = {
-        format: 'ironroot-save',
-        version: 2,
-        campaignId: currentCampaign,
-        challengeId: currentChallenge,
-        game: game.serialize(),
-      };
+      options.battle = encodeBattle(game, scenarioForBattle(currentChallenge, currentCampaign, game),
+        { campaignProgress: options.campaign || campaignProgress });
     downloadBackup(createBackup(localStorage, options));
     $('backupStatus').textContent =
       'Backup download started. Keep the file somewhere safe.';
@@ -3014,6 +3337,13 @@ function controllerNavigate(direction, scope) {
     active.dispatchEvent(new Event('change', { bubbles: true }));
     return;
   }
+  // These compact menus have a deliberate reading order. Spatial navigation
+  // would jump from the centered Resume button past both utility buttons.
+  if (scope.key === 'pauseVeil' || scope.key === 'restartModal') {
+    focusPadControl(controls[nextFocusIndex(controls, current,
+      ['left', 'up'].includes(direction) ? -1 : 1)]);
+    return;
+  }
   const items = controls.map((el) => ({ rect: el.getBoundingClientRect() }));
   let next = spatialFocusIndex(items, current, direction);
   if (next === current)
@@ -3025,10 +3355,12 @@ function controllerNavigate(direction, scope) {
   focusPadControl(controls[next]);
 }
 function controllerBack(scope) {
-  if (scope.key === 'backupModal') hideBackup();
+  if (scope.key === 'coachingModal') planWithCoaching();
+  else if (scope.key === 'backupModal') hideBackup();
   else if (scope.key === 'settingsModal') hideSettings();
   else if (scope.key === 'helpModal') hideHelp();
-  else if (scope.key === 'pause') pause(false, { explicit: true });
+  else if (scope.key === 'restartModal') hideRestart();
+  else if (scope.key === 'pauseVeil' || scope.key === 'pause') pause(false, { explicit: true });
   else if (scope.key === 'resultModal' || scope.key === 'ended') showTitle();
   else if (scope.key === 'hud') {
     padHud = false;
@@ -3055,8 +3387,8 @@ function handleControllerAction({ action }) {
     return;
   }
   if (action === 'pause') {
-    if (scope.key === 'pause') pause(false, { explicit: true });
-    else if (scope.key === 'battle' || scope.key === 'hud') pause(true);
+    if (scope.key === 'pauseVeil' || scope.key === 'pause') pause(false, { explicit: true });
+    else if (scope.key === 'battle' || scope.key === 'hud') toggleBattlePause();
   } else if (action === 'cancel') controllerBack(scope);
   else if (action === 'focus') {
     if (scope.key === 'battle') {
@@ -3201,3 +3533,180 @@ document.addEventListener('keydown', () => {
 });
 
 syncProfileSafety();
+
+
+// Browser/Android/PWA Back is history navigation, not a key binding. The finite
+// trail exposes real parents and a paused battle boundary. No popstate handler
+// pushes entries, restores a saved battle, restarts, or resumes simulation.
+function menuNavigationTrail() {
+  if (started && game !== navigationGame) { navigationGame = game; navigationAttempt++; }
+  const route = (kind, key = kind, extra = {}) => ({kind, key, ...extra});
+  const trail = [route('title', `title:${mode}`, {mode, page: 'story'})];
+  if (mode === 'campaign') {
+    if (started || campaignPage !== 'story') trail.push(route('title', `chapter:${selectedChapter}`, {
+      mode, page: 'chapter', chapter: selectedChapter, mission: selectedCampaign,
+    }));
+    if (started || campaignPage === 'mission') trail.push(route('title', `mission:${selectedCampaign}`, {
+      mode, page: 'mission', chapter: selectedChapter, mission: selectedCampaign,
+    }));
+  }
+  if (started) {
+    const ended = game.state.winner !== null || !!objectiveOutcome;
+    trail.push(route(ended ? 'ended' : 'pause', `${ended ? 'ended' : 'battle'}:${navigationAttempt}`, {attempt: navigationAttempt}));
+    if (!ended && !paused && !coachingHold && $('coachingModal').classList.contains('hidden'))
+      trail.push(route('play', `play:${navigationAttempt}`, {attempt: navigationAttempt}));
+  }
+  for (const id of ['coachingModal', 'viewportModal', 'helpModal', 'settingsModal', 'resultModal', 'backupModal', 'restartModal']) {
+    if (!$(id).classList.contains('hidden')) trail.push(route(id, `${navigationAttempt}:${id}`, {attempt: started ? navigationAttempt : null}));
+  }
+  if (started && !activeDialog && $('app').classList.contains('compact-build-open'))
+    trail.push(route('build', `build:${navigationAttempt}`, {attempt: navigationAttempt}));
+  if (started && !activeDialog && game.state.buildings.some(b => b.id === ui.selected && b.side === 0))
+    trail.push(route('selection', `selection:${navigationAttempt}:${ui.selected}`, {attempt: navigationAttempt, buildingId: ui.selected}));
+  if (!$('resultModal').classList.contains('hidden') && $('resultReport').querySelector('details')?.open)
+    trail.push(route('report', `report:${navigationAttempt}`, {attempt: started ? navigationAttempt : null}));
+  return trail;
+}
+function closeNavigationLayers(keep = null) {
+  // Preserve mandatory recovery/viewport holds. Closing a menu via browser Back
+  // never implicitly resumes a running battle, even if its visible Done does.
+  if (keep !== 'report') {
+    const report = $('resultReport').querySelector('details');
+    if (report) report.open = false;
+  }
+  const retained = keep === 'backupModal' ? ['settingsModal', 'backupModal'] :
+    keep === 'report' ? ['resultModal'] : [keep];
+  if (!retained.includes('restartModal')) $('restartModal').classList.add('hidden');
+  if (!retained.includes('backupModal') && !$('backupModal').classList.contains('hidden')) hideBackup();
+  if (!retained.includes('settingsModal') && !$('settingsModal').classList.contains('hidden')) {
+    settingsWasPaused = true; hideSettings();
+  }
+  if (!retained.includes('helpModal') && !$('helpModal').classList.contains('hidden')) {
+    helpWasPaused = true; hideHelp();
+  }
+  if (!retained.includes('resultModal')) $('resultModal').classList.add('hidden');
+  if (keep !== 'coachingModal') $('coachingModal').classList.add('hidden');
+  if (keep !== 'selection' && !activeDialog && ui.selected != null) { ui.selected = null; updateSelection(); }
+  setCompactBuildOpen(keep === 'build' || keep === 'selection');
+}
+function applyMenuNavigation(route, {direction = 'back'} = {}) {
+  const returnToPlanning = coachingHold && (
+    !$('coachingModal').classList.contains('hidden') ||
+    (!paused && ($('app').classList.contains('compact-build-open') || ui.selected != null)) ||
+    (!$('settingsModal').classList.contains('hidden') && !settingsWasPaused) ||
+    (!$('helpModal').classList.contains('hidden') && !helpWasPaused));
+  interruptMobileInput();
+  // Only this retained attempt can be inspected. Previous attempts and reload
+  // markers cannot reconstruct a Game or take ownership of a checkpoint.
+  if (route.attempt != null && (!started || route.attempt !== navigationAttempt)) {
+    if (started) pause(true);
+    syncDialogs(); return;
+  }
+  if (route.kind === 'title') {
+    // Dismissing a title-screen layer is not a new campaign navigation. Keep
+    // the existing page/scroll and let the real dialog handoff restore its
+    // opener, rather than rebuilding the title and focusing its heading.
+    const sameTitleParent = !started && !$('welcome').classList.contains('hidden') &&
+      activeDialog && activeDialog !== $('welcome') && route.mode === mode &&
+      (mode !== 'campaign' || (route.page === campaignPage &&
+        (route.page === 'story' || route.chapter === selectedChapter) &&
+        (route.page !== 'mission' || route.mission === selectedCampaign)));
+    closeNavigationLayers();
+    if (sameTitleParent) { syncDialogs(); return; }
+    if (started && game.state.winner === null && !objectiveOutcome) {
+      pause(true);
+      $('saveExit').onclick();
+      if (started) { syncDialogs(); return; }
+    } else showTitle();
+    // The route is an in-memory snapshot of an authored selection, not input
+    // from event.state. Validate against the current roster before rendering.
+    if (!['campaign', 'skirmish', 'challenges'].includes(route.mode)) return;
+    if (route.mission && !CAMPAIGN_MISSIONS.some(m => m.id === route.mission && m.chapterId === route.chapter)) return;
+    if (route.mission) { selectedCampaign = route.mission; selectedChapter = route.chapter; }
+    campaignPage = ['story', 'chapter', 'mission'].includes(route.page) ? route.page : 'story';
+    setMode(route.mode);
+    syncDialogs();
+    if (route.mode === 'campaign') $(`campaign${campaignPage[0].toUpperCase() + campaignPage.slice(1)}Title`).focus({preventScroll: true});
+    return;
+  }
+  closeNavigationLayers(route.kind);
+  if (returnToPlanning && ['pause', 'play'].includes(route.kind)) {
+    // A teaching hold is already frozen. Back dismisses reading/options into
+    // planning; only the player's explicit Start/Resume releases that hold.
+    pause(false);
+  } else if (route.kind === 'pause' || (direction === 'forward' && started && game.state.winner === null && !objectiveOutcome)) pause(true);
+  if (route.kind === 'ended') {
+    pauseControl('menu'); $('pause').onclick = showTitle;
+  } else if (route.kind === 'settingsModal') {
+    if (started) pause(true);
+    settingsWasPaused = true; syncSettings();
+    $('settingsDone').textContent = started ? 'Back to pause menu' : 'Done';
+    $('settingsModal').classList.remove('hidden');
+  } else if (route.kind === 'helpModal') {
+    if (started) pause(true);
+    helpWasPaused = true; $('helpModal').classList.remove('hidden');
+  } else if (route.kind === 'restartModal') {
+    // Forward reopens only the confirmation, never its destructive action.
+    if (started) pause(true);
+    $('restartBattle').onclick();
+  } else if (route.kind === 'backupModal') {
+    // Cancel invalidates the import read. Forward cannot revive that payload.
+    $('settingsModal').classList.remove('hidden');
+  } else if (route.kind === 'resultModal' || route.kind === 'report') {
+    if (resultShown) {
+      if (!started) $('welcome').classList.add('hidden');
+      $('resultModal').classList.remove('hidden');
+    }
+    const report = $('resultReport').querySelector('details');
+    if (route.kind === 'report' && report && resultShown) report.open = true;
+  } else if (route.kind === 'selection') {
+    const building = game.state.buildings.find(b => b.id === route.buildingId && b.side === 0);
+    ui.selected = building?.id ?? null; updateSelection();
+  } else if (route.kind === 'coachingModal' && coachingHold) {
+    $('coachingModal').classList.remove('hidden');
+  }
+  syncDialogs();
+}
+function unknownMenuNavigation() {
+  // Reloads/foreign states have no trusted route. Dismiss the current top
+  // layer using the live UI, or stop combat. Never trust their payload.
+  const trail = menuNavigationTrail();
+  if (trail.length > 1) applyMenuNavigation(trail.at(-2));
+  else if (started) pause(true);
+}
+menuHistory = createMenuHistory({
+  history: window.history,
+  seedAncestors: seedMenuAncestors(document.referrer, window.location.href),
+  listen(handler) {
+    window.addEventListener('popstate', handler);
+    return () => window.removeEventListener('popstate', handler);
+  },
+  read: menuNavigationTrail, apply: applyMenuNavigation, unknown: unknownMenuNavigation,
+});
+for (const event of ['click', 'keyup', 'change', 'toggle'])
+  document.addEventListener(event, () => queueMicrotask(syncMenuHistory), true);
+for (const id of ['app', 'selectionPanel'])
+  new MutationObserver(syncMenuHistory).observe($(id), {attributes: true, attributeFilter: ['class']});
+
+// A cached document can return without rerunning module initialization. Freeze
+// before it leaves, and reconcile the existing entry on return without adding
+// another guard or assuming that the browser actually retained the document.
+window.addEventListener('pagehide', () => {
+  navigationAway = true;
+  interruptMobileInput();
+  if (started && game.state.winner === null && !objectiveOutcome) pause(true);
+});
+window.addEventListener('pageshow', event => {
+  navigationAway = false;
+  if (!event.persisted) return;
+  interruptMobileInput();
+  if (started && game.state.winner === null && !objectiveOutcome) pause(true);
+  syncDialogs();
+  menuHistory.reconcile();
+});
+
+// Background-tab and page-departure pauses must not issue history.go() while
+// the browser is navigating elsewhere. Reconcile once the page is visible.
+document.addEventListener('visibilitychange', () => {
+  if (!document.hidden && !navigationAway) menuHistory.reconcile();
+});

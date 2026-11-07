@@ -32,7 +32,7 @@ export const INTRO_MISSIONS = [
     ],
     briefing: [
       'One road. 420 gold. No starting buildings; every choice has its normal cost.',
-      'The enemy has one level-1 barracks and cannot build, upgrade or use Rally.',
+      'The enemy has one level-1 barracks and cannot build, upgrade or use Arrow volley.',
       'A win opens the second lesson. The two building stars are optional; replay any time.',
     ],
     reward: 'Opens Forked Road. You can enter the main campaign at any time.',
@@ -53,7 +53,7 @@ export const INTRO_MISSIONS = [
     ],
     briefing: [
       'Two roads. 610 gold. No starting buildings; mines and towers use normal gold costs.',
-      'The enemy has one level-1 barracks on each road and cannot build, upgrade or use Rally.',
+      'The enemy has one level-1 barracks on each road and cannot build, upgrade or use Arrow volley.',
       'The income star needs a living mine. Winning without one still counts as a win.',
     ],
     reward: 'Ready for Emberwatch. The main campaign keeps the full building roster.',

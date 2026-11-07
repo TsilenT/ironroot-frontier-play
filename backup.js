@@ -1,7 +1,7 @@
 import { decodeBattle, encodeBattle } from './battle-codec.js';
 import { validateHistory } from './history-codec.js';
 import {
-  ALL_CAMPAIGN_MISSIONS, CAMPAIGN_STORAGE_KEY, createCampaignProgress,
+  CAMPAIGN_PROGRESS_MISSIONS, CAMPAIGN_STORAGE_KEY, createCampaignProgress,
   normalizeCampaignProgress,
 } from './campaign.js';
 import { CHALLENGES } from './challenges.js';
@@ -109,7 +109,7 @@ function campaign(value) {
   if (value.version !== 1) fail('Campaign progress has an unsupported version.', 'unsupported-version');
   object(value.missions, 'Campaign missions');
   for (const id of Object.keys(value.missions)) {
-    const mission = ALL_CAMPAIGN_MISSIONS.find(m => m.id === id);
+    const mission = CAMPAIGN_PROGRESS_MISSIONS.find(m => m.id === id);
     if (!mission) fail('Campaign progress contains an unknown mission.');
     const record = value.missions[id];
     fields(record, ['completed', 'stars', 'bestTime'], ['completed', 'stars', 'bestTime'], 'Campaign record');
@@ -162,7 +162,7 @@ function history(value) {
 function needsV2(data) {
   return data.battle?.version === 3 || data.battle?.game?.version === 3 ||
     (Array.isArray(data.history) && data.history.some(row => row && typeof row === 'object' && own(row, 'identity'))) ||
-    Object.keys(data.campaign?.missions || {}).some(id => ['first-watch', 'forked-road'].includes(id));
+    Object.keys(data.campaign?.missions || {}).some(id => ['first-watch', 'forked-road', 'roadside-watch', 'shield-at-the-fork', 'open-three-roads'].includes(id));
 }
 function validate(value) {
   bounded(value);

@@ -39,14 +39,14 @@
             <span>⚑</span><b id="army">0</b><small>ARMY</small>
           </div>
           <div class="clock-block">
-            <b id="time">00:00</b><small>BATTLE TIME</small>
+            <b id="time">00:00</b><small id="battleClockLabel">BATTLE TIME</small>
           </div>
         </div>
       </header>
       <main class="battlefield" id="battlefield">
         <canvas
           id="battle"
-          aria-label="Battlefield. Select a building below, then tap a green build slot to place it. Drag or middle mouse drag to explore. Right-click or Escape cancels placement. Arrow keys pan."
+          aria-label="Battlefield. Select a building below, then tap a green build slot to place it once. Hold Shift with a mouse click to keep building. Drag or middle mouse drag to explore. Right-click or Escape cancels placement. Arrow keys pan."
           tabindex="0"
         ></canvas>
         <div class="battle-top" id="battleTop">
@@ -96,8 +96,8 @@
           ><button
             id="settings"
             class="icon-button"
-            title="Preferences"
-            aria-label="Open preferences"
+            title="Options"
+            aria-label="Open options"
           >
             ⚙
           </button>
@@ -154,35 +154,29 @@
         >
           <span>A</span>
         </div>
-        <div class="pause-veil hidden" id="pauseVeil">
-          <span>PAUSED</span><small>Resume when you’re ready.</small
-          ><button id="resume" class="gold-button">Resume battle</button
-          ><button id="saveExit" class="secondary-button">
-            Save & return to title
-          </button>
-          <p id="battleLimitWarning" class="battle-limit-warning hidden" role="status"></p>
-          <div class="pause-links">
-            <button id="pauseSettings" class="text-button">Preferences</button
-            ><button id="help" class="text-button" aria-label="Open field guide">
-              Field guide
-            </button>
-          </div>
-        </div>
       </main>
       <div id="protectedDock" class="protected-dock hidden"></div>
       <nav id="protectedNavigation" class="protected-navigation hidden" aria-label="Battle controls"></nav>
       <section class="command-deck" id="commandDeck" aria-label="Building controls">
-        <div id="campaignCoach" class="campaign-coach hidden" role="status" aria-live="polite">
-          <b id="coachTitle"></b><span id="coachText"></span>
-        </div>
-        <div class="deck-heading">
+        <section id="campaignTeaching" class="campaign-teaching hidden" aria-label="Campaign teaching">
+          <div id="campaignCoach" class="campaign-coach hidden" role="status" aria-live="polite" tabindex="0" aria-label="Campaign hint. Scroll for more detail.">
+            <strong id="coachNext" class="coach-next"></strong>
+            <b id="coachTitle"></b><span id="coachText"></span>
+          </div>
+          <p id="coachRailStatus" class="coach-rail-status hidden" role="status"></p>
+          <div class="deck-tools teaching-actions">
+            <button id="coachResume" class="hidden">Start battle</button>
+            <button id="toggleCoach" class="hidden" aria-pressed="true">Hide hints</button>
+          </div>
+        </section>
+        <div class="deck-heading" id="deckHeading">
           <span id="buildPrompt">BUILD YOUR FRONTIER</span
           ><small id="buildHelp"
             >Choose a building, then place it in your territory.</small
           ><button id="cancelBuild" class="hidden">Cancel ×</button>
         </div>
         <div class="deck-tools">
-          <button id="toggleCoach" class="hidden" aria-pressed="true">Hide hints</button>
+          <button id="coachReplay" class="hidden">Pause to learn</button>
           <button id="allBuildings" class="hidden" aria-expanded="false" aria-controls="buildCards">All buildings</button>
         </div>
         <div class="deck-body">
@@ -194,6 +188,30 @@
               >◆ 75 <em>25s cooldown</em></span
             >
           </button>
+        </div>
+      </section>
+    </div>
+    <div class="modal-backdrop pause-veil hidden" id="pauseVeil">
+      <section class="pause-menu modal" role="dialog" aria-modal="true" aria-labelledby="pauseTitle" aria-describedby="pauseContext" aria-hidden="true">
+        <header class="menu-heading">
+          <div class="eyebrow">BATTLE MENU</div>
+          <h2 id="pauseTitle">Paused</h2>
+          <p id="pauseContext"></p>
+        </header>
+        <div class="pause-briefing">
+          <h3 id="pauseBattleName"></h3>
+          <p id="pauseObjective"></p>
+        </div>
+        <button id="resume" class="gold-button" data-dialog-focus>Resume battle <span aria-hidden="true">→</span></button>
+        <div class="pause-utilities">
+          <button id="pauseSettings" class="secondary-button">Options<small>Audio, display &amp; saves</small></button>
+          <button id="help" class="secondary-button" aria-label="Open field guide">Field guide<small>Units, controls &amp; economy</small></button>
+        </div>
+        <p id="pauseSaveStatus" class="menu-status" role="status" aria-live="polite"></p>
+        <p id="battleLimitWarning" class="battle-limit-warning hidden" role="status"></p>
+        <div class="pause-exit-actions">
+          <button id="saveExit" class="secondary-button">Save &amp; return to title</button>
+          <button id="restartBattle" class="text-button">Restart battle…</button>
         </div>
       </section>
     </div>
@@ -254,35 +272,68 @@
           </details>
         </div>
         <div id="campaignConfig">
-          <div class="campaign-overview">
-            <span>THE IRONROOT CAMPAIGN</span><b id="campaignProgressText"></b>
-          </div>
-          <p class="campaign-intro-progress" id="campaignIntroProgressText"></p>
-          <div class="campaign-chapters" id="campaignChapters"></div>
-          <button id="skipIntroduction" class="text-button hidden">Go straight to the campaign</button>
-          <h3 class="campaign-chapter-title" id="campaignChapterTitle"></h3>
-          <p class="campaign-chapter-story" id="campaignChapterStory"></p>
-          <div class="campaign-missions" id="campaignMissions"></div>
-          <div class="campaign-brief">
+          <nav class="campaign-path" aria-label="Campaign navigation">
+            <button id="campaignStoryNav">Story</button><span aria-hidden="true">›</span>
+            <button id="campaignChapterNav"></button><span aria-hidden="true" data-mission-path>›</span>
+            <span id="campaignMissionPosition" data-mission-path aria-current="page"></span>
+          </nav>
+          <section id="campaignStoryPage" class="hidden" aria-labelledby="campaignStoryTitle">
+            <p class="campaign-kicker">THE STORY</p>
+            <h2 id="campaignStoryTitle" tabindex="-1">The Ironroot Campaign</h2>
+            <p class="campaign-story-copy">The northern road is sealed. Rally the valley, carry its signal over the mountains, and open the roads beyond the Crownworks.</p>
+            <button id="campaignReturnMission" class="campaign-return">Return to your briefing →</button>
+            <h3>Choose a chapter</h3>
+            <div class="campaign-chapters" id="campaignChapters" aria-label="Chapters"></div>
+            <details class="campaign-progress">
+              <summary>Campaign progress</summary>
+              <p id="campaignProgressText"></p>
+              <p id="campaignIntroProgressText"></p>
+            </details>
+          </section>
+          <section id="campaignChapterPage" class="hidden" aria-labelledby="campaignChapterTitle">
+            <p class="campaign-kicker" id="campaignChapterLabel"></p>
+            <h2 class="campaign-chapter-title" id="campaignChapterTitle" tabindex="-1"></h2>
+            <p class="campaign-chapter-story" id="campaignChapterStory"></p>
+            <p id="campaignChapterProgress" class="campaign-chapter-progress"></p>
+            <h3>Choose a mission</h3>
+            <div class="campaign-missions" id="campaignMissions" aria-label="Missions in this chapter"></div>
+          </section>
+          <section class="campaign-brief" id="campaignMissionPage" aria-labelledby="campaignMissionTitle">
+            <div class="campaign-mission-nav" aria-label="Browse missions">
+              <button id="campaignPrevious">← Previous</button>
+              <span id="campaignMissionStatus"></span>
+              <button id="campaignNext">Next →</button>
+            </div>
+            <p class="campaign-kicker" id="campaignMissionSubtitle"></p>
+            <h2 id="campaignMissionTitle" tabindex="-1"></h2>
+            <p id="campaignMissionDescription"></p>
+            <div class="campaign-goal" aria-labelledby="campaignGoalLabel">
+              <h3 id="campaignGoalLabel">Your goal</h3>
+              <p id="campaignGoal"></p>
+              <ul id="campaignGoalFacts"></ul>
+              <p id="campaignProtection" class="hidden"></p>
+            </div>
+            <p class="campaign-unlock" id="campaignUnlock"></p>
             <div class="campaign-dialogue">
               <b id="campaignSpeaker"></b>
               <p id="campaignDialogue"></p>
             </div>
-            <h3 id="campaignMissionTitle"></h3>
-            <p id="campaignMissionDescription"></p>
-            <p class="challenge-objective" id="campaignObjective"></p>
-            <ul id="campaignBriefing"></ul>
-            <p class="campaign-medals" id="campaignMedals"></p>
+            <details id="campaignRules">
+              <summary>Exact rules &amp; bonus stars</summary>
+              <p class="challenge-objective" id="campaignObjective"></p>
+              <ul id="campaignBriefing"></ul>
+              <p class="campaign-medals" id="campaignMedals"></p>
+            </details>
             <details class="campaign-scout" id="campaignScout">
               <summary id="campaignScoutToggle">Scout battlefield</summary>
               <div id="campaignScoutReport"></div>
             </details>
-            <details>
+            <details id="campaignHintDetails">
               <summary>Commander’s hint</summary>
               <p id="campaignHint"></p>
             </details>
-            <p class="campaign-unlock" id="campaignUnlock"></p>
-          </div>
+            <button id="skipIntroduction" class="text-button hidden">Return to current campaign</button>
+          </section>
         </div>
         <div id="challengeConfig" class="hidden">
           <div class="challenge-choices" id="challengeChoices"></div>
@@ -305,14 +356,16 @@
         </button>
         <p class="save-status hidden" id="saveStatus" role="status"></p>
         <button id="exportUnreadableBattle" class="text-button hidden">Download original save</button>
-        <p class="welcome-foot">Campaign · Skirmish · Field trials · v0.14.1</p>
+        <p class="welcome-foot">Campaign · Skirmish · Field trials · v0.15.0</p>
         <div class="welcome-links">
           <a class="text-button training-link" id="welcomeTraining" href="./training.html" aria-label="Optional guided practice. Learn without changing your saved battle">Guided practice (optional) →</a>
+          <button class="text-button" id="welcomeFullscreen" type="button" data-fullscreen aria-pressed="false" aria-describedby="welcomeFullscreenStatus">Enter fullscreen</button>
           <button class="text-button" id="welcomeHelp">
             Field guide</button
           ><button class="text-button" id="welcomeSettings">
-            Preferences
+            Options
           </button><button class="text-button hidden" id="lastResult">Last battle report</button>
+          <p id="welcomeFullscreenStatus" class="welcome-fullscreen-status" data-fullscreen-status role="status">Optional. Fullscreen depends on your browser and device.</p>
         </div>
       </section>
     </div>
@@ -377,8 +430,8 @@
           begin to crumble.
         </div>
         <p class="controls">
-          <b>Mouse:</b> Left-click to place or select · Drag or middle mouse drag to pan · Right-click to cancel placement<br />
-          <b>Touch:</b> Tap to build · Drag to pan · Tap the minimap to jump<br /><b
+          <b>Mouse:</b> Left-click to place once or select · Shift-click to keep building · Drag or middle mouse drag to pan · Right-click to cancel placement<br />
+          <b>Touch:</b> Tap to build once, then choose again · Drag to pan · Tap the minimap to jump<br /><b
             >Keyboard:</b
           >
           <span id="buildingKeyHelp">1–7 buildings</span> · R volley · Space pause · Esc cancel · Arrow keys pan
@@ -433,14 +486,18 @@
         <button
           class="modal-close"
           id="closeSettings"
-          aria-label="Close preferences"
+          aria-label="Close options"
         >
           ×
         </button>
-        <div class="eyebrow">GAME SETTINGS</div>
-        <h2 id="settingsTitle">Preferences</h2>
+        <header class="menu-heading">
+          <div class="eyebrow">GAME SETTINGS</div>
+          <h2 id="settingsTitle">Options</h2>
+          <p id="settingsContext">Changes apply immediately.</p>
+        </header>
+        <div class="settings-content">
         <button id="settingsFullscreen" class="secondary-button" type="button" data-fullscreen aria-pressed="false" aria-describedby="fullscreenStatus">Enter fullscreen</button>
-        <p id="fullscreenStatus" class="controls" role="status">Fullscreen depends on your browser and device. Esc exits fullscreen.</p>
+        <p id="fullscreenStatus" class="controls" data-fullscreen-status role="status">Fullscreen depends on your browser and device. Esc exits fullscreen.</p>
         <div class="settings-grid">
           <label class="setting-row"
             ><span>Enable audio<small>Music and sound effects</small></span
@@ -789,9 +846,22 @@ OTHER DEALINGS IN THE FONT SOFTWARE.
 </pre
           >
         </details>
-        <button id="settingsDone" class="gold-button">
-          Close preferences
-        </button>
+        </div>
+        <footer class="settings-footer">
+          <button id="settingsDone" class="gold-button">Done</button>
+        </footer>
+      </section>
+    </div>
+    <div class="modal-backdrop hidden" id="restartModal">
+      <section class="menu-confirm modal" role="dialog" aria-modal="true" aria-labelledby="restartTitle" aria-describedby="restartDescription" aria-hidden="true">
+        <div class="eyebrow">A FRESH ATTEMPT</div>
+        <h2 id="restartTitle">Restart battle?</h2>
+        <p id="restartDescription">This replaces your unfinished battle and its checkpoint. Campaign progress, medals, preferences and completed battle history are kept.</p>
+        <p id="restartStatus" class="menu-status" role="status"></p>
+        <div class="menu-confirm-actions">
+          <button id="cancelRestart" class="gold-button" data-dialog-focus>Cancel</button>
+          <button id="confirmRestart" class="secondary-button">Restart battle</button>
+        </div>
       </section>
     </div>
     <div class="modal-backdrop hidden" id="resultModal">
@@ -859,6 +929,20 @@ OTHER DEALINGS IN THE FONT SOFTWARE.
         ><button id="confirmImport" class="gold-button">
           Replace local saves
         </button>
+      </section>
+    </div>
+    <div class="modal-backdrop hidden" id="coachingModal">
+      <section class="coaching-modal modal" role="dialog" aria-modal="true" aria-labelledby="coachingTitle" aria-describedby="coachingText coachingAgency">
+        <div class="coaching-copy" role="region" tabindex="0" aria-label="Teaching instructions">
+          <div class="eyebrow">TEACHING PAUSE</div>
+          <h2 id="coachingTitle"></h2>
+          <p id="coachingText"></p>
+          <p id="coachingAgency">Time, troops and income stay stopped while you build. Gold costs still apply. The gold ring is a suggestion; choose any valid site or another building. Selecting a building brings its suggestion into view. Use Start or Resume whenever you’re ready.</p>
+        </div>
+        <div class="coaching-actions">
+          <button id="coachingPlan" class="gold-button" data-dialog-focus>Build while paused</button>
+          <button id="coachingPlay" class="secondary-button">Start battle now</button>
+        </div>
       </section>
     </div>
     <script type="module" src="./app.js"></script>

@@ -1,4 +1,7 @@
-import {Game, BUILDINGS, MAPS} from './engine.js';
+import {Game, BUILDINGS, MAPS, getRuleset} from './engine.js';
+import {CAMPAIGN_RULESET_IDS, deepFreeze} from './rulesets.js';
+import {ONBOARDING_CHAPTER, ONBOARDING_MISSIONS, isOnboardingMission} from './campaign-onboarding.js';
+export {ONBOARDING_CHAPTER, ONBOARDING_MISSIONS, isOnboardingMission} from './campaign-onboarding.js';
 import {INTRO_CHAPTER, INTRO_MISSIONS, introMedalMet} from './intro-campaign.js';
 export {INTRO_CHAPTER, INTRO_MISSIONS, isIntroMission} from './intro-campaign.js';
 
@@ -239,7 +242,8 @@ const firstAuthoredIds=Object.fromEntries(Object.keys(MAPS).map(mapId=>[mapId,ne
 // Legacy catalogs retain their order, totals and completion semantics.
 export const ALL_CAMPAIGN_MISSIONS=[...CAMPAIGN_MISSIONS,...INTRO_MISSIONS];
 export const ALL_CAMPAIGN_CHAPTERS=[INTRO_CHAPTER,...CAMPAIGN_CHAPTERS];
-for(const mission of ALL_CAMPAIGN_MISSIONS) {
+export const CAMPAIGN_PROGRESS_MISSIONS=[...ALL_CAMPAIGN_MISSIONS,...ONBOARDING_MISSIONS];
+for(const mission of CAMPAIGN_PROGRESS_MISSIONS) {
   mission.mapId=mission.mapId||'classic';
   mission.ai=mission.ai===true;
   if(mission.chapterId==='frontier') {
@@ -257,21 +261,45 @@ for(const mission of ALL_CAMPAIGN_MISSIONS) {
   mission.mode=mission.objectives[0].type;
   mission.markedTargets=mission.objectives.flatMap(o=>o.type==='destroy'?o.targets:[]);
   mission.protectedTargets=mission.objectives.flatMap(o=>o.type==='protect'?o.targets:[]);
-  if(!mission.optional)mission.reward=`Unlocks ${CAMPAIGN_MISSIONS.filter(m=>m.prerequisites.includes(mission.id)).map(m=>m.name).join(' / ')||'the campaign epilogue'}`;
+  if(!mission.optional&&!isOnboardingMission(mission.id))mission.reward=`Unlocks ${CAMPAIGN_MISSIONS.filter(m=>m.prerequisites.includes(mission.id)).map(m=>m.name).join(' / ')||'the campaign epilogue'}`;
 }
 
-export function getCampaignMission(id) {
-  const mission=ALL_CAMPAIGN_MISSIONS.find(m=>m.id===id);
-  if(!mission)throw new RangeError('Unknown campaign mission: '+String(id));
+// Revision 1 remains the exact old contract. New starts explicitly opt into
+// revision 2 for the established campaign without copying its sixteen missions.
+export const PROGRESSION_CAMPAIGN_MISSIONS=CAMPAIGN_MISSIONS.map(mission=>deepFreeze({
+  ...JSON.parse(JSON.stringify(mission)),scenarioRevision:2,mapRevision:1,
+  rulesetId:'frontier-campaign-open',rulesetRevision:1,
+}));
+export function getCampaignMission(id,revision=1) {
+  const catalog=revision===1?CAMPAIGN_PROGRESS_MISSIONS:revision===2?PROGRESSION_CAMPAIGN_MISSIONS:[];
+  const mission=catalog.find(m=>m.id===id);
+  if(!mission)throw new RangeError('Unknown campaign mission or revision: '+String(id)+'@'+String(revision));
   return mission;
 }
+export function campaignScenarioForGame(game,id) {
+  const revision=game?.ruleset?.campaignOnly&&!isOnboardingMission(id)?2:1;
+  getCampaignMission(id,revision);
+  return {kind:'campaign',id,revision};
+}
 const missionFor=getCampaignMission;
+function missionForGame(game,id,revision) {return missionFor(id,revision??campaignScenarioForGame(game,id).revision);}
+export function campaignRulesetAllowed(id,revision,rulesetId) {
+  const mission=getCampaignMission(id,revision);
+  if(!isOnboardingMission(id))return rulesetId===(mission.rulesetId||'frontier-legacy');
+  const minimum=ONBOARDING_MISSIONS.findIndex(m=>m.id===id);
+  return CAMPAIGN_RULESET_IDS.indexOf(rulesetId)>=minimum;
+}
 function missionGameOptions(mission) {
   return {difficulty:mission.difficulty,seed:mission.seed,ai:mission.ai,mapId:mission.mapId,
     ...(mission.rulesetId?{rulesetId:mission.rulesetId,rulesetRevision:mission.rulesetRevision,mapRevision:mission.mapRevision}:{})};
 }
-export function createCampaignMission(id) {
-  const mission=missionFor(id),game=new Game(missionGameOptions(mission));
+export function createCampaignMission(id,{revision=1,progress}={}) {
+  const base=missionFor(id,revision);
+  const mission=progress!==undefined&&isOnboardingMission(id)?{...base,rulesetId:CAMPAIGN_RULESET_IDS[Math.max(ONBOARDING_MISSIONS.findIndex(m=>m.id===id),getCampaignRoster(progress).stage-1)]}:base;
+  return createAuthoredCampaignMission(mission,missionGameOptions(mission));
+}
+function createAuthoredCampaignMission(mission,options) {
+  const game=new Game(options),id=mission.id;
   const s=game.state;
   s.buildings=[];s.effects=[];s.stats.built=[0,0];s.gold=[10000,10000];
   for(const [side,placements] of [[0,mission.playerBuildings],[1,mission.enemyBuildings]])for(const [type,x,lane,level=1] of placements) {
@@ -284,9 +312,31 @@ export function createCampaignMission(id) {
   return game;
 }
 
+function campaignRestartIdentity(game,id) {
+  const scenario=campaignScenarioForGame(game,id),mission=missionFor(id,scenario.revision);
+  if(game?.map?.id!==mission.mapId||game.map.revision!==(mission.mapRevision??1)||
+    game?.ruleset?.revision!==(mission.rulesetRevision??1)||!campaignRulesetAllowed(id,scenario.revision,game.ruleset.id)||
+    game.difficulty!==mission.difficulty||game.ai!==mission.ai||![1,2,3].includes(game.schemaVersion))
+    throw new RangeError('Campaign restart does not match its mission identity: '+String(id));
+  return {scenario,map:{id:game.map.id,revision:game.map.revision},ruleset:{id:game.ruleset.id,revision:game.ruleset.revision},
+    schemaVersion:game.schemaVersion,difficulty:game.difficulty,ai:game.ai};
+}
+/** Restart an admitted attempt, not a new profile-selected replay. The caller
+ * supplies its admitted mission ID; the engine itself does not carry that ID. */
+export function createCampaignRestart(game,id) {
+  const before=campaignRestartIdentity(game,id),mission=missionFor(id,before.scenario.revision);
+  const candidate=createAuthoredCampaignMission(mission,{
+    difficulty:before.difficulty,ai:before.ai,seed:mission.seed,mapId:before.map.id,mapRevision:before.map.revision,
+    ...(before.schemaVersion===3?{rulesetId:before.ruleset.id,rulesetRevision:before.ruleset.revision}:{})
+  });
+  if(JSON.stringify(campaignRestartIdentity(candidate,id))!==JSON.stringify(before))
+    throw new RangeError('Campaign restart would change the active battle identity: '+String(id));
+  return candidate;
+}
+
 /** Deterministic authored IDs distinguish original structures from later rebuilds. */
-export function getCampaignTargets(game,id) {
-  const mission=missionFor(id);
+export function getCampaignTargets(game,id,revision) {
+  const mission=missionForGame(game,id,revision);
   if(game.map?.id!==mission.mapId)throw new RangeError(`Campaign battlefield mismatch: ${id} requires ${mission.mapId}, received ${game.map?.id||'unknown'}`);
   return [...mission.markedTargets.map(t=>({...t,side:1,kind:'destroy'})),...mission.protectedTargets.map(t=>({...t,side:0,kind:'protect'}))]
     .map(t=>{
@@ -326,9 +376,9 @@ function medalMet(game,medal) {
   if(medal.type==='income')return currentIncome(game)>=medal.amount;
   return game.state.buildings.filter(b=>b.side===0&&b.hp>0&&b.level>=2).length>=medal.amount;
 }
-export function evaluateCampaignMission(game,id) {
-  const mission=missionFor(id),s=game.state,atDeadline=s.time+1e-7>=mission.timeLimit;
-  const targets=getCampaignTargets(game,id);
+export function evaluateCampaignMission(game,id,revision) {
+  const mission=missionForGame(game,id,revision),s=game.state,atDeadline=s.time+1e-7>=mission.timeLimit;
+  const targets=getCampaignTargets(game,id,revision);
   const objectives=mission.objectives.map(o=>({...o,...metric(game,o,atDeadline,targets)}));
   const defeated=s.winner===1||s.winner==='draw'||s.bases[0].hp<=0;
   const broken=objectives.find(o=>o.failed);
@@ -350,20 +400,20 @@ function plain(value){return !!value&&typeof value==='object'&&!Array.isArray(va
 export function normalizeCampaignProgress(raw) {
   const progress=createCampaignProgress();
   if(!plain(raw)||raw.format!==progress.format||raw.version!==CAMPAIGN_VERSION||!plain(raw.missions))return progress;
-  for(const mission of ALL_CAMPAIGN_MISSIONS) {
+  for(const mission of CAMPAIGN_PROGRESS_MISSIONS) {
     if(!Object.hasOwn(raw.missions,mission.id))continue;
     const record=raw.missions[mission.id];
     if(!plain(record)||record.completed!==true||!Number.isInteger(record.stars)||record.stars<1||record.stars>3||!Number.isFinite(record.bestTime)||record.bestTime<0||record.bestTime>mission.timeLimit+.25)continue;
     progress.missions[mission.id]={completed:true,stars:record.stars,bestTime:record.bestTime};
   }
   // Orphaned records cannot silently skip the campaign, including edited/corrupt saves.
-  for(const mission of ALL_CAMPAIGN_MISSIONS)if(mission.prerequisites.some(id=>!progress.missions[id]))delete progress.missions[mission.id];
+  for(const mission of CAMPAIGN_PROGRESS_MISSIONS)if(!(isOnboardingMission(mission.id)&&hasReturningProgress(progress))&&mission.prerequisites.some(id=>!progress.missions[id]))delete progress.missions[mission.id];
   return progress;
 }
 /** Merge independently valid snapshots without allowing a stale tab to erase records. */
 export function mergeCampaignProgress(a,b) {
   const left=normalizeCampaignProgress(a),right=normalizeCampaignProgress(b),merged=createCampaignProgress();
-  for(const mission of ALL_CAMPAIGN_MISSIONS) {
+  for(const mission of CAMPAIGN_PROGRESS_MISSIONS) {
     const first=left.missions[mission.id],second=right.missions[mission.id];
     if(!first&&!second)continue;
     merged.missions[mission.id]={completed:true,stars:Math.max(first?.stars||0,second?.stars||0),bestTime:Math.min(first?.bestTime??Infinity,second?.bestTime??Infinity)};
@@ -371,13 +421,52 @@ export function mergeCampaignProgress(a,b) {
   // Each input is prerequisite-complete, so their union is also prerequisite-complete.
   return merged;
 }
-export function isMissionUnlocked(progress,id) {
-  const mission=missionFor(id),clean=normalizeCampaignProgress(progress);
+function hasReturningProgress(clean) {return CAMPAIGN_MISSIONS.some(m=>clean.missions[m.id]?.completed);}
+export function getCampaignRoster(progress) {
+  const clean=normalizeCampaignProgress(progress),returning=hasReturningProgress(clean);
+  const stage=returning||clean.missions['shield-at-the-fork']?3:clean.missions['roadside-watch']?2:1;
+  const rulesetId=CAMPAIGN_RULESET_IDS[stage-1];
+  return {stage,rulesetId,buildings:Object.keys(getRuleset(rulesetId).buildings),returning,
+    unlockedBy:returning?'returning-campaign':stage===3?'shield-at-the-fork':stage===2?'roadside-watch':null};
+}
+export function isMissionUnlocked(progress,id,revision=1) {
+  const mission=missionFor(id,revision),clean=normalizeCampaignProgress(progress),returning=hasReturningProgress(clean);
+  if(isOnboardingMission(id)&&returning)return true;
+  if(revision===2&&!returning&&!clean.missions['open-three-roads'])return false;
   return mission.prerequisites.every(id=>clean.missions[id]?.completed);
 }
+export function canUseCampaignRuleset(progress,id,revision,rulesetId) {
+  if(!campaignRulesetAllowed(id,revision,rulesetId))return false;
+  if(!getRuleset(rulesetId).campaignOnly)return true;
+  return CAMPAIGN_RULESET_IDS.indexOf(rulesetId)<getCampaignRoster(progress).stage;
+}
+/** The explicit launch path. Preview may show locked missions; launch may not. */
+export function getCampaignLaunchMission(id,progress) {
+  const revision=isOnboardingMission(id)?1:2,mission=getCampaignMission(id,revision),roster=getCampaignRoster(progress);
+  return {...mission,scenarioRevision:revision,...(isOnboardingMission(id)?{rulesetId:CAMPAIGN_RULESET_IDS[Math.max(ONBOARDING_MISSIONS.findIndex(m=>m.id===id),roster.stage-1)]}:{} )};
+}
+export function createProgressionCampaignMission(id,progress) {
+  const mission=getCampaignLaunchMission(id,progress);
+  if(!isMissionUnlocked(progress,id,mission.scenarioRevision))throw new RangeError('This campaign mission is locked.');
+  return createCampaignMission(id,{revision:mission.scenarioRevision,progress});
+}
+export function getProgressionCampaignOverview(progress) {
+  const clean=normalizeCampaignProgress(progress),roster=getCampaignRoster(clean);
+  const missions=[...ONBOARDING_MISSIONS,...PROGRESSION_CAMPAIGN_MISSIONS].map(m=>({
+    ...getCampaignLaunchMission(m.id,clean),record:clean.missions[m.id]||null,
+    unlocked:isMissionUnlocked(clean,m.id,m.scenarioRevision??1),completed:!!clean.missions[m.id],
+  }));
+  const chapters=[ONBOARDING_CHAPTER,...CAMPAIGN_CHAPTERS].map(c=>{const own=missions.filter(m=>m.chapterId===c.id);return {...c,completed:own.every(m=>m.completed),unlocked:own.some(m=>m.unlocked),cleared:own.filter(m=>m.completed).length,total:own.length,stars:own.reduce((n,m)=>n+(m.record?.stars||0),0),maxStars:own.length*3};});
+  const next=missions.find(m=>m.unlocked&&!m.completed&&(!roster.returning||!isOnboardingMission(m.id)));
+  const cleared=missions.filter(m=>m.completed).length,stars=missions.reduce((n,m)=>n+(m.record?.stars||0),0);
+  return {missions,chapters,cleared,total:missions.length,stars,maxStars:missions.length*3,
+    completed:missions.filter(m=>!roster.returning||!isOnboardingMission(m.id)).every(m=>m.completed),
+    nextMissionId:next?.id||null,roster,returning:roster.returning,legacyIntroduction:getCampaignOverview(clean).introduction};
+}
 export function recordCampaignResult(progress,id,game) {
-  const clean=normalizeCampaignProgress(progress),mission=missionFor(id),result=evaluateCampaignMission(game,id);
-  if(!isMissionUnlocked(clean,id)||!result.completed)return clean;
+  const revision=campaignScenarioForGame(game,id).revision;
+  const clean=normalizeCampaignProgress(progress),mission=missionFor(id,revision),result=evaluateCampaignMission(game,id,revision);
+  if(!isMissionUnlocked(clean,id,revision)||!canUseCampaignRuleset(clean,id,revision,game.ruleset.id)||!result.completed)return clean;
   const previous=clean.missions[mission.id];
   clean.missions[id]={completed:true,stars:Math.max(previous?.stars||0,result.stars),bestTime:Math.min(previous?.bestTime??Infinity,game.state.time)};
   return clean;
@@ -392,9 +481,40 @@ export function getCampaignOverview(progress) {
   const introduction={chapter:{...INTRO_CHAPTER,completed:introCleared===introMissions.length,unlocked:true,cleared:introCleared,total:introMissions.length,stars:introStars,maxStars:introMissions.length*3},missions:introMissions,nextMissionId:introMissions.find(m=>m.unlocked&&!m.completed)?.id||null,completed:introCleared===introMissions.length,recommended:cleared===0&&introCleared<introMissions.length,cleared:introCleared,total:introMissions.length,stars:introStars,maxStars:introMissions.length*3};
   return {missions,chapters,cleared,total:missions.length,stars,maxStars:missions.length*3,completed:cleared===missions.length,nextMissionId:missions.find(m=>m.unlocked&&!m.completed)?.id||null,introduction};
 }
+export function readCampaignProgressState(storage,key=CAMPAIGN_STORAGE_KEY) {
+  let read;
+  try{read=storage.read?storage.read(key):{ok:true,value:storage.get(key)};}catch{read={ok:false,value:null};}
+  if(!read.ok)return {ok:false,reason:'unavailable',progress:createCampaignProgress()};
+  if(read.value===null)return {ok:true,reason:'ready',progress:createCampaignProgress()};
+  try{
+    const value=JSON.parse(read.value);
+    if(!supportedProgress(value))return {ok:false,reason:'unsupported',progress:normalizeCampaignProgress(value)};
+    return {ok:true,reason:'ready',progress:normalizeCampaignProgress(value)};
+  }catch{return {ok:false,reason:'malformed',progress:createCampaignProgress()};}
+}
 export function readCampaignProgress(storage,key=CAMPAIGN_STORAGE_KEY) {
-  try {return normalizeCampaignProgress(JSON.parse(storage.get(key)||'null'));}catch{return createCampaignProgress();}
+  return readCampaignProgressState(storage,key).progress;
 }
 export function writeCampaignProgress(storage,progress,key=CAMPAIGN_STORAGE_KEY) {
-  try {return storage.set(key,JSON.stringify(normalizeCampaignProgress(progress)))===true;}catch{return false;}
+  try {
+    const read=storage.read?storage.read(key):{ok:true,value:storage.get(key)};
+    if(!read.ok)return false;
+    let prior=createCampaignProgress();
+    if(read.value!==null){prior=JSON.parse(read.value);if(!supportedProgress(prior))return false;}
+    if(!supportedProgress(progress))return false;
+    const value=JSON.stringify(mergeCampaignProgress(prior,progress));
+    // Verify ownership after validation and never report a dropped write as saved.
+    const check=storage.read?storage.read(key):{ok:true,value:storage.get(key)};
+    if(!check.ok||check.value!==read.value)return false;
+    if(storage.set(key,value)!==true)return false;
+    const written=storage.read?storage.read(key):{ok:true,value:storage.get(key)};
+    return written.ok&&written.value===value;
+  }catch{return false;}
 }
+function supportedProgress(value) {
+  if(!plain(value)||Object.keys(value).length!==3||!['format','version','missions'].every(k=>Object.hasOwn(value,k))||value.format!=='ironroot-campaign'||value.version!==CAMPAIGN_VERSION||!plain(value.missions))return false;
+  const clean=normalizeCampaignProgress(value);
+  if(Object.keys(value.missions).length!==Object.keys(clean.missions).length)return false;
+  return Object.entries(value.missions).every(([id,record])=>plain(record)&&Object.keys(record).length===3&&['completed','stars','bestTime'].every(k=>Object.hasOwn(record,k)&&record[k]===clean.missions[id]?.[k]));
+}
+

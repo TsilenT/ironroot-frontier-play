@@ -63,7 +63,7 @@ export function createCodex(context = null) {
   const endgame = baseline.ruleset?.endgame;
 
   const unitCopy = {
-    warrior: {
+    get warrior() { return {
       role: 'Shielded melee screen',
       silhouette: 'Helmet, broad shield and sword.',
       advantages: 'Absorbs archer fire and protects ranged troops. Deals extra damage when it reaches enemy archers.',
@@ -73,8 +73,8 @@ export function createCodex(context = null) {
         `Deals ${percent(RULES.warriorVsArcher - 1)} extra damage to archers: ${num(UNITS.warrior.damage * RULES.warriorVsArcher)} per level-1 hit.`,
         `Takes ${percent(1 - RULES.towerVsWarrior)} less damage from watchtowers. This reduction does not apply to citadel shots.`,
       ],
-    },
-    archer: {
+    }; },
+    get archer() { return {
       role: 'Ranged support and anti-air',
       silhouette: 'Hood and curved bow.',
       advantages: 'Shoots ground and air targets from behind a screen. Deals bonus damage to gryphons.',
@@ -83,8 +83,8 @@ export function createCodex(context = null) {
         `Deals ${percent(RULES.archerVsAir - 1)} extra damage to flyers: ${num(UNITS.archer.damage * RULES.archerVsAir)} per level-1 hit.`,
         `Deals only ${percent(RULES.archerVsWarrior)} of normal damage to warriors: ${num(UNITS.archer.damage * RULES.archerVsWarrior)} per level-1 hit.`,
       ],
-    },
-    siege: {
+    }; },
+    get siege() { return {
       role: 'Structure breaker and ground splash',
       silhouette: 'Wheeled wooden engine with a raised throwing arm.',
       advantages: 'Heavy structure damage. Can fire on a watchtower from outside its reach when no closer enemy draws its fire.',
@@ -95,8 +95,8 @@ export function createCodex(context = null) {
         `Building range is measured to an edge ${num(RULES.buildingTargetPadding)} world units from its center: ${num(UNITS.siege.range + RULES.buildingTargetPadding)} effective reach against a watchtower's ${num(BUILDINGS.watchtower.range)} center-based reach.`,
         'Structure and overtime bonuses do not increase splash damage.',
       ],
-    },
-    wizard: {
+    }; },
+    get wizard() { return {
       role: 'Protected ground splash',
       silhouette: 'Pointed hat, long robe and glowing staff.',
       advantages: 'Full damage through warrior shields. Keep it behind other troops to hit groups of enemies with splash damage.',
@@ -106,8 +106,8 @@ export function createCodex(context = null) {
         `Other enemy ground troops within ${num(RULES.splashRadius)} world units of the impact take ${percent(RULES.wizardSplash)} of troop damage: ${num(UNITS.wizard.damage * RULES.wizardSplash)} at level 1. Flyers and other structures take no splash.`,
         'Overtime structure damage does not increase splash damage.',
       ],
-    },
-    rootwarden: {
+    }; },
+    get rootwarden() { return {
       role: 'High-health, low-damage ground screen',
       silhouette: 'Broad wooden shield, rooted feet and a leaf-crested hood.',
       advantages: 'High health buys time for ranged support. A slower-damage alternative to a warrior screen, not a replacement for every matchup.',
@@ -116,8 +116,8 @@ export function createCodex(context = null) {
         'Takes full damage from archers and watchtowers; its durability comes from health, not armor.',
         'Deals single-target melee damage to ground troops and structures. It has no projectile, splash or anti-air attack.',
       ],
-    },
-    gryphon: {
+    }; },
+    get gryphon() { return {
       role: 'Flying raider',
       silhouette: 'Broad wings, hooked beak and a body held above its shadow.',
       advantages: 'Flies out of reach of warriors, siege engines and wizards. Attacks ground and air troops.',
@@ -125,7 +125,7 @@ export function createCodex(context = null) {
       mechanics: [
         `Deals ${percent(RULES.gryphonVsStructure)} of normal damage to structures: ${num(UNITS.gryphon.damage * RULES.gryphonVsStructure)} per level-1 hit before overtime.`,
       ],
-    },
+    }; },
   };
 
   /** Display order is intentional; portraitId is a Renderer.drawUnit unit type. */
@@ -149,16 +149,16 @@ export function createCodex(context = null) {
 
   const mine = BUILDINGS.mint;
   const tower = BUILDINGS.watchtower;
-  const mineLevels = [1, 2, 3].map(level => {
+  const mineLevels = mine ? [1, 2, 3].map(level => {
     const income = mine.income * (1 + RULES.mineLevelBonus * (level - 1));
     const marginalIncome = level === 1 ? income : mine.income * RULES.mineLevelBonus;
     const cost = level === 1 ? mine.cost : upgradeCost({ type: 'mint', level: level - 1 });
     return { level, income, marginalIncome, cost, bestCasePaybackSeconds: cost / marginalIncome };
-  });
+  }) : [];
 
   /** Non-producing structures. Mine payback uses additional income only. */
   const STRUCTURE_CODEX = freeze([
-    {
+    ...(tower ? [{
       id: 'watchtower', name: tower.name, role: 'Stationary defense',
       cost: tower.cost, hp: tower.hp, range: tower.range, damage: tower.damage,
       attackTime: RULES.towerAttackTime, upgradeCosts: upgradeCosts('watchtower'),
@@ -168,8 +168,8 @@ export function createCodex(context = null) {
         `Level-1 arrows hit for ${num(tower.damage)} every ${formatSeconds(RULES.towerAttackTime)}; warriors take ${num(tower.damage * RULES.towerVsWarrior)}.`,
         `Range is ${num(tower.range)} world units measured from the tower's center.`,
       ],
-    },
-    {
+    }] : []),
+    ...(mine ? [{
       id: 'mint', name: mine.name, role: 'Gold income',
       cost: mine.cost, hp: mine.hp, income: mine.income,
       upgradeCosts: upgradeCosts('mint'), levels: mineLevels,
@@ -182,12 +182,13 @@ export function createCodex(context = null) {
         `Level 3 upgrade: ${mineLevels[2].cost} gold ÷ ${num(mineLevels[2].marginalIncome)} additional gold/s = ${formatSeconds(mineLevels[2].bestCasePaybackSeconds)} best-case payback.`,
         'These payback times assume the mine keeps working. They exclude defense costs, destruction and salvage. Consider whether you need troops sooner.',
       ],
-    },
+    }] : []),
   ]);
 
   const ECONOMY_GUIDE = freeze({
-    scope: context?.map ? `Level-1 skirmish baseline on ${baseline.map.name}, before upgrades or overtime. This map allows ${buildingCap} buildings per side. Campaigns and field trials can change starting gold, health, buildings and building levels; read their briefings.` : 'Level-1 skirmish baseline on Classic, before upgrades or overtime. Twin Span has a lower 16-building cap; other maps retain these limits. Campaigns and field trials can change starting gold, health, buildings and building levels; read their briefings.',
+    scope: baseline.ruleset.campaignOnly ? `Level-1 reference for this campaign roster, before upgrades. This battlefield allows ${buildingCap} buildings per side. Starting resources and forces come from the mission briefing, not the reference values below.` : context?.map ? `Level-1 skirmish baseline on ${baseline.map.name}, before upgrades or overtime. This map allows ${buildingCap} buildings per side. Campaigns and field trials can change starting gold, health, buildings and building levels; read their briefings.` : 'Level-1 skirmish baseline on Classic, before upgrades or overtime. Twin Span has a lower 16-building cap; other maps retain these limits. Campaigns and field trials can change starting gold, health, buildings and building levels; read their briefings.',
     counterCaveat: 'These matchups help you choose troops. Army size, range, position, upgrades and support can still decide the fight.',
+    startingGoldLabel: baseline.ruleset.campaignOnly ? 'Reference gold' : 'Starting gold',
     startingGold: initial.gold[0],
     baseIncome: initial.income[0],
     citadelHp: initial.bases[0].maxHp,
@@ -195,17 +196,17 @@ export function createCodex(context = null) {
       id: building.type, name: BUILDINGS[building.type].name, level: building.level,
     })),
     killBounty: RULES.killBounty,
-    mineCap: RULES.mineCap,
+    mineCap: mine ? RULES.mineCap : 0,
     buildingCap,
     unitCap: RULES.unitCap,
     maxLevel: RULES.maxLevel,
     rallyStrike: { ...SPELL },
     notes: [
-      `Both sides start a skirmish with ${initial.gold[0]} gold, ${num(initial.income[0])} gold/s and one free level-1 barracks. AI difficulty changes decisions, not prices or base income.`,
+      baseline.ruleset.campaignOnly ? `Gold arrives at ${num(initial.income[0])} per second before working mines. Your mission briefing gives the actual starting gold and forces.` : `Both sides start a skirmish with ${initial.gold[0]} gold, ${num(initial.income[0])} gold/s and one free level-1 barracks. AI difficulty changes decisions, not prices or base income.`,
       `Defeating an enemy troop awards ${RULES.killBounty} gold. Structures award no kill gold.`,
       'Pay once for a troop building. It then trains troops automatically at no extra gold cost.',
       `Training intervals show the usual time between troops. A new level-1 building trains its first troop sooner, after about ${formatSeconds(RULES.firstSpawnSeconds)}.`,
-      `Each side can field ${RULES.unitCap} living troops and ${buildingCap} buildings, including at most ${RULES.mineCap} mines. At the troop cap, a training cycle can finish without adding a troop.`,
+      `Each side can field ${RULES.unitCap} living troops and ${buildingCap} buildings, ${mine ? 'including at most ' + RULES.mineCap + ' mines' : 'with no gold mines available in this roster'}. At the troop cap, a training cycle can finish without adding a troop.`,
       'Range and speed are measured in world units. Screen size does not change them. Attacks happen on game ticks, so cooldowns are approximate and do not guarantee damage per second.',
       'Salvage returns half of total invested gold, scaled by remaining building health and rounded down. You cannot salvage protected campaign buildings.',
     ],
@@ -213,7 +214,7 @@ export function createCodex(context = null) {
       `Buildings reach level ${RULES.maxLevel}. The two listed upgrade prices are level 1 → 2 and level 2 → 3, paid separately.`,
       `Each level above 1 adds ${percent(RULES.buildingLevelBonus)} of base building health and increases production rate by ${percent(RULES.productionLevelBonus)} of the base rate.`,
       `New troops gain ${percent(RULES.unitLevelBonus)} of base health and damage per production-building level above 1. Existing troops keep their original level. Upgrades do not change range, speed or attack cooldown.`,
-      `Watchtowers gain ${percent(RULES.towerLevelBonus)} of base damage per level above 1. Mines gain ${percent(RULES.mineLevelBonus)} of base income per level above 1.`,
+      ...(tower && mine ? [`Watchtowers gain ${percent(RULES.towerLevelBonus)} of base damage per level above 1. Mines gain ${percent(RULES.mineLevelBonus)} of base income per level above 1.`] : []),
     ],
     overtime: {
       startSeconds: endgame?.escalationAt ?? RULES.overtimeSeconds,

@@ -27,9 +27,20 @@ const rootwardenBuildings=deepFreeze({...BUILDINGS,wardenLodge:{name:'Warden lod
 const entry=(id,name,units,buildings,forcedDecay,limits)=>deepFreeze({id,revision:1,name,units,buildings,spell:SPELL,
   combat:{policy:'legacy',flyingCrossLanes:false},ai:{policy:'legacy'},economy:{policy:'legacy'},movement:{policy:'legacy'},
   endgame:{id:forcedDecay?'timed':'open-escalating',name:forcedDecay?'Sudden death':'Open-ended',escalationAt:300,productionMultiplier:1.65,structureDamageMultiplier:1.75,baseDamage:32,escalatedBaseDamage:18,forcedDecay,decayAt:forcedDecay?420:null},limits});
+// Each campaign tier is a whole, immutable battle identity. A later unlock never
+// mutates a running battle, and absent buildings/units fail ordinary engine admission.
+export const CAMPAIGN_RULESET_IDS=deepFreeze(['frontier-campaign-watch','frontier-campaign-fork','frontier-campaign-open']);
+const campaignBuildings=types=>deepFreeze(Object.fromEntries(types.map(type=>[type,rootwardenBuildings[type]])));
+const campaignUnits=buildings=>deepFreeze(Object.fromEntries([...new Set(Object.values(buildings).map(b=>b.unit).filter(Boolean))].map(type=>[type,rootwardenUnits[type]])));
+const watchBuildings=campaignBuildings(['barracks','archery']);
+const forkBuildings=campaignBuildings(['barracks','archery','watchtower','mint','wardenLodge']);
+const campaignEntry=(id,name,buildings)=>deepFreeze({...entry(id,name,campaignUnits(buildings),buildings,false,longLimits),campaignOnly:true});
 export const RULESETS=deepFreeze({
   'frontier-legacy':entry('frontier-legacy','Classic · Sudden death',UNITS,BUILDINGS,true,legacyLimits),
   'frontier-rootwarden-timed':entry('frontier-rootwarden-timed','Rootwarden · Sudden death',rootwardenUnits,rootwardenBuildings,true,longLimits),
-  'frontier-rootwarden-open':entry('frontier-rootwarden-open','Rootwarden · Open-ended',rootwardenUnits,rootwardenBuildings,false,longLimits)
+  'frontier-rootwarden-open':entry('frontier-rootwarden-open','Rootwarden · Open-ended',rootwardenUnits,rootwardenBuildings,false,longLimits),
+  'frontier-campaign-watch':campaignEntry('frontier-campaign-watch','Campaign · First company',watchBuildings),
+  'frontier-campaign-fork':campaignEntry('frontier-campaign-fork','Campaign · Warden company',forkBuildings),
+  'frontier-campaign-open':campaignEntry('frontier-campaign-open','Campaign · Full company',rootwardenBuildings)
 });
 export function getRuleset(id=LEGACY_RULESET_ID,revision=1){if(typeof id!=='string'||!Object.hasOwn(RULESETS,id))throw new Error('Unknown ruleset: '+String(id));const rules=RULESETS[id];if(revision!==rules.revision)throw new Error('Unsupported ruleset revision');return rules;}
