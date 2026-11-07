@@ -3628,7 +3628,9 @@ body.gamepad-active a:focus {
 .protected-portrait #front { grid-column: 3; grid-row: 1; }
 /* At extremely small sizes, the world stops rather than running out of view.
    The two action rows never shrink; the explanatory region can scroll. */
-.viewport-pause { position: fixed; z-index: 9; background: #102119f5; padding: calc(8px + env(safe-area-inset-top, 0px)) calc(8px + env(safe-area-inset-right, 0px)) calc(8px + env(safe-area-inset-bottom, 0px)) calc(8px + env(safe-area-inset-left, 0px)); }
+/* Same stacking level as Pause: DOM order matches dialogLayers, so this
+   safety hold is above Pause but below title, settings and recovery dialogs. */
+.viewport-pause { position: fixed; z-index: 10; background: #102119f5; padding: calc(8px + env(safe-area-inset-top, 0px)) calc(8px + env(safe-area-inset-right, 0px)) calc(8px + env(safe-area-inset-bottom, 0px)) calc(8px + env(safe-area-inset-left, 0px)); }
 .viewport-pause > section { height: 100%; display: grid; grid-template-rows: minmax(0, 1fr) auto; gap: 8px; max-width: 560px; margin: auto; }
 .viewport-message { min-height: 0; overflow: auto; overscroll-behavior: contain; }
 .viewport-message:focus-visible { outline: 2px solid var(--gold); outline-offset: -2px; }
@@ -3786,6 +3788,13 @@ body.gamepad-active a:focus {
 .protected-sidebar .resources b { font-size: 20px; line-height: 24px; }
 .protected-sidebar .resources small { font-size: 8px; }
 .protected-sidebar .clock-block small { display: none; }
+/* Keep income inside the existing portrait resource row, not underneath it.
+   The 16px line fits both the normal 28px and short 20px tracks without
+   borrowing battlefield space or changing the safe-area shell. */
+.protected-portrait #income {
+  display: block; position: static; inset: auto; flex-shrink: 0;
+  font-size: 11px; line-height: 16px; white-space: nowrap;
+}
 /* A lost original has no camera action. Release its unused second column so
    the explicit loss text stays inside the same full-size health card. */
 .protected-mobile .protected-target[data-state='lost'] .protected-health { grid-column: 1 / -1; }
@@ -3906,7 +3915,7 @@ body.gamepad-active a:focus {
 /* The real hint and Start/Resume controls leave the Build drawer on phones.
    This is reserved grid space, never an overlay on placement sites or tools. */
 .campaign-teaching {display: contents;}
-.coach-next, .coach-rail-status {display: none;}
+.coach-next {display: none;}
 .campaign-coach:focus-visible {outline: 2px solid var(--gold); outline-offset: -2px;}
 .app.protected-mobile.mobile-coaching {--mobile-teaching: 64px;}
 .protected-mobile .campaign-teaching {display: contents;}
@@ -3915,6 +3924,11 @@ body.gamepad-active a:focus {
   min-width: 0; min-height: 0; height: var(--mobile-teaching); padding: 4px 6px;
   background: #203429; border-block: 1px solid #7f7952; overflow: hidden;
 }
+/* Hiding hint text while paused must not auto-place its actions in column 1.
+   Keep the same control geometry before Resume is offered and after resuming.
+   Direct children only: collapsed hints move these actions into navigation. */
+.protected-mobile.mobile-coaching .campaign-teaching > .campaign-coach {grid-column: 1; grid-row: 1;}
+.protected-mobile.mobile-coaching .campaign-teaching > .teaching-actions {grid-column: 2; grid-row: 1;}
 .protected-mobile.mobile-coaching .campaign-coach {
   /* DM Sans text ranges extend 1px above the first compact line box. Keep
      that ink inside this scroller without changing the reserved rail. */
@@ -3927,7 +3941,6 @@ body.gamepad-active a:focus {
 .protected-mobile.mobile-coaching .teaching-actions {margin: 0; gap: 4px; align-self: center; flex-wrap: nowrap;}
 .protected-mobile.mobile-coaching .teaching-actions button {padding: 4px; min-width: 44px; height: 44px; font-size: 12px;}
 .protected-mobile.mobile-coaching #coachResume {min-width: 56px; background: #e5ca88; color: #17261c; font-weight: 700;}
-.protected-mobile.mobile-coaching .coach-rail-status {display: block; margin: 0; align-self: center; font-size: 12px; line-height: 16px;}
 /* Landscape keeps the full-height protected HUD/navigation at right. Only the
    left field is shortened: 320px becomes 256px, above the 212px safety floor. */
 .protected-mobile.protected-sidebar.mobile-coaching .battlefield {margin-top: var(--mobile-teaching);}
@@ -3954,6 +3967,33 @@ body.gamepad-active a:focus {
   .coaching-actions {grid-template-columns: 1fr 1fr;}
 }
 
+/* Flight orders stay inside the existing, scrollable building inspector. */
+.flight-orders { border-top: 1px solid #65745b; margin: 10px 0 12px; padding-top: 10px; }
+.flight-orders h4 { margin: 0 0 5px; font-size: 14px; }
+.flight-orders p { margin: 6px 0; font-size: 12px; line-height: 1.4; color: #d6dfc8; }
+.flight-order-buttons { display: flex; gap: 6px; }
+.flight-order-buttons button { flex: 1; min-width: 44px; min-height: 44px; padding: 7px 5px; border: 1px solid #83947b; background: #263e35; color: #edf1df; font-size: 12px; line-height: 1.25; }
+.flight-order-buttons button[aria-pressed="true"] { background: #e3cd93; color: #23342c; border-color: #f1e1b9; font-weight: 700; }
+.flight-order-buttons button:focus-visible { outline: 3px solid #fff4c9; outline-offset: 2px; }
+.selection-panel:has(.flight-orders:not(.hidden)) { max-height: calc(100% - 96px); overflow-y: auto; overscroll-behavior: contain; scroll-padding-block: 8px; }
+.protected-mobile .command-deck .selection-panel:has(.flight-orders:not(.hidden)) { max-height: none; overflow: visible; }
+/* Nearest-edge scrolling rounds to CSS pixels. Leave room inside the actual
+   mobile scrollport for fractional button bounds and the 5px focus outline. */
+.protected-mobile .command-deck:has(.flight-orders:not(.hidden)) { scroll-padding-block: 8px; }
+.pause-flights { margin: 12px 0; border: 1px solid #64745c; padding: 0 12px; }
+.pause-flights summary { min-height: 44px; display: flex; align-items: center; cursor: pointer; font-size: 14px; }
+.pause-flights p { font-size: 13px; line-height: 1.5; white-space: pre-line; }
+/* Keep the collapsed route disclosure and every primary action in the initial
+   narrow-phone pause view. Only whitespace shrinks; expanded route details
+   retain their readable text and the modal's existing vertical scroller. */
+@media (max-width: 400px) and (max-height: 600px) and (orientation: portrait) {
+  .pause-menu { padding: 16px 18px; }
+  .pause-menu .pause-briefing { margin: 10px 0; padding: 10px 0; }
+  .pause-menu .pause-utilities, .pause-menu .pause-flights { margin: 8px 0; }
+  .pause-menu .menu-status { margin: 8px 0; }
+}
+.flight-guide { padding: 12px; margin: 14px 0; border: 1px solid #65745b; font-size: 14px; line-height: 1.5; }
+.flight-guide h3 { margin-top: 0; }
 /* Short coached portrait shares the field row with navigation instead of
    stacking another 96px below it. At 320x430 the field is 216x278, with a
    separate full-width teaching strip and original-objective dock. Every
@@ -3994,3 +4034,49 @@ body.gamepad-active a:focus {
 .protected-mobile.protected-short-portrait.mobile-coaching #home { grid-column: 1; grid-row: 1; }
 .protected-mobile.protected-short-portrait.mobile-coaching #front { grid-column: 2; grid-row: 1; }
 .protected-mobile.protected-short-portrait.mobile-coaching #minimap { grid-column: 1 / -1; grid-row: 2; }
+
+/* Hidden hints have no banner or reserved row. The same Show and, when
+   needed, Start controls fit in the existing navigation rather than replacing
+   the lesson with a status message. Keep short portrait's safe side rail. */
+.app.protected-mobile.mobile-coaching.coach-collapsed { --mobile-teaching: 0px; }
+.protected-mobile.coach-collapsed .protected-navigation .teaching-actions,
+.protected-mobile.coach-collapsed .protected-navigation .bottom-map { display: contents; }
+.protected-mobile.coach-collapsed .protected-navigation {
+  grid-template-columns: 44px minmax(44px, 1fr) 44px 44px;
+}
+.protected-mobile.coach-collapsed.coach-held .protected-navigation {
+  grid-template-columns: 44px minmax(44px, 1fr) 44px 56px 44px;
+}
+.protected-mobile.coach-collapsed .protected-navigation .compact-build { grid-column: 1 / 3; justify-self: start; }
+.protected-mobile.coach-collapsed .protected-navigation .toolbelt { grid-column: 2 / -1; }
+.protected-mobile.coach-collapsed #home { grid-column: 1; grid-row: 2; }
+.protected-mobile.coach-collapsed #minimap { grid-column: 2; grid-row: 2; }
+.protected-mobile.coach-collapsed #front { grid-column: 3; grid-row: 2; }
+.protected-mobile.coach-collapsed #coachResume { grid-column: 4; grid-row: 2; }
+.protected-mobile.coach-collapsed #toggleCoach { grid-column: -2; grid-row: 2; }
+.protected-mobile.protected-short-portrait.coach-collapsed .protected-navigation {
+  grid-template-columns: repeat(2, 44px);
+  grid-template-rows: repeat(5, 44px);
+  align-content: space-between;
+}
+.protected-mobile.protected-short-portrait.coach-collapsed .protected-navigation .toolbelt { display: contents; }
+.protected-mobile.protected-short-portrait.coach-collapsed .protected-navigation .compact-build {
+  grid-column: 1; grid-row: 1; width: 44px;
+  /* Build also becomes Close/Cancel; keep every full label inside its target. */
+  padding-inline: 0; font-family: var(--display); font-size: 14px; letter-spacing: normal;
+}
+.protected-mobile.protected-short-portrait.coach-collapsed #toggleCoach { grid-column: 2; grid-row: 1; }
+.protected-mobile.protected-short-portrait.coach-collapsed #pause { grid-column: 1; grid-row: 2; }
+.protected-mobile.protected-short-portrait.coach-collapsed #speed { grid-column: 2; grid-row: 2; }
+.protected-mobile.protected-short-portrait.coach-collapsed #sound { grid-column: 1; grid-row: 3; }
+.protected-mobile.protected-short-portrait.coach-collapsed #settings { grid-column: 2; grid-row: 3; }
+.protected-mobile.protected-short-portrait.coach-collapsed #home { grid-column: 1; grid-row: 4; }
+.protected-mobile.protected-short-portrait.coach-collapsed #front { grid-column: 2; grid-row: 4; }
+.protected-mobile.protected-short-portrait.coach-collapsed #minimap { grid-column: 1 / -1; grid-row: 5; }
+.protected-mobile.protected-short-portrait.coach-collapsed.coach-held #minimap { grid-column: 1; }
+/* The full Resume label needs condensed lettering inside this one 44px
+   control. Keep readable 14px type and the full accessible action name. */
+.protected-mobile.protected-short-portrait.coach-collapsed #coachResume {
+  grid-column: 2; grid-row: 5; min-width: 44px;
+  padding-inline: 0; font-family: var(--display); font-size: 14px; letter-spacing: normal;
+}

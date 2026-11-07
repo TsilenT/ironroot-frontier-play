@@ -264,30 +264,70 @@ for(const mission of CAMPAIGN_PROGRESS_MISSIONS) {
   if(!mission.optional&&!isOnboardingMission(mission.id))mission.reward=`Unlocks ${CAMPAIGN_MISSIONS.filter(m=>m.prerequisites.includes(mission.id)).map(m=>m.name).join(' / ')||'the campaign epilogue'}`;
 }
 
-// Revision 1 remains the exact old contract. New starts explicitly opt into
-// revision 2 for the established campaign without copying its sixteen missions.
+// Revision 1 and revision 2 remain their exact published contracts. New starts
+// opt into a separate flight catalog only after the existing full-roster opening.
 export const PROGRESSION_CAMPAIGN_MISSIONS=CAMPAIGN_MISSIONS.map(mission=>deepFreeze({
   ...JSON.parse(JSON.stringify(mission)),scenarioRevision:2,mapRevision:1,
   rulesetId:'frontier-campaign-open',rulesetRevision:1,
 }));
+export const FLIGHT_CAMPAIGN_MISSION_IDS=Object.freeze([
+  'wings-of-ash','stonegate','long-vigil','cold-forge','black-ledger','furnace-heart',
+  'crown-foothold','last-light','ironroot','open-horizon','river-charter','far-beacon','common-ground',
+]);
+const flightBriefing='Select an owned gryphon aerie to order Hold or one adjacent road. Orders are free and affect future launches only. Each gryphon gives a two-second warning at the gateway, then crosses once at normal speed. It cannot attack while warning or crossing, and remains vulnerable to anti-air.';
+export const FLIGHT_CAMPAIGN_MISSIONS=deepFreeze(FLIGHT_CAMPAIGN_MISSION_IDS.map(id=>{
+  const original=PROGRESSION_CAMPAIGN_MISSIONS.find(m=>m.id===id);
+  if(!original)throw new RangeError('Unknown flight campaign mission: '+id);
+  const mission={...JSON.parse(JSON.stringify(original)),scenarioRevision:3,rulesetId:'frontier-campaign-flight'};
+  if(['wings-of-ash','stonegate'].includes(id)) {
+    mission.hint+=' Aeries can order future gryphons to an adjacent road. Keep archers on exposed roads; Rootwardens cannot attack air.';
+    mission.briefing.push(flightBriefing);
+  }
+  return mission;
+}));
 export function getCampaignMission(id,revision=1) {
-  const catalog=revision===1?CAMPAIGN_PROGRESS_MISSIONS:revision===2?PROGRESSION_CAMPAIGN_MISSIONS:[];
+  const catalog=revision===1?CAMPAIGN_PROGRESS_MISSIONS:revision===2?PROGRESSION_CAMPAIGN_MISSIONS:revision===3?FLIGHT_CAMPAIGN_MISSIONS:[];
   const mission=catalog.find(m=>m.id===id);
   if(!mission)throw new RangeError('Unknown campaign mission or revision: '+String(id)+'@'+String(revision));
   return mission;
 }
+/** Current deliberate starts/previews only. Existing attempts use their rules. */
+export function getCurrentCampaignRevision(id) {
+  getCampaignMission(id,1);
+  return FLIGHT_CAMPAIGN_MISSION_IDS.includes(id)?3:CAMPAIGN_MISSIONS.some(m=>m.id===id)?2:1;
+}
+/** One exact identity resolver for saves, histories, targets and restarts.
+ * The opening retains only its original three roster identities, even after a
+ * profile earns flight. An arbitrary campaignOnly ruleset is never a fallback. */
+export function getCampaignRevisionForRuleset(id,rulesetId,rulesetRevision=1) {
+  if(typeof rulesetId!=='string'||!Number.isSafeInteger(rulesetRevision))throw new RangeError('Campaign ruleset identity is required.');
+  let rules;
+  try{rules=getRuleset(rulesetId,rulesetRevision);}catch{throw new RangeError('Unknown campaign ruleset identity: '+String(rulesetId));}
+  let revision;
+  if(isOnboardingMission(id)) {
+    const minimum=ONBOARDING_MISSIONS.findIndex(m=>m.id===id),stage=CAMPAIGN_RULESET_IDS.indexOf(rules.id);
+    if(stage>=minimum)revision=1;
+  } else if(rules.id==='frontier-legacy')revision=1;
+  else if(rules.id==='frontier-campaign-open')revision=2;
+  else if(rules.id==='frontier-campaign-flight')revision=3;
+  if(revision===undefined)throw new RangeError('Ruleset does not match campaign mission: '+String(id));
+  const mission=getCampaignMission(id,revision);
+  if(rules.revision!==(mission.rulesetRevision??1))throw new RangeError('Ruleset revision does not match campaign mission: '+String(id));
+  return revision;
+}
 export function campaignScenarioForGame(game,id) {
-  const revision=game?.ruleset?.campaignOnly&&!isOnboardingMission(id)?2:1;
-  getCampaignMission(id,revision);
-  return {kind:'campaign',id,revision};
+  if(!game?.ruleset||!Number.isSafeInteger(game.ruleset.revision))throw new RangeError('Campaign game has no explicit ruleset identity.');
+  return {kind:'campaign',id,revision:getCampaignRevisionForRuleset(id,game.ruleset.id,game.ruleset.revision)};
 }
 const missionFor=getCampaignMission;
-function missionForGame(game,id,revision) {return missionFor(id,revision??campaignScenarioForGame(game,id).revision);}
+function missionForGame(game,id,revision) {
+  const actual=campaignScenarioForGame(game,id).revision;
+  if(revision!==undefined&&revision!==actual)throw new RangeError('Campaign scenario revision does not match its ruleset: '+String(id));
+  return missionFor(id,actual);
+}
 export function campaignRulesetAllowed(id,revision,rulesetId) {
-  const mission=getCampaignMission(id,revision);
-  if(!isOnboardingMission(id))return rulesetId===(mission.rulesetId||'frontier-legacy');
-  const minimum=ONBOARDING_MISSIONS.findIndex(m=>m.id===id);
-  return CAMPAIGN_RULESET_IDS.indexOf(rulesetId)>=minimum;
+  getCampaignMission(id,revision);
+  try{return getCampaignRevisionForRuleset(id,rulesetId)===revision;}catch{return false;}
 }
 function missionGameOptions(mission) {
   return {difficulty:mission.difficulty,seed:mission.seed,ai:mission.ai,mapId:mission.mapId,
@@ -394,7 +434,9 @@ export function evaluateCampaignMission(game,id,revision) {
   return {completed,failed,progress:Math.max(0,Math.min(1,progress)),label,objectives,medals,stars:completed?1+medals.filter(m=>m.earned).length:0};
 }
 
-/** Small, versioned progress record. No Game state, runtime objects or arbitrary keys. */
+/** Historical mission records aggregate clears/stars across authored revisions.
+ * They retain prerequisites, not an assertion of equivalent tactical difficulty.
+ * Exact scenario/ruleset revisions live in result history, not this unchanged schema. */
 export function createCampaignProgress() {return {format:'ironroot-campaign',version:CAMPAIGN_VERSION,missions:{}};}
 function plain(value){return !!value&&typeof value==='object'&&!Array.isArray(value)&&(Object.getPrototypeOf(value)===Object.prototype||Object.getPrototypeOf(value)===null);}
 export function normalizeCampaignProgress(raw) {
@@ -432,17 +474,21 @@ export function getCampaignRoster(progress) {
 export function isMissionUnlocked(progress,id,revision=1) {
   const mission=missionFor(id,revision),clean=normalizeCampaignProgress(progress),returning=hasReturningProgress(clean);
   if(isOnboardingMission(id)&&returning)return true;
-  if(revision===2&&!returning&&!clean.missions['open-three-roads'])return false;
+  if(revision>=2&&!returning&&!clean.missions['open-three-roads'])return false;
   return mission.prerequisites.every(id=>clean.missions[id]?.completed);
 }
+// Flight is another full-roster identity, never a fourth progression stage.
+export const CAMPAIGN_RULESET_STAGES=Object.freeze({
+  'frontier-campaign-watch':1,'frontier-campaign-fork':2,'frontier-campaign-open':3,'frontier-campaign-flight':3,
+});
 export function canUseCampaignRuleset(progress,id,revision,rulesetId) {
   if(!campaignRulesetAllowed(id,revision,rulesetId))return false;
   if(!getRuleset(rulesetId).campaignOnly)return true;
-  return CAMPAIGN_RULESET_IDS.indexOf(rulesetId)<getCampaignRoster(progress).stage;
+  return Object.hasOwn(CAMPAIGN_RULESET_STAGES,rulesetId)&&CAMPAIGN_RULESET_STAGES[rulesetId]<=getCampaignRoster(progress).stage;
 }
 /** The explicit launch path. Preview may show locked missions; launch may not. */
 export function getCampaignLaunchMission(id,progress) {
-  const revision=isOnboardingMission(id)?1:2,mission=getCampaignMission(id,revision),roster=getCampaignRoster(progress);
+  const revision=getCurrentCampaignRevision(id),mission=getCampaignMission(id,revision),roster=getCampaignRoster(progress);
   return {...mission,scenarioRevision:revision,...(isOnboardingMission(id)?{rulesetId:CAMPAIGN_RULESET_IDS[Math.max(ONBOARDING_MISSIONS.findIndex(m=>m.id===id),roster.stage-1)]}:{} )};
 }
 export function createProgressionCampaignMission(id,progress) {
@@ -452,10 +498,11 @@ export function createProgressionCampaignMission(id,progress) {
 }
 export function getProgressionCampaignOverview(progress) {
   const clean=normalizeCampaignProgress(progress),roster=getCampaignRoster(clean);
-  const missions=[...ONBOARDING_MISSIONS,...PROGRESSION_CAMPAIGN_MISSIONS].map(m=>({
-    ...getCampaignLaunchMission(m.id,clean),record:clean.missions[m.id]||null,
-    unlocked:isMissionUnlocked(clean,m.id,m.scenarioRevision??1),completed:!!clean.missions[m.id],
-  }));
+  const missions=[...ONBOARDING_MISSIONS,...PROGRESSION_CAMPAIGN_MISSIONS].map(m=>{
+    const launch=getCampaignLaunchMission(m.id,clean);
+    return {...launch,record:clean.missions[m.id]||null,
+      unlocked:isMissionUnlocked(clean,m.id,launch.scenarioRevision),completed:!!clean.missions[m.id]};
+  });
   const chapters=[ONBOARDING_CHAPTER,...CAMPAIGN_CHAPTERS].map(c=>{const own=missions.filter(m=>m.chapterId===c.id);return {...c,completed:own.every(m=>m.completed),unlocked:own.some(m=>m.unlocked),cleared:own.filter(m=>m.completed).length,total:own.length,stars:own.reduce((n,m)=>n+(m.record?.stars||0),0),maxStars:own.length*3};});
   const next=missions.find(m=>m.unlocked&&!m.completed&&(!roster.returning||!isOnboardingMission(m.id)));
   const cleared=missions.filter(m=>m.completed).length,stars=missions.reduce((n,m)=>n+(m.record?.stars||0),0);

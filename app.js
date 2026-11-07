@@ -1,7 +1,9 @@
 import { createViewportPause, inspectMobileGeometry, visibleViewportRect, insetViewportRect, fitMobileViewport, protectedToastTop } from './mobile-battlefield.js';
-import { createProfileSession, PROFILE_MARKER_KEY } from './profile-session.js';
+import { createProfileSession, PROFILE_MARKER_KEY, CURRENT_PROFILE_PROTOCOL_VERSION } from './profile-session.js';
 import { createInputScopeGuard } from './input-scope.js';
 import { createMenuHistory, seedMenuAncestors } from './menu-history.js';
+import { supportsFlightOrders } from './flight-orders.js';
+import { flightOrderModel, flightRoadName, flightRouteRows, flightWarningSummary } from './flight-orders-view.js';
 import {
   GamepadInput,
   moveCursor,
@@ -108,6 +110,7 @@ function populateFieldGuide(context = null) {
     `<ul>${items.map((text) => `<li>${esc(text)}</li>`).join('')}</ul>`;
   const stats = (values) =>
     `<dl class="codex-stats">${values.map(([label, value]) => `<div><dt>${esc(label)}</dt><dd>${esc(value)}</dd></div>`).join('')}</dl>`;
+  $('flightGuide').classList.toggle('hidden', !supportsFlightOrders(context?.ruleset || context));
   $('codexScope').textContent = ECONOMY_GUIDE.scope;
   $('codexCaveat').textContent = ECONOMY_GUIDE.counterCaveat;
   $('unitCodex').innerHTML = UNIT_CODEX.map(
@@ -187,6 +190,8 @@ let campaignPage = 'mission', briefingMission = null;
 // A teaching hold stops simulation, while ordinary battle commands remain available.
 // Manual, visibility, viewport and storage pauses keep their existing guards.
 let coachingHold = false;
+// UI-only first-build gate. Never persisted into a battle or campaign profile.
+let firstBuildHold = false;
 let navigationAttempt = 0, navigationGame = null;
 var menuHistory = null;
 let navigationAway = false;
@@ -201,7 +206,7 @@ const labels = {
   aerie: ['Aerie', 'Flying raiders', '15s / wave'],
   wardenLodge: ['Warden lodge', 'Durable front line', '12s / wave'],
 };
-const profileSession = createProfileSession(() => localStorage, { requiredProtocolVersion: 4 });
+const profileSession = createProfileSession(() => localStorage, { requiredProtocolVersion: CURRENT_PROFILE_PROTOCOL_VERSION });
 const storage = createStorage(() => profileSession.storage);
 let recoveryHold = null,
   profileGate = null,
@@ -429,6 +434,11 @@ function canInteract() {
 }
 function selectBuild(type) {
   if (!canInteract()) return;
+  if (firstBuildHold && type !== 'barracks') {
+    toast('Build a barracks first to begin.');
+    sound('error');
+    return;
+  }
   if (!Object.hasOwn(game.buildings || BUILDINGS, type)) {
     toast('That building is not available in this battle.');
     return;
@@ -494,8 +504,8 @@ function updateCampaignDeck() {
   $('allBuildings').setAttribute('aria-expanded', String(expandedBuilds));
   for (const card of document.querySelectorAll('.build-card'))
     card.classList.toggle('hidden', started && !choices.includes(card.dataset.type));
-  $('coachResume').classList.toggle('hidden', !coachingHold || !canInteract());
-  $('coachReplay').classList.toggle('hidden', coachingHold || !canInteract() || !campaignTeaching(currentCampaign));
+  $('coachResume').classList.toggle('hidden', !coachingHold || firstBuildHold || !canInteract());
+  $('coachReplay').classList.toggle('hidden', coachingHold || !canInteract() || !campaignTeaching(currentCampaign, { flightOrders: supportsFlightOrders(game.ruleset) }));
   const hint = started && !objectiveOutcome && game.state.winner === null ? campaignCoach(game, currentCampaign, ui) : null;
   const show = coachEnabled && !!hint && canInteract() && !dialogLayers.some(layer => !layer.classList.contains('hidden'));
   const compact = $('app').classList.contains('protected-compact');
@@ -514,19 +524,32 @@ function updateCampaignDeck() {
   const available = started && !objectiveOutcome && game.state.winner === null &&
     (coachingHold || (!!hint && teaching.classList.contains('coach-started')));
   const rail = compact && available;
-  const layoutChanged = $('app').classList.contains('mobile-coaching') !== rail;
+  const collapsed = !coachEnabled;
+  const compactActions = rail && collapsed;
+  const layoutChanged = $('app').classList.contains('mobile-coaching') !== rail ||
+    $('app').classList.contains('coach-collapsed') !== compactActions;
+  const focused = document.activeElement;
+  const restorePadHud = started && layoutChanged && padHud;
   $('app').classList.toggle('mobile-coaching', rail);
+  $('app').classList.toggle('coach-collapsed', compactActions);
+  $('app').classList.toggle('coach-held', compactActions && coachingHold && !firstBuildHold);
   const parent = rail ? $('app') : $('commandDeck');
   if (teaching.parentNode !== parent) parent.insertBefore(teaching, rail ? $('commandDeck') : $('deckHeading'));
-  teaching.classList.toggle('hidden', !rail && !show && !coachingHold && !hint);
+  // Hide removes the banner itself. Keep only its controls in existing
+  // navigation slots, including Start/Resume while a teaching hold is active.
+  const actions = $('coachActions');
+  const actionParent = collapsed ? compactActions ? $('protectedNavigation') : $('commandDeck') : teaching;
+  if (actions.parentNode !== actionParent)
+    actionParent.insertBefore(actions, actionParent === $('commandDeck') ? $('deckHeading') : null);
+  actions.classList.toggle('hidden', !hint && !coachingHold);
+  teaching.classList.toggle('hidden', collapsed || (!rail && !show && !coachingHold && !hint));
   $('coachResume').textContent = compact ? game.state.time === 0 ? 'Start' : 'Resume'
     : game.state.time === 0 ? 'Start battle' : 'Resume battle';
   $('coachResume').setAttribute('aria-label', game.state.time === 0 ? 'Start battle' : 'Resume battle');
-  $('coachRailStatus').classList.toggle('hidden', !rail || show);
-  $('coachRailStatus').textContent = coachingHold ? 'Paused. Start when ready.' : 'Hints hidden. Battle continues.';
 
   let highlighted = show ? document.querySelector(hint.control) : null;
   let text = hint?.text || '';
+  if (firstBuildHold) text += ' Battle starts automatically when you place your barracks.';
   if (show && coachingHold && ui.build && game.state.gold[0] < (game.buildings || BUILDINGS)[ui.build]?.cost)
     text += ' Time and income are stopped during this teaching pause. Resume when you want to earn more gold.';
   if (show && compact && !open && hint.control.startsWith('[data-type=') && !ui.build) {
@@ -543,6 +566,11 @@ function updateCampaignDeck() {
     if (element !== highlighted) element.classList.remove('coach-highlight');
   ui.coachSite = show ? hint.site : null;
   ui.coachBuilding = show ? hint.buildingId : null;
+  if (!show) {
+    $('coachNext').textContent = '';
+    $('coachTitle').textContent = '';
+    $('coachText').textContent = '';
+  }
   if (show) {
     let next = hint.title;
     if (ui.spell) next = 'Tap enemy troops to fire Arrow volley.';
@@ -563,6 +591,11 @@ function updateCampaignDeck() {
     highlighted?.classList.add('coach-highlight');
   }
   if (layoutChanged) syncProtectedLayout();
+  // Moving the same controls must not drop keyboard or controller focus.
+  if (focused?.isConnected && actions.contains(focused) && coachControlVisible(focused)) {
+    focused.focus({ preventScroll: true });
+    if (restorePadHud) padHud = true;
+  }
 }
 $('allBuildings').onclick = () => {
   if (!canInteract()) return;
@@ -582,21 +615,25 @@ $('toggleCoach').onclick = () => {
   updateCampaignDeck();
 };
 function beginCampaignCoaching({ manual = false } = {}) {
-  const lesson = campaignTeaching(currentCampaign, manual ? {} : {
-    resumed: resumedBattle,
-    completed: !!campaignProgress.missions[currentCampaign]?.completed,
-    learnedBasics: !!campaignProgress.missions['roadside-watch']?.completed || !!campaignProgress.missions['first-watch']?.completed,
+  const lesson = campaignTeaching(currentCampaign, {
+    flightOrders: supportsFlightOrders(game.ruleset),
+    ...(manual ? {} : {
+      resumed: resumedBattle,
+      completed: !!campaignProgress.missions[currentCampaign]?.completed,
+      learnedBasics: !!campaignProgress.missions['roadside-watch']?.completed || !!campaignProgress.missions['first-watch']?.completed,
+    }),
   });
   if (!lesson || !started || game.state.winner !== null || objectiveOutcome ||
       (manual && (!canInteract() || viewportPause.active))) return;
   coachingHold = true;
+  firstBuildHold = !manual && lesson.startAfterBuild === 'barracks';
   coachEnabled = true;
   inputScope.interrupt();
   resetBattleGesture();
   $('coachingTitle').textContent = lesson.title;
   $('coachingText').textContent = lesson.text;
-  $('coachingModal').classList.remove('hidden');
-  pauseControl('resume');
+  $('coachingModal').classList.toggle('hidden', firstBuildHold);
+  pauseControl(firstBuildHold && !paused ? 'pause' : 'resume');
   $('battleClockLabel').textContent = 'TEACHING PAUSE';
   if (manual) updateHUD();
   else updateCampaignDeck();
@@ -621,7 +658,7 @@ $('coachingPlay').onclick = () => pause(false, { explicit: true });
 $('coachResume').onclick = () => pause(false, { explicit: true });
 $('coachReplay').onclick = () => beginCampaignCoaching({ manual: true });
 function toggleBattlePause() {
-  pause(coachingHold && !paused ? false : !paused, { explicit: true });
+  pause(coachingHold && !firstBuildHold && !paused ? false : !paused, { explicit: true });
 }
 function coachControlVisible(element) {
   if (!element || !controlIsVisible(element)) return false;
@@ -637,10 +674,53 @@ function coachControlVisible(element) {
   }
   return true;
 }
+function syncFlightOrders(building) {
+  const model = flightOrderModel(game, building);
+  $('flightOrders').classList.toggle('hidden', !model);
+  if (!model) return;
+  $('flightOrderCurrent').textContent = model.current;
+  $('flightOrderHelp').textContent = model.detail;
+  for (const option of model.options) {
+    const button = $('flight' + option.key[0].toUpperCase() + option.key.slice(1));
+    button.classList.toggle('hidden', !option.available);
+    button.textContent = option.label;
+    button.setAttribute('aria-pressed', String(option.selected));
+    button.disabled = !option.available || !canInteract();
+  }
+}
+let armedFlightControl = null;
+document.addEventListener('pointerdown', event => {
+  const button = event.target.closest?.('[data-flight-order]');
+  armedFlightControl = button && $('flightOrders').contains(button)
+    ? {button, pointerId: event.pointerId} : null;
+}, true);
+document.addEventListener('pointercancel', () => { armedFlightControl = null; }, true);
+window.addEventListener('blur', () => { armedFlightControl = null; });
+for (const key of ['north', 'hold', 'south']) {
+  $('flight' + key[0].toUpperCase() + key.slice(1)).onclick = event => {
+    const button = event.currentTarget;
+    if (event.detail !== 0 && (armedFlightControl?.button !== button ||
+      (Number.isFinite(event.pointerId) && event.pointerId > 0 && armedFlightControl.pointerId !== event.pointerId))) return;
+    armedFlightControl = null;
+    syncProfileSafety();
+    if (!canInteract()) return;
+    const building = game.state.buildings.find(b => b.id === ui.selected && b.side === 0);
+    const option = flightOrderModel(game, building)?.options.find(value => value.key === key && value.available);
+    if (!option) return;
+    const result = game.setFlightPlan(building.id, option.lane);
+    if (result.ok) {
+      sound('click');
+      toast(option.lane === building.lane ? 'Future gryphons will hold this road.'
+        : `Future gryphons will cross to ${flightRoadName(game.map, option.lane).toLowerCase()}.`);
+    } else toast(result.reason);
+    updateSelection();
+  };
+}
 function updateSelection() {
   const b = game.state.buildings.find(
     (x) => x.id === ui.selected && x.side === 0,
   );
+  syncFlightOrders(b);
   $('selectionPanel').classList.toggle('hidden', !b);
   $('commandDeck').classList.toggle('inspecting-building', !!b && $('app').classList.contains('protected-mobile'));
   if (!b) return;
@@ -728,7 +808,7 @@ $('rally').onclick = () => {
   setCompactBuildOpen(false);
   sound('click');
 };
-function pauseControl(mode = coachingHold ? 'resume' : 'pause') {
+function pauseControl(mode = coachingHold && !firstBuildHold ? 'resume' : 'pause') {
   const b = $('pause');
   b.innerHTML =
     mode === 'pause'
@@ -775,7 +855,7 @@ function pause(value, { explicit = false } = {}) {
     $('viewportModal').classList.add('hidden');
     interruptMobileInput();
   }
-  if (!value && explicit && coachingHold) {
+  if (!value && explicit && coachingHold && !firstBuildHold) {
     coachingHold = false;
     $('coachingModal').classList.add('hidden');
     inputScope.interrupt();
@@ -785,7 +865,7 @@ function pause(value, { explicit = false } = {}) {
   if (value) setCompactBuildOpen(false);
   paused = value;
   $('pauseVeil').classList.toggle('hidden', !paused);
-  pauseControl(paused || coachingHold ? 'resume' : 'pause');
+  pauseControl(paused || (coachingHold && !firstBuildHold) ? 'resume' : 'pause');
   if (paused) save();
   syncDialogs();
 }
@@ -955,6 +1035,7 @@ function start(
   $('battleLimitWarning').classList.add('hidden');
   $('resume').disabled = false;
   coachingHold = false;
+  firstBuildHold = false;
   $('campaignTeaching').classList.remove('coach-started');
   $('coachingModal').classList.add('hidden');
   currentCampaign = cid;
@@ -1137,9 +1218,19 @@ function syncProtectedLayout() {
   const portrait = !!window.matchMedia?.('(max-width: 700px) and (orientation: portrait)').matches;
   const viewport = visibleViewportRect(window.innerWidth, window.innerHeight, window.visualViewport);
   const sidebar = landscape && (viewport.height < 360 || $('app').classList.contains('mobile-coaching'));
-  const shortPortrait = portrait && viewport.height < 560;
-  const next = (sidebar ? 'sidebar' : shortPortrait ? 'portrait-short' : landscape ? 'landscape' : portrait ? 'portrait' : 'ordinary') + ($('app').classList.contains('mobile-coaching') ? ':coaching' : '');
-  const fitted = fitMobileViewport($('app'), viewport, landscape || portrait);
+  // Apply the mobile shell before reading padding, including desktop-to-phone
+  // transitions. Choose the compact tracks from usable space, not notch or
+  // home-indicator space that is reserved inside the fitted outer viewport.
+  $('app').classList.toggle('protected-landscape', landscape);
+  $('app').classList.toggle('protected-portrait', portrait);
+  $('app').classList.toggle('protected-mobile', landscape || portrait);
+  $('app').classList.toggle('mobile-ordinary', !protect);
+  $('app').classList.toggle('protected-compact', landscape || portrait);
+  const padding = landscape || portrait ? getComputedStyle($('app')) : {};
+  const shortPortrait = portrait && insetViewportRect(viewport, padding).height < 560;
+  const next = (sidebar ? 'sidebar' : shortPortrait ? 'portrait-short' : landscape ? 'landscape' : portrait ? 'portrait' : 'ordinary') + ($('app').classList.contains('mobile-coaching') ? ':coaching' : '') +
+    ($('app').classList.contains('coach-collapsed') ? ':collapsed' : '');
+  const fitted = fitMobileViewport($('app'), viewport, landscape || portrait, padding);
   const changed = mobileLayout !== next;
   const focused = document.activeElement;
   if (changed || fitted) {
@@ -1147,13 +1238,8 @@ function syncProtectedLayout() {
     setCompactBuildOpen(false);
   }
   mobileLayout = next;
-  $('app').classList.toggle('protected-landscape', landscape);
-  $('app').classList.toggle('protected-portrait', portrait);
   $('app').classList.toggle('protected-sidebar', sidebar);
   $('app').classList.toggle('protected-short-portrait', shortPortrait);
-  $('app').classList.toggle('protected-mobile', landscape || portrait);
-  $('app').classList.toggle('mobile-ordinary', !protect);
-  $('app').classList.toggle('protected-compact', landscape || portrait);
   $('protectedNavigation').classList.toggle('hidden', !landscape && !portrait);
   const move = (id, parent) => { if ($(id).parentNode !== $(parent)) $(parent).append($(id)); };
   move('objectiveHUD', protect || landscape || portrait ? 'protectedDock' : 'battlefield');
@@ -1179,6 +1265,7 @@ function syncProtectedLayout() {
     if (focused?.isConnected && !focused.closest('.hidden,[inert]') && focused.getClientRects().length) focused.focus({preventScroll:true});
   }
   positionToast();
+  return changed || fitted;
 }
 window.addEventListener('resize', () => { syncProtectedLayout(); syncViewportSafety(); });
 function updateCompactBuildControl() {
@@ -1399,6 +1486,7 @@ function showTitle({ focusStart = false, focusResume = false } = {}) {
   started = false;
   paused = false;
   coachingHold = false;
+  firstBuildHold = false;
   $('coachingModal').classList.add('hidden');
   cancel();
   renderer.vfx?.reset();
@@ -1781,6 +1869,12 @@ $('battle').addEventListener('mouseup', (e) => {
 });
 function activateBattlePoint(w, { repeatBuild = false } = {}) {
   if (!canInteract() || $('app').classList.contains('compact-build-open')) return;
+  // Recheck ownership at the command boundary, before spending in a stale tab.
+  if (battleSession.status() === 'stale' || dialogLayers.some(layer => !layer.classList.contains('hidden'))) return;
+  if (firstBuildHold && ((ui.build && ui.build !== 'barracks') || ui.spell)) {
+    toast('Build a barracks first to begin.');
+    return;
+  }
   if (ui.build) {
     const bounds = buildBounds(game.map, 0);
     if (
@@ -1793,12 +1887,24 @@ function activateBattlePoint(w, { repeatBuild = false } = {}) {
       sound('error');
       return;
     }
+    const type = ui.build, goldBefore = game.state.gold[0];
     const snap = renderer.snap(w),
-      result = game.build(ui.build, snap.x, snap.y);
+      result = game.build(type, snap.x, snap.y);
     if (result.ok) {
+      // Only the successful paid placement from this live command can release
+      // the gate. Inspection, cancellation and restored buildings never do.
+      if (firstBuildHold && coachingHold && type === 'barracks' &&
+          result.building?.side === 0 && result.building.type === type &&
+          game.state.gold[0] === goldBefore - (game.buildings || BUILDINGS)[type].cost &&
+          canInteract() && battleSession.status() !== 'stale') {
+        firstBuildHold = false;
+        coachingHold = false;
+        interruptMobileInput();
+        pauseControl('pause');
+      }
       sound('build');
       toast(
-        `${(game.buildings || BUILDINGS)[ui.build].name} raised. ${(game.buildings || BUILDINGS)[ui.build].unit ? 'First troops in a moment.' : 'Your frontier grows.'}`,
+        `${(game.buildings || BUILDINGS)[ui.build].name} raised. ${ui.build === 'aerie' && supportsFlightOrders(game.ruleset) ? 'Tap it for flight orders.' : (game.buildings || BUILDINGS)[ui.build].unit ? 'First troops in a moment.' : 'Your frontier grows.'}`,
       );
       if (!repeatBuild || game.state.gold[0] < (game.buildings || BUILDINGS)[ui.build].cost) {
         ui.build = null;
@@ -2083,6 +2189,27 @@ function updateHUD() {
   }
   updateSelection();
   updateCampaignDeck();
+  updateFlightStatus();
+}
+let flightStatusGame = null, seenFlightWarnings = new Set(), lastFlightNotice = -Infinity;
+function updateFlightStatus() {
+  if (flightStatusGame !== game) { flightStatusGame = game; seenFlightWarnings = new Set(); lastFlightNotice = -Infinity; $('flightAlert').textContent = ''; }
+  const rows = flightRouteRows(game);
+  $('pauseFlights').classList.toggle('hidden', !supportsFlightOrders(game.ruleset));
+  const text = rows.length ? rows.map(row => row.text).join('\n') : 'No gryphons are changing roads.';
+  if ($('pauseFlightList').textContent !== text) $('pauseFlightList').textContent = text;
+  const living = new Set(game.state.units.filter(unit => unit.hp > 0).map(unit => unit.id));
+  for (const id of seenFlightWarnings) if (!living.has(id)) seenFlightWarnings.delete(id);
+  const warnings = game.state.units.filter(unit => unit.side === 1 && unit.hp > 0 && unit.airRoute?.phase === 'warning' && !seenFlightWarnings.has(unit.id));
+  const message = flightWarningSummary(game, warnings);
+  if (message && !paused && !coachingHold && !document.hidden && game.state.time - lastFlightNotice >= 6) {
+    // A pause or throttled observation must not consume an unannounced warning.
+    // If it is still pending when live feedback is eligible, announce it once.
+    for (const unit of warnings) seenFlightWarnings.add(unit.id);
+    $('flightAlert').textContent = message;
+    sound('warning');
+    lastFlightNotice = game.state.time;
+  }
 }
 let heardEffects = new WeakSet(),
   heardProjectiles = new WeakSet();
@@ -2291,13 +2418,13 @@ function updateSkirmishRules() {
   const rules = getRuleset(selectedRuleset, 1);
   $('skirmishRules').value = selectedRuleset;
   $('skirmishRulesDescription').textContent = rules.endgame.forcedDecay
-    ? 'Rootwardens join the roster. Production and structure damage increase at 5:00; citadels begin losing health at 7:00.'
-    : 'Rootwardens join the roster. Production and structure damage increase at 5:00. Citadels never lose health just because time passes.';
+    ? 'Eight buildings, including Rootwardens and aerie flight orders. Production and structure damage increase at 5:00; citadels lose health from 7:00.'
+    : 'Eight buildings, including Rootwardens and aerie flight orders. Production and structure damage increase at 5:00; citadels never decay with time.';
   if (!started && mode === 'skirmish') populateFieldGuide(rules);
 }
 $('skirmishRules').onchange = () => {
   const value = $('skirmishRules').value;
-  if (!['frontier-rootwarden-open', 'frontier-rootwarden-timed'].includes(value)) return;
+  if (!['frontier-flight-open', 'frontier-flight-timed'].includes(value)) return;
   selectedRuleset = value;
   updateSkirmishRules();
 };
@@ -2425,16 +2552,17 @@ function renderCampaign() {
   $('campaignObjective').textContent = mission.objective;
   const roster = getRuleset(mission.rulesetId || 'frontier-legacy', mission.rulesetRevision || 1);
   const rosterLine = 'Available here: ' + Object.values(roster.buildings).map(b => b.name).join(', ') + '.';
-  $('campaignBriefing').innerHTML = [rosterLine, ...mission.briefing]
+  const recordNote = mission.scenarioRevision >= 3 ? ['Campaign records include stars and best times from earlier mission versions.'] : [];
+  $('campaignBriefing').innerHTML = [rosterLine, ...mission.briefing, ...recordNote]
     .map((t) => `<li>${t}</li>`)
     .join('');
   $('campaignHint').textContent = mission.hint;
-  $('campaignScoutToggle').textContent = `Scout battlefield · ${getMap(mission.mapId || 'classic').name}`;
+  $('campaignScoutToggle').textContent = `Scout battlefield · ${mission.name}`;
   $('campaignScoutReport').innerHTML = renderMissionScouting(mission);
   $('campaignMedals').textContent =
     'Bonus stars: ' + mission.medals.map((m) => m.label).join(' · ');
   const unlocked = mission.unlocked;
-  const needed = mission.scenarioRevision === 2 && !overview.returning && !campaignProgress.missions['open-three-roads']
+  const needed = mission.scenarioRevision >= 2 && !overview.returning && !campaignProgress.missions['open-three-roads']
     ? ['open-three-roads'] : mission.prerequisites;
   $('campaignUnlock').textContent = unlocked
     ? mission.reward
@@ -2920,6 +3048,7 @@ function interruptMobileInput() {
   resetBattleGesture();
   armedProtectedControl = null;
   closeSelectionArmed = false;
+  armedFlightControl = null;
   controller.reset();
   padHud = false;
 }
@@ -2928,12 +3057,15 @@ function syncViewportSafety() {
   if (!relevant) return;
   const mobile = $('app').classList.contains('protected-mobile');
   const viewport = visibleViewportRect(window.innerWidth, window.innerHeight, window.visualViewport);
-  // Fit before measuring. A safe viewport move still invalidates held gestures:
-  // their old canvas-local coordinates must never place or pan in the new rect.
-  if (fitMobileViewport($('app'), viewport, mobile)) {
-    interruptMobileInput();
-    syncProtectedLayout();
-    renderer.resize();
+  // Fit before measuring, also checking padding-only content changes on every
+  // safety pass. A safe move still invalidates gestures from the previous rect.
+  if (fitMobileViewport($('app'), viewport, mobile, mobile ? getComputedStyle($('app')) : {})) {
+    // A track change interrupts and resizes inside syncProtectedLayout. A move
+    // within the same tracks still needs exactly one gesture invalidation.
+    if (!syncProtectedLayout()) {
+      interruptMobileInput();
+      renderer.resize();
+    }
   }
   const panel = $('viewportModal');
   panel.style.left = `${viewport.left}px`; panel.style.top = `${viewport.top}px`;
@@ -2949,7 +3081,7 @@ function syncViewportSafety() {
       if (!$(id).classList.contains('hidden')) controls.push($(id).getBoundingClientRect());
     const safeContent = insetViewportRect(viewport, getComputedStyle($('app')));
     geometry = inspectMobileGeometry({viewport:safeContent,canvas:$('battle').getBoundingClientRect(),
-      regions:['topbar','protectedDock','protectedNavigation', ...(teaching ? ['campaignTeaching'] : [])].map(id => $(id).getBoundingClientRect()),controls});
+      regions:['topbar','protectedDock','protectedNavigation', ...(teaching && !$('app').classList.contains('coach-collapsed') ? ['campaignTeaching'] : [])].map(id => $(id).getBoundingClientRect()),controls});
   }
   const wasActive = viewportPause.active;
   const changed = viewportPause.measure(!geometry.safe);
@@ -3035,14 +3167,20 @@ function syncProfileSafety() {
   if (recoveryHold || profileGate) updateRecoveryUI();
 }
 function reloadProfile() {
-  if (!profileSession.status().canReload || pendingFinalizeOutcome) return;
+  const status = profileSession.status();
+  if (!status.canReload || pendingFinalizeOutcome) return;
+  // Import finalization clears the old gate. Re-establish it synchronously:
+  // even identical imported battle bytes belong to the replacement profile.
+  if (status.reloadRequired) profileGate = status;
   allowProfileReload = true;
-  started = false;
-  progressDirty = false;
+  // Keep the retained attempt and menu ancestry until the document actually
+  // leaves. Shortening this trail can make a queued menu sync call history.go()
+  // during reload. Pausing and the profile fence already prevent stale writes.
   setCompactBuildOpen(false);
   paused = true;
   pendingBackupText = null;
-  location.reload();
+  try { location.reload(); }
+  catch (error) { allowProfileReload = false; throw error; }
 }
 $('profileReload').onclick = reloadProfile;
 $('resumeRecovery').onclick = () => {
@@ -3662,7 +3800,7 @@ function applyMenuNavigation(route, {direction = 'back'} = {}) {
   } else if (route.kind === 'selection') {
     const building = game.state.buildings.find(b => b.id === route.buildingId && b.side === 0);
     ui.selected = building?.id ?? null; updateSelection();
-  } else if (route.kind === 'coachingModal' && coachingHold) {
+  } else if (route.kind === 'coachingModal' && coachingHold && !firstBuildHold) {
     $('coachingModal').classList.remove('hidden');
   }
   syncDialogs();
@@ -3699,6 +3837,7 @@ window.addEventListener('pagehide', () => {
 window.addEventListener('pageshow', event => {
   navigationAway = false;
   if (!event.persisted) return;
+  allowProfileReload = false;
   interruptMobileInput();
   if (started && game.state.winner === null && !objectiveOutcome) pause(true);
   syncDialogs();

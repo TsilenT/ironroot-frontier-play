@@ -1,4 +1,5 @@
 /** Optimistic cross-tab import barrier. LocalStorage is not an atomic transaction. */
+export const CURRENT_PROFILE_PROTOCOL_VERSION = 5;
 export const PROFILE_MARKER_KEY = 'ironroot.profile.v1';
 const FORMAT = 'ironroot-profile';
 const PHASES = ['ready', 'restoring', 'failed'];
@@ -28,12 +29,12 @@ function encoded(epoch, phase, version) { return JSON.stringify({ format: FORMAT
 
 /**
  * getBackend must expose throwing getItem/setItem/removeItem methods, never swallow read errors.
- * Protocol 2 fences expanded campaigns; protocol 3 fences explicit battle identities; protocol 4 fences earned campaign rosters.
+ * Protocol 2 fences expanded campaigns; protocol 3 fences explicit battle identities; protocol 4 fences earned campaign rosters; protocol 5 fences flight orders and campaign revision 3.
  * Only construction upgrades a ready marker; a failed or uncertain upgrade requires reload.
  */
 export function createProfileSession(getBackend, { newEpoch = nextEpoch, requiredProtocolVersion = 1 } = {}) {
   if (typeof getBackend !== 'function' || typeof newEpoch !== 'function') throw new TypeError('A storage getter and epoch factory are required.');
-  if (![1, 2, 3, 4].includes(requiredProtocolVersion)) throw new TypeError('The required profile protocol must be version 1, 2, 3 or 4.');
+  if (![1, 2, 3, 4, 5].includes(requiredProtocolVersion)) throw new TypeError('The required profile protocol must be version 1, 2, 3, 4 or 5.');
   let boundRaw, boundKnown = false, initiallyUnavailable = false, transaction = null, upgradeAttempted = false, upgradeError = null;
   function backend() {
     let value;
@@ -102,7 +103,7 @@ export function createProfileSession(getBackend, { newEpoch = nextEpoch, require
   function requireNormalRead() {
     const current = read();
     if (current.phase !== 'ready') error(current.phase === 'failed' ? 'recovery-required' : 'restore-in-progress', 'This profile is being restored or needs recovery. Do not load partial data.');
-    if (needsUpgrade(current) || upgradeError) error('profile-upgrade-required', 'This profile has not been verified for the expanded campaign. Reload before loading or changing its saves.');
+    if (needsUpgrade(current) || upgradeError || (requiredProtocolVersion >= 5 && !boundKnown)) error('profile-upgrade-required', 'This profile has not been verified for the expanded campaign. Reload before loading or changing its saves.');
   }
   function keyAllowed(key, importing = false) {
     if (typeof key !== 'string' || key === PROFILE_MARKER_KEY || (importing && !IMPORT_KEYS.has(key)))

@@ -28,14 +28,17 @@ export function insetViewportRect(viewport, padding = {}) {
 // space. Browser chrome, standalone safe areas and zoom can all make this
 // different from the layout viewport. Preserve zoom; do not inverse-scale it.
 const fittedMobileRoots = new WeakMap();
-export function fitMobileViewport(element, viewport, mobile = true) {
+export function fitMobileViewport(element, viewport, mobile = true, padding = {}) {
   const values = mobile
     ? {left:`${viewport.left}px`,top:`${viewport.top}px`,width:`${viewport.width}px`,height:`${viewport.height}px`}
     : {left:'',top:'',width:'',height:''};
   // CSSStyleDeclaration may serialize fractional dimensions at a different
   // precision. Compare requested values, not its normalized text, or one
   // fractional viewport can invalidate gestures on every animation frame.
-  const signature = JSON.stringify(values);
+  // Include the effective content bounds: safe-area padding can change without
+  // a visualViewport event or different outer dimensions. Store numbers rather
+  // than CSS text so equivalent padding and stable frames keep gestures usable.
+  const signature = JSON.stringify([values, mobile ? insetViewportRect(viewport, padding) : null]);
   if (fittedMobileRoots.get(element) === signature) return false;
   fittedMobileRoots.set(element, signature);
   for (const [name,value] of Object.entries(values)) element.style[name] = value;

@@ -19,7 +19,7 @@ export const BUILDINGS = deepFreeze({
 });
 
 export const LEGACY_RULESET_ID='frontier-legacy';
-export const DEFAULT_SKIRMISH_RULESET_ID='frontier-rootwarden-open';
+export const DEFAULT_SKIRMISH_RULESET_ID='frontier-flight-open';
 const legacyLimits=deepFreeze({maxTime:10000,maxTick:1e7,maxCounter:1e9,maxId:1e9,headroom:0});
 const longLimits=deepFreeze({maxTime:604800.01,maxTick:12096000,maxCounter:1e12,maxId:1e12,headroom:1e7});
 const rootwardenUnits=deepFreeze({...UNITS,rootwarden:{name:'Rootwarden',hp:800,damage:8,range:34,speed:60,attackTime:1.5,color:'#91a177',radius:17,flying:false,canAttackAir:false,canAttackGround:true,description:'High-health, low-damage ground screen. No arrow resistance; cannot attack air.'}});
@@ -35,12 +35,22 @@ const campaignUnits=buildings=>deepFreeze(Object.fromEntries([...new Set(Object.
 const watchBuildings=campaignBuildings(['barracks','archery']);
 const forkBuildings=campaignBuildings(['barracks','archery','watchtower','mint','wardenLodge']);
 const campaignEntry=(id,name,buildings)=>deepFreeze({...entry(id,name,campaignUnits(buildings),buildings,false,longLimits),campaignOnly:true});
+// Flight orders are additive immutable identities, never a mutation of a saved roster.
+const flightEntry=(id,name,forcedDecay,campaignOnly=false)=>deepFreeze({
+  ...entry(id,name,rootwardenUnits,rootwardenBuildings,forcedDecay,longLimits),
+  ...(campaignOnly?{campaignOnly:true}:{}),
+  combat:{policy:'legacy',flyingCrossLanes:true},
+  movement:{policy:'flight-orders-v1',flightOrders:{gateCenterOffset:200,warningSeconds:2,adjacentOnly:true,maxCrossings:1}}
+});
 export const RULESETS=deepFreeze({
   'frontier-legacy':entry('frontier-legacy','Classic · Sudden death',UNITS,BUILDINGS,true,legacyLimits),
   'frontier-rootwarden-timed':entry('frontier-rootwarden-timed','Rootwarden · Sudden death',rootwardenUnits,rootwardenBuildings,true,longLimits),
   'frontier-rootwarden-open':entry('frontier-rootwarden-open','Rootwarden · Open-ended',rootwardenUnits,rootwardenBuildings,false,longLimits),
   'frontier-campaign-watch':campaignEntry('frontier-campaign-watch','Campaign · First company',watchBuildings),
   'frontier-campaign-fork':campaignEntry('frontier-campaign-fork','Campaign · Warden company',forkBuildings),
-  'frontier-campaign-open':campaignEntry('frontier-campaign-open','Campaign · Full company',rootwardenBuildings)
+  'frontier-campaign-open':campaignEntry('frontier-campaign-open','Campaign · Full company',rootwardenBuildings),
+  'frontier-flight-open':flightEntry('frontier-flight-open','Flight orders · Open-ended',false),
+  'frontier-flight-timed':flightEntry('frontier-flight-timed','Flight orders · Sudden death',true),
+  'frontier-campaign-flight':flightEntry('frontier-campaign-flight','Campaign · Flight orders',false,true)
 });
 export function getRuleset(id=LEGACY_RULESET_ID,revision=1){if(typeof id!=='string'||!Object.hasOwn(RULESETS,id))throw new Error('Unknown ruleset: '+String(id));const rules=RULESETS[id];if(revision!==rules.revision)throw new Error('Unsupported ruleset revision');return rules;}

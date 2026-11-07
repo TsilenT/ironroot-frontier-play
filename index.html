@@ -70,6 +70,7 @@
           <div id="protectedTargets" class="protected-targets hidden" role="group" aria-label="Protected original structures; activate to focus camera"></div>
           <button id="compactBuild" class="compact-build" type="button" aria-controls="commandDeck" aria-expanded="false" aria-label="Open building controls">Build</button>
         </div>
+        <div id="flightAlert" class="sr-only" role="status" aria-live="polite" aria-atomic="true"></div>
         <div id="protectedAlert" class="sr-only" role="status" aria-live="polite" aria-atomic="true"></div>
         <div class="toolbelt" id="battleTools">
           <button
@@ -121,6 +122,16 @@
           </div>
           <div class="selection-stats" id="selectionStats"></div>
           <p class="selection-description" id="selectionDescription"></p>
+          <section id="flightOrders" class="flight-orders hidden" aria-label="Aerie flight orders">
+            <h4>Flight orders</h4>
+            <p id="flightOrderCurrent" role="status"></p>
+            <div class="flight-order-buttons" aria-label="Road for future gryphon launches">
+              <button id="flightNorth" data-flight-order="north" aria-pressed="false">North road</button>
+              <button id="flightHold" data-flight-order="hold" aria-pressed="true">Hold road</button>
+              <button id="flightSouth" data-flight-order="south" aria-pressed="false">South road</button>
+            </div>
+            <p id="flightOrderHelp"></p>
+          </section>
           <div class="selection-actions">
             <button id="upgrade" class="gold-button">Upgrade</button
             ><button id="sell" class="secondary-button">Salvage</button>
@@ -163,8 +174,7 @@
             <strong id="coachNext" class="coach-next"></strong>
             <b id="coachTitle"></b><span id="coachText"></span>
           </div>
-          <p id="coachRailStatus" class="coach-rail-status hidden" role="status"></p>
-          <div class="deck-tools teaching-actions">
+          <div id="coachActions" class="deck-tools teaching-actions">
             <button id="coachResume" class="hidden">Start battle</button>
             <button id="toggleCoach" class="hidden" aria-pressed="true">Hide hints</button>
           </div>
@@ -207,6 +217,11 @@
           <button id="pauseSettings" class="secondary-button">Options<small>Audio, display &amp; saves</small></button>
           <button id="help" class="secondary-button" aria-label="Open field guide">Field guide<small>Units, controls &amp; economy</small></button>
         </div>
+        <details id="pauseFlights" class="pause-flights hidden">
+          <summary>Air routes</summary>
+          <p id="pauseFlightList"></p>
+          <p>Select an aerie after resuming to change future launches.</p>
+        </details>
         <p id="pauseSaveStatus" class="menu-status" role="status" aria-live="polite"></p>
         <p id="battleLimitWarning" class="battle-limit-warning hidden" role="status"></p>
         <div class="pause-exit-actions">
@@ -253,8 +268,8 @@
           </div>
           <label class="skirmish-rules-label" for="skirmishRules">Endgame
             <select id="skirmishRules">
-              <option value="frontier-rootwarden-open">Open endgame</option>
-              <option value="frontier-rootwarden-timed">Timed endgame</option>
+              <option value="frontier-flight-open">Open endgame</option>
+              <option value="frontier-flight-timed">Timed endgame</option>
             </select>
           </label>
           <p id="skirmishRulesDescription" class="rules-description"></p>
@@ -356,7 +371,7 @@
         </button>
         <p class="save-status hidden" id="saveStatus" role="status"></p>
         <button id="exportUnreadableBattle" class="text-button hidden">Download original save</button>
-        <p class="welcome-foot">Campaign · Skirmish · Field trials · v0.15.0</p>
+        <p class="welcome-foot">Campaign · Skirmish · Field trials · v0.16.0</p>
         <div class="welcome-links">
           <a class="text-button training-link" id="welcomeTraining" href="./training.html" aria-label="Optional guided practice. Learn without changing your saved battle">Guided practice (optional) →</a>
           <button class="text-button" id="welcomeFullscreen" type="button" data-fullscreen aria-pressed="false" aria-describedby="welcomeFullscreenStatus">Enter fullscreen</button>
@@ -457,7 +472,8 @@
               statistics and income rules stay the same. Chapters 1–4 and field trials use Classic. Chapter 5 also uses
               Long March and Twin Span.
             </p>
-            <p id="codexScope" class="codex-note"></p>
+            <section id="flightGuide" class="flight-guide hidden"><h3>Aerie flight orders</h3><p>Select an aerie, then Hold road or an adjacent road. Only future launches follow the new order. Gryphons give a two-second warning before crossing; they cannot attack during the crossing, but archers can still hit them. Open Air routes in the pause menu to inspect committed flights.</p></section>
+          <p id="codexScope" class="codex-note"></p>
             <p id="codexCaveat" class="codex-note"></p>
             <h3 class="codex-heading">Troops</h3>
             <p class="codex-note">
