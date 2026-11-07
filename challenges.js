@@ -1,5 +1,5 @@
 import {Game, BUILDINGS, LANES, LEGACY_RULESET_ID} from './engine.js';
-import { AUTHORED_AIR_RULESET_ID, deepFreeze } from './rulesets.js';
+import { AUTHORED_AIR_RULESET_ID, AUTHORED_CITADEL_RULESET_ID, deepFreeze } from './rulesets.js';
 
 /** Authored battles use the normal economy, combat and save format. */
 export const CHALLENGES = [
@@ -85,21 +85,26 @@ export function requiredChallengeTargets(challenge) {
     throw new RangeError('Invalid required trial target count or repeated target.');
   return count;
 }
-export const CURRENT_CHALLENGE_REVISION=2;
-// Published revision 1 remains untouched. Fresh attempts select this whole identity.
-export const CURRENT_CHALLENGES=deepFreeze([...CHALLENGES, ASHEN_CROSSROADS].map(challenge=>({
-  ...JSON.parse(JSON.stringify(challenge)),scenarioRevision:CURRENT_CHALLENGE_REVISION,
+export const AUTONOMOUS_AIR_CHALLENGE_REVISION=2;
+// Published revisions remain exact; fresh attempts select a separate citadel identity.
+export const AUTONOMOUS_AIR_CHALLENGES=deepFreeze([...CHALLENGES, ASHEN_CROSSROADS].map(challenge=>({
+  ...JSON.parse(JSON.stringify(challenge)),scenarioRevision:AUTONOMOUS_AIR_CHALLENGE_REVISION,
   rulesetId:AUTHORED_AIR_RULESET_ID,rulesetRevision:1,mapId:'classic',mapRevision:1
 })));
+export const CURRENT_CHALLENGE_REVISION=3;
+export const CURRENT_CHALLENGES=deepFreeze(AUTONOMOUS_AIR_CHALLENGES.map(challenge=>({
+  ...JSON.parse(JSON.stringify(challenge)),scenarioRevision:CURRENT_CHALLENGE_REVISION,rulesetId:AUTHORED_CITADEL_RULESET_ID
+})));
 export function getChallenge(id,revision=1) {
-  const list=revision===1?CHALLENGES:revision===CURRENT_CHALLENGE_REVISION?CURRENT_CHALLENGES:null;
+  const list=revision===1?CHALLENGES:revision===AUTONOMOUS_AIR_CHALLENGE_REVISION?AUTONOMOUS_AIR_CHALLENGES:revision===CURRENT_CHALLENGE_REVISION?CURRENT_CHALLENGES:null;
   if(!list)throw new RangeError('Unsupported challenge revision: '+String(revision));
   const challenge=list.find(c=>c.id===id);
   if(!challenge)throw new RangeError('Unknown challenge: '+String(id));
   return challenge;
 }
 export function challengeScenarioForGame(game,id) {
-  const revision=game?.ruleset?.id===AUTHORED_AIR_RULESET_ID?CURRENT_CHALLENGE_REVISION:
+  const revision=game?.ruleset?.id===AUTHORED_CITADEL_RULESET_ID?CURRENT_CHALLENGE_REVISION:
+    game?.ruleset?.id===AUTHORED_AIR_RULESET_ID?AUTONOMOUS_AIR_CHALLENGE_REVISION:
     game?.ruleset?.id===LEGACY_RULESET_ID?1:null;
   if(revision===null||game.ruleset.revision!==1||game.map.id!=='classic'||game.map.revision!==1)
     throw new Error('This game does not match a supported trial identity.');

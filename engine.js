@@ -2,6 +2,7 @@ import { BUILDINGS, UNITS, SPELL, getRuleset, LEGACY_RULESET_ID } from './rulese
 import { supportsFlightOrders, flightGateHome, flightGateX } from './flight-orders.js';
 import { supportsAutonomousAir, autonomousAirTarget, retainedAirTarget, releaseAirTarget } from './autonomous-air.js';
 import { supportsBridgeControl, createBridgeControl, advanceBridgeControl, bridgeIncome, validateBridgeControl } from './bridge-control.js';
+import { supportsCitadelOptions, createCitadelOptions, canBuyCitadelOption, buyCitadelOption, advanceCitadelRegeneration, chooseAICitadelOption, validateCitadelOptions } from './citadel-options.js';
 export { supportsAutonomousAir } from './autonomous-air.js';
 export { supportsFlightOrders, flightGateHome, flightGateX } from './flight-orders.js';
 export { BUILDINGS, UNITS, SPELL, RULESETS, getRuleset, LEGACY_RULESET_ID, DEFAULT_SKIRMISH_RULESET_ID } from './rulesets.js';
@@ -40,10 +41,12 @@ export class Game {
     });
     const map=this.map;
     if(supportsBridgeControl(ruleset)&&!Object.hasOwn(MAPS,map.id))throw new Error('Bridge income requires a Skirmish battlefield');
+    if(supportsCitadelOptions(ruleset)&&ruleset.skirmishOnly&&!Object.hasOwn(MAPS,map.id))throw new Error('Citadel choices require a Skirmish battlefield');
     this.difficulty=['easy','normal','hard'].includes(difficulty)?difficulty:'normal';
     this.seed=seed>>>0; this.ai=ai;this.nextId=1;this.aiTimer=this.difficulty==='easy'?7:0;this.accumulator=0;this.tick=0;this.damageQueue=null;
     this.state={time:0,gold:[420,420],income:[5,5],bases:[{id:'base0',type:'base',side:0,hp:6000,maxHp:6000,cooldown:0,x:110,y:450},{id:'base1',type:'base',side:1,hp:6000,maxHp:6000,cooldown:0,x:map.width-110,y:450}],buildings:[],units:[],projectiles:[],effects:[],frontline:map.width/2,winner:null,spellCooldown:[0,0],overtime:false,stats:{kills:[0,0],built:[0,0],damage:[0,0]}};
     if(supportsBridgeControl(ruleset))this.state.bridgeControl=createBridgeControl(map);
+    if(supportsCitadelOptions(ruleset))this.state.citadelOptions=createCitadelOptions();
     for(let side=0;side<2;side++)this._place('barracks',worldX(map,side,410),map.lanes[map.startingLane],side);
   }
   serialize(){return JSON.parse(JSON.stringify({...(this.schemaVersion===3?{version:3,rulesetId:this.ruleset.id,rulesetRevision:this.ruleset.revision,mapId:this.map.id,mapRevision:this.map.revision}:this.schemaVersion===1?{version:1}:{version:2,mapId:this.map.id,mapRevision:this.map.revision}),difficulty:this.difficulty,seed:this.seed,ai:this.ai,nextId:this.nextId,aiTimer:this.aiTimer,accumulator:this.accumulator,tick:this.tick,state:this.state}));}
@@ -54,6 +57,8 @@ export class Game {
     for(const key of ['difficulty','seed','ai','nextId','aiTimer','accumulator','tick','state'])game[key]=clean[key];
     return game;
   }
+  canBuyCitadelOption(kind,side=0){return canBuyCitadelOption(this,kind,side);}
+  buyCitadelOption(kind,side=0){return buyCitadelOption(this,kind,side);}
   upgradeCost(b){return Math.round(this.buildings[b.type].cost*(0.7+0.35*(b.level-1)));}
   get limitReason(){return this._limitFor(0);}
   _limitFor(dt){
@@ -119,8 +124,8 @@ export class Game {
     }
     return true;
   }
-  _damage(target,amount,side){if(this.damageQueue){this.damageQueue.push([target,amount,side]);return;}if(target.hp<=0)return;const damage=Math.min(target.hp,amount);target.hp=Math.max(0,target.hp-amount);this.state.stats.damage[side]+=damage;target.hit=0.16;if(target.hp===0){if(supportsAutonomousAir(this.ruleset))for(const u of this.state.units)if(u.airTargetId===target.id)releaseAirTarget(u);if(this.units[target.type]){this.state.stats.kills[side]++;this.state.gold[side]+=2;}this._effect(target.x,target.y,'death',target.side,0.7,this.units[target.type]?18:52);}}
-  _fire(attacker,target,damage,type){const s=this.state;attacker.attack=0.22;this._damage(target,damage,attacker.side);if(type!=='warrior'&&type!=='rootwarden'&&s.projectiles.length<256)s.projectiles.push({x:attacker.x,y:attacker.y,sx:attacker.x,sy:attacker.y,tx:target.x,ty:target.y,side:attacker.side,type,sourceAir:!!this.units[attacker.type]?.flying,targetAir:!!this.units[target.type]?.flying,life:0.28,maxLife:0.28});else this._effect(target.x,target.y,'hit',attacker.side,0.2,16);}
+  _damage(target,amount,side){if(this.damageQueue){this.damageQueue.push([target,amount,side]);return;}if(target.hp<=0)return;const damage=Math.min(target.hp,amount);target.hp=Math.max(0,target.hp-amount);this.state.stats.damage[side]+=damage;if(damage>0&&target.type==='base'&&supportsCitadelOptions(this.ruleset))this.state.citadelOptions.sides[target.side].lastDamageAt=this.state.time;target.hit=0.16;if(target.hp===0){if(supportsAutonomousAir(this.ruleset))for(const u of this.state.units)if(u.airTargetId===target.id)releaseAirTarget(u);if(this.units[target.type]){this.state.stats.kills[side]++;this.state.gold[side]+=2;}this._effect(target.x,target.y,'death',target.side,0.7,this.units[target.type]?18:52);}}
+  _fire(attacker,target,damage,type,citadelExtra=false){const s=this.state;attacker.attack=0.22;this._damage(target,damage,attacker.side);if(type!=='warrior'&&type!=='rootwarden'&&s.projectiles.length<256)s.projectiles.push({x:attacker.x,y:attacker.y,sx:attacker.x,sy:attacker.y,tx:target.x,ty:target.y,side:attacker.side,type,sourceAir:!!this.units[attacker.type]?.flying,targetAir:!!this.units[target.type]?.flying,...(citadelExtra?{citadelExtra:true}:{}),life:0.28,maxLife:0.28});else this._effect(target.x,target.y,'hit',attacker.side,0.2,16);}
   update(dt){if(!Number.isFinite(dt)||dt<=0||this.state.winner!==null)return;const limit=this._limitFor(dt);if(limit)return {ok:false,code:'save-safety-limit',reason:limit};this.accumulator+=Math.min(dt,0.25);while(this.accumulator>=0.05){this._step(0.05);this.accumulator-=0.05;if(this.state.winner!==null)break;}}
   _step(dt){
     const s=this.state;this.tick++;this.damageQueue=[];s.time+=dt;s.overtime=s.time>=300;
@@ -161,8 +166,12 @@ export class Game {
     for(const [unit,x,y] of pendingMoves){unit.x=x;unit.y=y;if(autoAir&&this.units[unit.type].flying)unit.lane=laneFor(this.map,y);}
     for(const base of s.bases){
       base.cooldown=Math.max(-1,base.cooldown-dt);base.hit=Math.max(0,(base.hit||0)-dt);base.attack=Math.max(0,(base.attack||0)-dt);
-      const nearby=s.units.filter(u=>u.side!==base.side&&Math.hypot(u.x-base.x,u.y-base.y)<310).sort((a,b)=>Math.hypot(a.x-base.x,a.y-base.y)-Math.hypot(b.x-base.x,b.y-base.y));
-      if(base.cooldown<=0&&nearby[0]){this._fire(base,nearby[0],s.overtime?18:32,'tower');base.cooldown=1.15;}
+      const nearby=s.units.filter(u=>u.side!==base.side&&(!supportsCitadelOptions(this.ruleset)||u.hp>0)&&Math.hypot(u.x-base.x,u.y-base.y)<310).sort((a,b)=>Math.hypot(a.x-base.x,a.y-base.y)-Math.hypot(b.x-base.x,b.y-base.y));
+      if(base.cooldown<=0&&nearby[0]){
+        const damage=s.overtime?18:32;this._fire(base,nearby[0],damage,'tower');
+        if(supportsCitadelOptions(this.ruleset)&&s.citadelOptions.sides[base.side].choice==='arrows'&&nearby[1]){this._fire(base,nearby[1],damage*.5,'tower',true);s.citadelOptions.sides[base.side].extraShots++;}
+        base.cooldown=1.15;
+      }
     }
     const pendingDamage=this.damageQueue;this.damageQueue=null;for(const hit of pendingDamage)this._damage(...hit);
     s.units=s.units.filter(u=>u.hp>0);s.buildings=s.buildings.filter(b=>b.hp>0);
@@ -176,10 +185,12 @@ export class Game {
     if(s.units.length){const left=s.units.filter(u=>u.side===0),right=s.units.filter(u=>u.side===1);const a=left.length?Math.max(...left.map(u=>u.x)):110;const b=right.length?Math.min(...right.map(u=>u.x)):this.map.width-110;s.frontline=clamp((a+b)/2,110,this.map.width-110);}
     if(this.ruleset.endgame.forcedDecay&&s.time>420){for(const b of s.bases)b.hp=Math.max(0,b.hp-dt*(20+(s.time-420)*0.3));}
     if(s.bases[0].hp<=0||s.bases[1].hp<=0){if(s.bases[0].hp===0&&s.bases[1].hp===0)s.winner='draw';else s.winner=s.bases[0].hp<=0?1:0;return;}
+    if(supportsCitadelOptions(this.ruleset))advanceCitadelRegeneration(this,dt);
     if(this.ai){this.aiTimer-=dt;if(this.aiTimer<=0){this._ai();this.aiTimer=(this.difficulty==='easy'?14:this.difficulty==='hard'?3:5)+this.random()*3;}}
   }
   _ai(side=1){
     if(![0,1].includes(side)||this.state.winner!==null||this.limitReason)return;
+    if(supportsCitadelOptions(this.ruleset)){const choice=chooseAICitadelOption(this,side);if(choice)this.buyCitadelOption(choice,side);}
     const home=x=>homeX(this.map,side,x);
     // Keep Classic's original arithmetic even at adjacent floating-point values
     // in historical non-grid saves. New maps use explicit home distances.
@@ -289,6 +300,10 @@ function validateSave(data){
       num(s.income[side],5,20+share,'bridge-mode total income');
     }
   }else if(Object.hasOwn(s,'bridgeControl'))fail('bridge control is outside this ruleset');
+  if(supportsCitadelOptions(ruleset)){
+    if(ruleset.skirmishOnly&&!Object.hasOwn(MAPS,map.id))fail('citadel choices require a Skirmish battlefield');
+    validateCitadelOptions(s.citadelOptions,s.time,data.tick,fail);
+  }else if(Object.hasOwn(s,'citadelOptions'))fail('citadel choices are outside this ruleset');
   if(![null,0,1,'draw'].includes(s.winner))fail('unknown winner');if(typeof s.overtime!=='boolean')fail('overtime must be boolean');num(s.frontline,110,map.width-110,'frontline');
   obj(s.stats,'stats');pair(s.stats.kills,'kills',true,limits.maxCounter);pair(s.stats.built,'built',true,limits.maxCounter);pair(s.stats.damage,'damage',false,limits.maxCounter);
   arr(s.bases,2,2,'bases');arr(s.buildings,0,map.buildLimit*2,'buildings');arr(s.units,0,140,'units');arr(s.effects,0,256,'effects');arr(s.projectiles,0,256,'projectiles');
@@ -335,7 +350,7 @@ function validateSave(data){
   }
   for(let side=0;side<2;side++){if(s.units.filter(u=>u.side===side).length>70||s.buildings.filter(b=>b.side===side).length>map.buildLimit||s.buildings.filter(b=>b.side===side&&b.type==='mint').length>3)fail('per-side entity limit exceeded');}
   for(const e of s.effects){obj(e,'effect');if(!['build','upgrade','sell','spawn','death','hit','blast','magic','volley'].includes(e.type))fail('unknown effect');num(e.side,0,1,'effect.side',true);num(e.x,0,map.width,'effect.x');num(e.y,0,map.height,'effect.y');num(e.maxLife,.01,2,'effect.maxLife');num(e.life,0,e.maxLife,'effect.life');num(e.radius,0,200,'effect.radius');}
-  for(const p of s.projectiles){obj(p,'projectile');for(const field of ['sourceAir','targetAir'])if(p[field]!==undefined&&typeof p[field]!=='boolean')fail('projectile flight flags must be boolean');if(!['archer','siege','wizard','gryphon','tower'].includes(p.type))fail('unknown projectile');if(ruleset.campaignOnly&&p.type!=='tower'&&!Object.hasOwn(ruleset.units,p.type))fail('projectile is outside this campaign roster');num(p.side,0,1,'projectile.side',true);for(const k of ['x','sx','tx'])num(p[k],0,map.width,'projectile.'+k);for(const k of ['y','sy','ty'])num(p[k],0,map.height,'projectile.'+k);num(p.maxLife,.01,1,'projectile.maxLife');num(p.life,0,p.maxLife,'projectile.life');}
+  for(const p of s.projectiles){obj(p,'projectile');if(Object.hasOwn(p,'citadelExtra')&&(!supportsCitadelOptions(ruleset)||p.citadelExtra!==true||p.type!=='tower'||s.citadelOptions.sides[p.side]?.choice!=='arrows'||s.citadelOptions.sides[p.side].extraShots<1||p.sx!==(p.side?map.width-110:110)||p.sy!==450))fail('invalid extra-arrow projectile');for(const field of ['sourceAir','targetAir'])if(p[field]!==undefined&&typeof p[field]!=='boolean')fail('projectile flight flags must be boolean');if(!['archer','siege','wizard','gryphon','tower'].includes(p.type))fail('unknown projectile');if(ruleset.campaignOnly&&p.type!=='tower'&&!Object.hasOwn(ruleset.units,p.type))fail('projectile is outside this campaign roster');num(p.side,0,1,'projectile.side',true);for(const k of ['x','sx','tx'])num(p[k],0,map.width,'projectile.'+k);for(const k of ['y','sy','ty'])num(p[k],0,map.height,'projectile.'+k);num(p.maxLife,.01,1,'projectile.maxLife');num(p.life,0,p.maxLife,'projectile.life');}
   if(s.winner==='draw'&&s.bases.some(b=>b.hp>0))fail('draw requires both cores to be destroyed');
   if(typeof s.winner==='number'&&s.bases[1-s.winner].hp>0)fail('winner has not destroyed the opposing base');
   return {map,ruleset};
@@ -349,13 +364,13 @@ export function validateEngineFields(data){
 }
 function strictFields(value,required,optional,fail){if(!value||typeof value!=='object'||Array.isArray(value)||Object.keys(value).some(k=>!required.includes(k)&&!optional.includes(k))||required.some(k=>!Object.hasOwn(value,k)))fail('unknown field or missing required field');}
 function strictStateFields(s,fail,ruleset){
-  strictFields(s,['time','gold','income','bases','buildings','units','projectiles','effects','frontline','winner','spellCooldown','overtime','stats',...(supportsBridgeControl(ruleset)?['bridgeControl']:[])],[],fail);
+  strictFields(s,['time','gold','income','bases','buildings','units','projectiles','effects','frontline','winner','spellCooldown','overtime','stats',...(supportsBridgeControl(ruleset)?['bridgeControl']:[]),...(supportsCitadelOptions(ruleset)?['citadelOptions']:[])],[],fail);
   strictFields(s.stats,['kills','built','damage'],[],fail);
   const entity=['id','type','side','hp','maxHp','cooldown','x','y'],flight=supportsFlightOrders(ruleset),autoAir=supportsAutonomousAir(ruleset);
   for(const [name,required,optional] of [
     ['bases',entity,['hit','attack']],['buildings',[...entity,'lane','level','progress','invested'],['hit','attack']],
     ['units',[...entity,'lane','level','flying','attack'],['hit']],['effects',['x','y','type','side','life','maxLife','radius'],[]],
-    ['projectiles',['x','y','sx','sy','tx','ty','side','type','life','maxLife'],['sourceAir','targetAir']]
+    ['projectiles',['x','y','sx','sy','tx','ty','side','type','life','maxLife'],['sourceAir','targetAir',...(supportsCitadelOptions(ruleset)?['citadelExtra']:[])]]
   ]){
     if(!Array.isArray(s[name]))fail('invalid entity collection');
     for(const e of s[name])strictFields(e,

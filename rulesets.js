@@ -1,4 +1,5 @@
 import { BRIDGE_CONTROL } from './bridge-control.js';
+import { CITADEL_OPTIONS } from './citadel-options.js';
 /** Immutable whole-rule identities. Never mutate a bound game's definitions. */
 export function deepFreeze(value){if(value&&typeof value==='object'&&!Object.isFrozen(value)){Object.values(value).forEach(deepFreeze);Object.freeze(value);}return value;}
 export const SPELL = deepFreeze({cost:75,cooldown:25,radius:170,damage:92});
@@ -20,7 +21,7 @@ export const BUILDINGS = deepFreeze({
 });
 
 export const LEGACY_RULESET_ID='frontier-legacy';
-export const DEFAULT_SKIRMISH_RULESET_ID='frontier-air-local-open';
+export const DEFAULT_SKIRMISH_RULESET_ID='frontier-citadel-open';
 const legacyLimits=deepFreeze({maxTime:10000,maxTick:1e7,maxCounter:1e9,maxId:1e9,headroom:0});
 const longLimits=deepFreeze({maxTime:604800.01,maxTick:12096000,maxCounter:1e12,maxId:1e12,headroom:1e7});
 const rootwardenUnits=deepFreeze({...UNITS,rootwarden:{name:'Rootwarden',hp:800,damage:8,range:34,speed:60,attackTime:1.5,color:'#91a177',radius:17,flying:false,canAttackAir:false,canAttackGround:true,description:'High-health, low-damage ground screen. No arrow resistance; cannot attack air.'}});
@@ -56,7 +57,27 @@ const bridgeEntry=(id,forcedDecay)=>deepFreeze({
   ...autonomousAirEntry(id,`Bridge income · ${forcedDecay?'Sudden death':'Open-ended'}`,forcedDecay),
   skirmishOnly:true,economy:BRIDGE_CONTROL
 });
+const citadelEntry=(id,forcedDecay,bridge=false)=>deepFreeze({
+  ...(bridge?bridgeEntry(id,forcedDecay):autonomousAirEntry(id,`Citadel choices · ${forcedDecay?'Sudden death':'Open-ended'}`,forcedDecay)),
+  name:`Citadel choices${bridge?' + bridge income':''} · ${forcedDecay?'Sudden death':'Open-ended'}`,
+  skirmishOnly:true,citadel:CITADEL_OPTIONS
+});
+export const CITADEL_CAMPAIGN_RULESET_IDS=deepFreeze(['frontier-campaign-citadel-watch','frontier-campaign-citadel-fork','frontier-campaign-citadel-open']);
+export const AUTHORED_CITADEL_RULESET_ID='frontier-authored-citadel';
+const authoredAirEntry=id=>deepFreeze({
+  ...entry(id,'Field trials and practice · Automatic flyers',UNITS,BUILDINGS,true,legacyLimits),
+  authoredOnly:true,combat:{policy:'legacy',flyingCrossLanes:true},
+  movement:{policy:'autonomous-air-local-v1',autonomousAir:{perception:300,retention:420,adjacentOnly:true}}
+});
 export const RULESETS=deepFreeze({
+  [CITADEL_CAMPAIGN_RULESET_IDS[0]]:deepFreeze({...campaignEntry(CITADEL_CAMPAIGN_RULESET_IDS[0],'Campaign · First company + citadel choices',watchBuildings),citadel:CITADEL_OPTIONS}),
+  [CITADEL_CAMPAIGN_RULESET_IDS[1]]:deepFreeze({...campaignEntry(CITADEL_CAMPAIGN_RULESET_IDS[1],'Campaign · Warden company + citadel choices',forkBuildings),citadel:CITADEL_OPTIONS}),
+  [CITADEL_CAMPAIGN_RULESET_IDS[2]]:deepFreeze({...autonomousAirEntry(CITADEL_CAMPAIGN_RULESET_IDS[2],'Campaign · Automatic flyers + citadel choices',false,true),citadel:CITADEL_OPTIONS}),
+  [AUTHORED_CITADEL_RULESET_ID]:deepFreeze({...authoredAirEntry(AUTHORED_CITADEL_RULESET_ID),name:'Field trials and introductory campaign · Citadel choices',citadel:CITADEL_OPTIONS}),
+  'frontier-citadel-open':citadelEntry('frontier-citadel-open',false),
+  'frontier-citadel-timed':citadelEntry('frontier-citadel-timed',true),
+  'frontier-citadel-bridge-open':citadelEntry('frontier-citadel-bridge-open',false,true),
+  'frontier-citadel-bridge-timed':citadelEntry('frontier-citadel-bridge-timed',true,true),
   'frontier-bridge-open':bridgeEntry('frontier-bridge-open',false),
   'frontier-bridge-timed':bridgeEntry('frontier-bridge-timed',true),
   'frontier-legacy':entry('frontier-legacy','Classic · Sudden death',UNITS,BUILDINGS,true,legacyLimits),
@@ -71,10 +92,6 @@ export const RULESETS=deepFreeze({
   'frontier-air-local-open':autonomousAirEntry('frontier-air-local-open','Automatic flyers · Open-ended',false),
   'frontier-air-local-timed':autonomousAirEntry('frontier-air-local-timed','Automatic flyers · Sudden death',true),
   'frontier-campaign-air-local':autonomousAirEntry('frontier-campaign-air-local','Campaign · Automatic flyers',false,true),
-  [AUTHORED_AIR_RULESET_ID]:deepFreeze({
-    ...entry(AUTHORED_AIR_RULESET_ID,'Field trials and practice · Automatic flyers',UNITS,BUILDINGS,true,legacyLimits),
-    authoredOnly:true,combat:{policy:'legacy',flyingCrossLanes:true},
-    movement:{policy:'autonomous-air-local-v1',autonomousAir:{perception:300,retention:420,adjacentOnly:true}}
-  })
+  [AUTHORED_AIR_RULESET_ID]:authoredAirEntry(AUTHORED_AIR_RULESET_ID)
 });
 export function getRuleset(id=LEGACY_RULESET_ID,revision=1){if(typeof id!=='string'||!Object.hasOwn(RULESETS,id))throw new Error('Unknown ruleset: '+String(id));const rules=RULESETS[id];if(revision!==rules.revision)throw new Error('Unsupported ruleset revision');return rules;}

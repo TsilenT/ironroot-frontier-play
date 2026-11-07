@@ -4106,3 +4106,31 @@ body.gamepad-active a:focus {
    in the existing resource/phase slots without changing ordinary battles. */
 .bridge-income #income { font-size: 11px; line-height: 16px; white-space: nowrap; }
 .bridge-income:not(.protected-mobile) #phase small { font-size: 11px; line-height: 1.2; }
+
+/* Optional citadel experiment reuses the existing Home footprint and dialog layer. */
+#pauseCitadel { width: 100%; margin: 0 0 10px; min-height: 44px; }
+#pauseCitadel small { display: block; margin-top: 4px; font-size: 12px; line-height: 1.4; color: #d4dfce; }
+.citadel-backdrop { z-index: 55; padding: max(12px, env(safe-area-inset-top)) max(12px, env(safe-area-inset-right)) max(12px, env(safe-area-inset-bottom)) max(12px, env(safe-area-inset-left)); }
+.citadel-menu { width: min(680px, 100%); max-height: 100%; overflow-y: auto; overscroll-behavior: contain; text-align: left; padding: 24px; }
+.citadel-menu h2 { margin: 6px 0 12px; }
+.citadel-menu h3 { margin: 0 0 8px; font: 700 20px/1.15 "Barlow Condensed", sans-serif; }
+.citadel-menu p { font-size: 14px; line-height: 1.55; margin: 8px 0 14px; color: #d9dfcc; }
+.citadel-menu .citadel-readiness { color: #f3d99b; font-weight: 600; }
+.citadel-choices { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin: 18px 0; }
+.citadel-choice { display: flex; flex-direction: column; padding: 16px; border: 1px solid #72816b; border-radius: 8px; background: #203b2e; }
+.citadel-choice button { margin-top: auto; min-height: 48px; white-space: normal; line-height: 1.35; padding: 10px; }
+.citadel-choice button:disabled { opacity: .65; cursor: default; }
+.citadel-observation { padding: 12px 16px; border-left: 3px solid #abcb94; background: #1a3026; }
+.citadel-observation h3 { font-size: 16px; }
+.citadel-ai { margin: 14px 0; }
+.citadel-ai > summary { min-height: 44px; padding: 12px 0; cursor: pointer; font-weight: 600; }
+.citadel-actions { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 14px; }
+.citadel-actions > button { flex: 1 1 160px; min-height: 44px; white-space: normal; }
+@media(max-width: 540px), (max-height: 430px) {
+  .citadel-menu { padding: 16px; }
+  .citadel-choices { grid-template-columns: 1fr; gap: 10px; }
+  .citadel-choice { padding: 12px; }
+}
+
+#citadelRetrySave { min-height: 44px; margin-bottom: 12px; }
+#citadelSaveWarning { color: #f3cd89; border-left: 3px solid #d7b971; padding: 10px 12px; }

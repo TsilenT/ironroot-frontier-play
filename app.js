@@ -4,6 +4,8 @@ import { createInputScopeGuard } from './input-scope.js';
 import { ACTIONS, effectiveBindings, normalizeKeyboardMap, bindingConflict, bindableCode, keyLabel, actionLabel, ignoreKeyboardEvent, keyboardAction } from './keyboard.js';
 import { createMenuHistory, seedMenuAncestors } from './menu-history.js';
 import { supportsAutonomousAir } from './autonomous-air.js';
+import { supportsCitadelOptions, citadelOptionStatus, CITADEL_AI_TEXT } from './citadel-options.js';
+import { skirmishRulesetId, citadelStatusText } from './citadel-view.js';
 import { bridgeIncome, bridgeStatus, bridgeSummary, BRIDGE_RULES_TEXT } from './bridge-control.js';
 import { airRulesGuide, airBuildingDescription } from './flight-orders-view.js';
 import {
@@ -164,7 +166,7 @@ const protectedControls = new Map();
 let armedProtectedControl = null;
 let battleJournal = null, lastBattleReport = null, hasLastResult = false, reportFault = false;
 let selectedMap = 'classic';
-let selectedRuleset = DEFAULT_SKIRMISH_RULESET_ID;
+let selectedRuleset = getRuleset(DEFAULT_SKIRMISH_RULESET_ID).endgame.forcedDecay ? 'frontier-air-local-timed' : 'frontier-air-local-open';
 let battleSafetyReason = null, resumeProblem = null;
 let difficulty = 'easy',
   game = new Game({ difficulty }),
@@ -1017,6 +1019,7 @@ function start(
     return;
   }
   briefingRestart = null;
+  $('citadelModal').classList.add('hidden');
   $('briefingRestartStatus').classList.add('hidden');
   $('resultRestartStatus').classList.add('hidden');
   battleSafetyReason = null;
@@ -1043,9 +1046,7 @@ function start(
         : createProgressionCampaignMission(currentCampaign, campaignProgress))
       : currentChallenge
         ? createCurrentChallenge(currentChallenge)
-        : new Game({ difficulty, seed: Date.now() >>> 0, mapId: selectedMap, mapRevision: 1, rulesetId: $('skirmishBridgeIncome').checked
-          ? selectedRuleset === 'frontier-air-local-timed' ? 'frontier-bridge-timed' : 'frontier-bridge-open'
-          : selectedRuleset, rulesetRevision: 1 }));
+        : new Game({ difficulty, seed: Date.now() >>> 0, mapId: selectedMap, mapRevision: 1, rulesetId: skirmishRulesetId(selectedRuleset, $('skirmishBridgeIncome').checked), rulesetRevision: 1 }));
   populateBuildCards();
   populateFieldGuide(game);
   if (!currentChallenge && !currentCampaign) {
@@ -1565,6 +1566,7 @@ function showTitle({ focusStart = false, focusResume = false } = {}) {
   renderer.vfx?.reset();
   $('resultModal').classList.add('hidden');
   $('restartModal').classList.add('hidden');
+  $('citadelModal').classList.add('hidden');
   $('pauseVeil').classList.add('hidden');
   $('welcome').classList.remove('hidden');
   campaignPage = 'mission';
@@ -1674,7 +1676,13 @@ function save() {
     );
     saveWarning = true;
   }
-  if (ok) saveWarning = false;
+  if (ok) {
+    saveWarning = false;
+    if (typeof citadelUnsavedGame !== 'undefined' && citadelUnsavedGame === game) {
+      citadelUnsavedGame = null;
+      updateCitadelSaveWarning();
+    }
+  }
   return ok;
 }
 function updateResume() {
@@ -1711,7 +1719,7 @@ function updateResume() {
       : cid
         ? `TRIAL · ${CHALLENGES.find((c) => c.id === cid).name.toUpperCase()}`
         : valid.map.id === 'classic' ? 'BATTLE' : valid.map.name.toUpperCase();
-    const ruleLabel = !mid && !cid && valid.schemaVersion === 3 ? ` · ${valid.ruleset.endgame.name.toUpperCase()}${valid.state.bridgeControl ? ' · BRIDGES' : ''}` : '';
+    const ruleLabel = !mid && !cid && valid.schemaVersion === 3 ? ` · ${valid.ruleset.endgame.name.toUpperCase()}${valid.state.bridgeControl ? ' · BRIDGES' : ''}${supportsCitadelOptions(valid.ruleset) ? ' · CITADEL CHOICES' : ''}` : '';
     button.textContent = `RESUME ${name}${ruleLabel} · ${timeText(valid.state.time)}`;
     button.onclick = () => start(valid, cid, mid);
     if (valid.limitReason) button.textContent = `VIEW PAUSED ${name}${ruleLabel} · ${timeText(valid.state.time)}`;
@@ -2073,6 +2081,7 @@ window.addEventListener('keydown', (e) => {
     if (!$('restartModal').classList.contains('hidden')) hideRestart();
     else if (!$('backupModal').classList.contains('hidden')) hideBackup();
     else if (!$('settingsModal').classList.contains('hidden')) hideSettings();
+    else if (!$('citadelModal').classList.contains('hidden')) hideCitadelOptions();
     else if (!$('helpModal').classList.contains('hidden')) hideHelp();
     else if (!$('resultModal').classList.contains('hidden') && $('resultReport').querySelector('details')?.open) {
       const report = $('resultReport').querySelector('details');
@@ -2088,6 +2097,7 @@ window.addEventListener('keydown', (e) => {
   if (
     !started ||
     !$('coachingModal').classList.contains('hidden') ||
+    !$('citadelModal').classList.contains('hidden') ||
     !$('restartModal').classList.contains('hidden') ||
     !$('backupModal').classList.contains('hidden') ||
     !$('settingsModal').classList.contains('hidden') ||
@@ -2204,6 +2214,7 @@ let hudTimer = 0,
   lastProfileCheck = 0;
 function updateHUD() {
   const s = game.state;
+  updateCitadelUI();
   const bridgeMode = !!s.bridgeControl;
   $('app').classList.toggle('bridge-income', bridgeMode);
   const bridgeRate = bridgeMode ? bridgeIncome(game)[0] : 0;
@@ -2516,9 +2527,7 @@ function setMode(value) {
 }
 function updateSkirmishRules() {
   const bridgeMode = $('skirmishBridgeIncome').checked;
-  const rules = getRuleset(bridgeMode
-    ? selectedRuleset === 'frontier-air-local-timed' ? 'frontier-bridge-timed' : 'frontier-bridge-open'
-    : selectedRuleset, 1);
+  const rules = getRuleset(skirmishRulesetId(selectedRuleset, bridgeMode), 1);
   $('skirmishRules').value = selectedRuleset;
   $('skirmishRulesDescription').textContent = rules.endgame.forcedDecay
     ? 'Eight buildings, including Rootwardens and gryphons that seek nearby enemies one road over. Production and structure damage increase at 5:00; citadels lose health from 7:00.'
@@ -2679,7 +2688,7 @@ function renderCampaign() {
   $('campaignMedals').textContent =
     'Bonus stars: ' + mission.medals.map((m) => m.label).join(' · ');
   const unlocked = mission.unlocked;
-  const needed = mission.scenarioRevision >= 2 && !overview.returning && !campaignProgress.missions['open-three-roads']
+  const needed = mission.chapterId !== ONBOARDING_CHAPTER.id && !isIntroMission(mission.id) && mission.scenarioRevision >= 2 && !overview.returning && !campaignProgress.missions['open-three-roads']
     ? ['open-three-roads'] : mission.prerequisites;
   $('campaignUnlock').textContent = unlocked
     ? mission.reward
@@ -2707,6 +2716,104 @@ $('skipIntroduction').onclick = () => {
   showCampaignPage('mission', 'campaignMissionTitle');
 };
 setMode(mode);
+// Citadel choices reuse the pause menu without changing camera controls.
+var citadelNoticeGame = null, citadelNoticePhase = null, citadelReadyNoticed = false;
+var citadelUnsavedGame = null;
+function updateCitadelSaveWarning() {
+  const pending = citadelUnsavedGame === game;
+  $('citadelSaveWarning').classList.toggle('hidden', !pending);
+  $('citadelRetrySave').classList.toggle('hidden', !pending);
+  $('citadelSaveWarning').textContent = pending
+    ? 'Your choice is paid for and active in this tab, but it is not saved. Keep this page open. Retry saving before leaving or reloading.' : '';
+}
+function citadelDialogSafe() {
+  return started && supportsCitadelOptions(game.ruleset) && !coachingHold && !firstBuildHold && !document.hidden &&
+    game.state.winner === null && !objectiveOutcome && !recoveryHold && !profileGate &&
+    !viewportPause.active && !battleSafetyReason && !game.limitReason && battleSession.status() === 'current';
+}
+function updateCitadelUI() {
+  const enabled = started && supportsCitadelOptions(game.ruleset) && !coachingHold && !firstBuildHold;
+  $('app').classList.toggle('citadel-mode', enabled);
+  $('pauseCitadel').classList.toggle('hidden', !enabled);
+  $('pauseCitadelLegacy').classList.toggle('hidden', !started || supportsCitadelOptions(game.ruleset));
+  $('citadelBattleStatus').classList.toggle('hidden', !enabled);
+  updateCitadelSaveWarning();
+  if (!enabled) return;
+  const own = citadelOptionStatus(game, 0), enemy = citadelOptionStatus(game, 1);
+  const text = citadelStatusText(game, 0, {paused});
+  $('pauseCitadelStatus').textContent = text;
+  $('citadelBattleStatus').textContent = text;
+  $('citadelPlayerStatus').textContent = `${Math.ceil(game.state.bases[0].hp)} / ${game.state.bases[0].maxHp} HP. ${text}`;
+  $('citadelEnemyStatus').textContent = `${Math.ceil(game.state.bases[1].hp)} / ${game.state.bases[1].maxHp} HP. ${citadelStatusText(game, 1, {paused})}`;
+  $('citadelAIPolicy').textContent = game.ai ? CITADEL_AI_TEXT : 'This battle uses a fixed enemy formation. It does not buy citadel choices or make other new spending decisions. The same 190-gold cost and effects apply to either side; no side receives extra gold.';
+  $('citadelReadiness').textContent = own.choice ? `${own.label} chosen. One choice per battle.`
+    : !citadelDialogSafe() ? 'Purchasing is unavailable while this battle or its saved checkpoint is interrupted.'
+      : own.readyWait > 0 ? `Available in ${Math.ceil(own.readyWait)} simulated seconds, at 1:30. You have ${Math.floor(game.state.gold[0])} gold; each option costs 190.`
+        : own.canBuy ? `Ready. You have ${Math.floor(game.state.gold[0])} gold. Choose one for 190 gold.`
+          : `Ready from 1:30. ${own.reason} You have ${Math.floor(game.state.gold[0])} gold.`;
+  for (const [id, kind, label] of [['buyCitadelArrows','arrows','Extra Arrow'],['buyCitadelRegen','regen','Regeneration']]) {
+    const selected = own.choice === kind;
+    $(id).disabled = !citadelDialogSafe() || !game.canBuyCitadelOption(kind, 0).ok;
+    $(id).textContent = selected ? `${label} chosen` : own.choice ? 'Unavailable · one choice per battle' : `Choose ${label} · 190 gold`;
+  }
+  const phase = own.choice !== 'regen' ? own.choice : own.blockedByDecay ? 'decay' : own.fullHealth ? 'full' : own.regenWait > 0 ? 'waiting' : 'healing';
+  if (citadelNoticeGame !== game) { citadelNoticeGame = game; citadelNoticePhase = phase; citadelReadyNoticed = own.readyWait <= 0; }
+  else if (!paused && phase !== citadelNoticePhase) {
+    if (own.choice === 'regen' && ['healing','waiting','full','decay'].includes(phase))
+      toast(phase === 'healing' ? 'Citadel recovering · +3 HP/sec.' : phase === 'waiting' ? 'Regeneration interrupted · wait 8 seconds without damage.' : phase === 'full' ? 'Citadel fully repaired.' : 'Timed decay has stopped regeneration.');
+    citadelNoticePhase = phase;
+  }
+  if (!paused && !own.choice && own.readyWait <= 0 && !citadelReadyNoticed) {
+    citadelReadyNoticed = true;
+    toast('Citadel choices available · Pause → Citadel choices · 190 gold each.');
+  }
+}
+function showCitadelOptions() {
+  syncProfileSafety();
+  if (!citadelDialogSafe()) return;
+  cancel();
+  setCompactBuildOpen(false);
+  pause(true);
+  $('citadelPurchaseStatus').textContent = '';
+  $('citadelModal').classList.remove('hidden');
+  updateCitadelUI();
+  syncDialogs();
+}
+function hideCitadelOptions() {
+  $('citadelModal').classList.add('hidden');
+  syncDialogs();
+}
+function purchaseCitadelOption(kind) {
+  syncProfileSafety();
+  if (!citadelDialogSafe() || !paused || $('citadelModal').classList.contains('hidden') ||
+      dialogLayers.findLast(layer => !layer.classList.contains('hidden')) !== $('citadelModal')) return;
+  const result = game.buyCitadelOption(kind, 0);
+  if (!result.ok) { $('citadelPurchaseStatus').textContent = result.reason; updateCitadelUI(); return; }
+  const message = kind === 'arrows' ? 'Extra Arrow chosen. A second enemy in range receives the extra shot.' : 'Regeneration chosen. Recovery can begin after 8 seconds without damage and never exceeds full health.';
+  $('citadelPurchaseStatus').textContent = message;
+  sound('upgrade');
+  citadelUnsavedGame = game;
+  const persisted = save();
+  updateCitadelUI();
+  (persisted ? $('citadelResume') : $('citadelSaveWarning')).focus();
+}
+$('citadelRetrySave').onclick = () => {
+  syncProfileSafety();
+  if (citadelUnsavedGame !== game || !citadelDialogSafe() || !paused ||
+      $('citadelModal').classList.contains('hidden') ||
+      dialogLayers.findLast(layer => !layer.classList.contains('hidden')) !== $('citadelModal')) return;
+  if (save()) {
+    $('citadelPurchaseStatus').textContent = 'Your chosen citadel option is saved.';
+    $('citadelResume').focus();
+  } else $('citadelSaveWarning').focus();
+  updateCitadelSaveWarning();
+};
+$('pauseCitadel').onclick = showCitadelOptions;
+$('citadelBack').onclick = hideCitadelOptions;
+$('citadelResume').onclick = () => { hideCitadelOptions(); pause(false, {explicit:true}); };
+$('buyCitadelArrows').onclick = () => purchaseCitadelOption('arrows');
+$('buyCitadelRegen').onclick = () => purchaseCitadelOption('regen');
+
 // The pause menu is a top-level dialog, independent of battlefield sizing.
 function syncPauseMenu() {
   const mission = currentCampaign && CAMPAIGN_MISSIONS.find(m => m.id === currentCampaign);
@@ -2714,6 +2821,7 @@ function syncPauseMenu() {
   const noun = mission ? 'mission' : trial ? 'field trial' : 'battle';
   $('pauseBattleName').textContent = mission?.name || trial?.name || game.map.name;
   $('pauseContext').textContent = `${mission ? 'Campaign' : trial ? 'Field trial' : 'Skirmish'} · ${timeText(game.state.time)} · ${speed}× speed`;
+  updateCitadelUI();
   $('pauseObjective').textContent = mission?.objective || trial?.objective || 'Destroy the enemy citadel.';
   $('pauseBridgeDetails').classList.toggle('hidden', !game.state.bridgeControl);
   if (game.state.bridgeControl) {
@@ -3084,6 +3192,7 @@ $('effectQuality').onchange = () => {
 const dialogLayers = [
   $('coachingModal'),
   $('pauseVeil'),
+  $('citadelModal'),
   $('viewportModal'),
   $('welcome'),
   $('helpModal'),
@@ -3183,6 +3292,7 @@ function syncDialogs() {
     $('restartModal').classList.add('hidden');
     syncInputScope();
   }
+  if (!$('citadelModal').classList.contains('hidden') && (recoveryHold || profileGate || viewportPause.active || battleSafetyReason)) $('citadelModal').classList.add('hidden');
   if (!$('pauseVeil').classList.contains('hidden')) syncPauseMenu();
   const visible = dialogLayers.filter((x) => !x.classList.contains('hidden')),
     next = visible.at(-1) || null;
@@ -3723,6 +3833,7 @@ function controllerBack(scope) {
   else if (scope.key === 'backupModal') hideBackup();
   else if (scope.key === 'settingsModal') hideSettings();
   else if (scope.key === 'helpModal') hideHelp();
+  else if (scope.key === 'citadelModal') hideCitadelOptions();
   else if (scope.key === 'restartModal') hideRestart();
   else if (scope.key === 'pauseVeil' || scope.key === 'pause') pause(false, { explicit: true });
   else if (scope.key === 'resultModal' || scope.key === 'ended') showTitle();
@@ -3920,7 +4031,7 @@ function menuNavigationTrail() {
     if (!ended && !paused && !coachingHold && $('coachingModal').classList.contains('hidden'))
       trail.push(route('play', `play:${navigationAttempt}`, {attempt: navigationAttempt}));
   }
-  for (const id of ['coachingModal', 'viewportModal', 'helpModal', 'settingsModal', 'resultModal', 'backupModal', 'restartModal']) {
+  for (const id of ['coachingModal', 'citadelModal', 'viewportModal', 'helpModal', 'settingsModal', 'resultModal', 'backupModal', 'restartModal']) {
     if (!$(id).classList.contains('hidden')) trail.push(route(id, `${navigationAttempt}:${id}`, {attempt: started ? navigationAttempt : null}));
   }
   if (started && !activeDialog && $('app').classList.contains('compact-build-open'))
@@ -3940,6 +4051,7 @@ function closeNavigationLayers(keep = null) {
   }
   const retained = keep === 'backupModal' ? ['settingsModal', 'backupModal'] :
     keep === 'report' ? ['resultModal'] : [keep];
+  if (!retained.includes('citadelModal')) $('citadelModal').classList.add('hidden');
   if (!retained.includes('restartModal')) $('restartModal').classList.add('hidden');
   if (!retained.includes('backupModal') && !$('backupModal').classList.contains('hidden')) hideBackup();
   if (!retained.includes('settingsModal') && !$('settingsModal').classList.contains('hidden')) {
@@ -4006,6 +4118,8 @@ function applyMenuNavigation(route, {direction = 'back'} = {}) {
     settingsWasPaused = true; syncSettings();
     $('settingsDone').textContent = started ? 'Back to pause menu' : 'Done';
     $('settingsModal').classList.remove('hidden');
+  } else if (route.kind === 'citadelModal') {
+    showCitadelOptions();
   } else if (route.kind === 'helpModal') {
     if (started) pause(true);
     helpWasPaused = true; $('helpModal').classList.remove('hidden');

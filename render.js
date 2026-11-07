@@ -1,3 +1,4 @@
+import { citadelOptionStatus } from './citadel-options.js';
 import { bridgeZones, bridgeStatus, supportsBridgeControl } from './bridge-control.js';
 import { drawRootwarden, drawWardenLodge } from './rootwarden-art.js';
 import { sampleCombatFeedback } from './combat-feedback.js';
@@ -541,8 +542,8 @@ export class Renderer {
     for (const e of s.effects) this.drawEffect(e);
     this.vfx.draw(c, { x: left, y: 0, width: right - left, height: this.map.height }, { compact: compact > 0 });
     const flightLabels = drawFlightRoutes(this, game, ui);
-    this.drawBase(s.bases[0]);
-    this.drawBase(s.bases[1]);
+    this.drawBase(s.bases[0], game);
+    this.drawBase(s.bases[1], game);
     // Presentation-only locomotion from observed simulation positions, never cooldown.
     const wardenIds = new Set();
     for (const u of s.units) if (u.type === 'rootwarden') {
@@ -605,7 +606,7 @@ export class Renderer {
             [-11, 0],
             [7, 0],
           ],
-          p.side ? '#ebbc8a' : '#dae7b6',
+          p.citadelExtra ? '#a7e8f3' : p.side ? '#ebbc8a' : '#dae7b6',
           2,
         );
         poly(
@@ -615,8 +616,10 @@ export class Renderer {
             [2, -3],
             [2, 3],
           ],
-          '#f3e4b5',
+          p.citadelExtra ? '#a7e8f3' : '#f3e4b5',
         );
+        // A second chevron identifies the extra arrow without relying on colour.
+        if (p.citadelExtra) line(c, [[-7,-4],[-2,0],[-7,4]], '#a7e8f3', 2);
       }
       c.restore();
     }
@@ -1196,7 +1199,7 @@ export class Renderer {
     }
     c.restore();
   }
-  drawBase(b) {
+  drawBase(b, game = null) {
     const c = this.c,
       co = COLORS[b.side];
     c.save();
@@ -1265,6 +1268,26 @@ export class Renderer {
     c.textAlign = 'center';
     c.fillText(b.side ? 'IRON CITADEL' : 'HOME CITADEL', 0, 87);
     this.health(-54, 65, 108, b.hp / b.maxHp, co.bright);
+    const status = game && citadelOptionStatus(game, b.side);
+    const visibleLeft = this.camera - this.width / (2 * this.scale);
+    const visibleRight = this.camera + this.width / (2 * this.scale);
+    if (status?.choice && b.hp > 0 && b.x >= visibleLeft && b.x <= visibleRight) {
+      const label = status.choice === 'arrows' ? 'EXTRA ARROW'
+        : status.blockedByDecay ? 'REGEN · DECAY'
+          : status.fullHealth ? 'REGEN · FULL'
+            : status.regenWait > 0 ? `REGEN · WAIT ${Math.ceil(status.regenWait)}s` : 'REGEN · +3 HP/s';
+      const size = Math.max(13, 11 / this.scale);
+      c.font = `bold ${size}px "DM Sans",sans-serif`;
+      const width = c.measureText(label).width + 14;
+      // Keep the complete status readable at either world edge on short phones.
+      const margin = 4 / this.scale;
+      const badgeX = Math.max(visibleLeft - b.x + width / 2 + margin,
+        Math.min(visibleRight - b.x - width / 2 - margin, 0));
+      c.fillStyle = '#142d2deb';
+      c.fillRect(badgeX - width / 2, 94, width, size + 10);
+      c.fillStyle = status.healingActive ? '#bcf1cf' : '#d7e9ed';
+      c.fillText(label, badgeX, 99 + size);
+    }
     c.restore();
   }
   drawUnit(u, time) {

@@ -1,5 +1,5 @@
 import {Game, BUILDINGS, MAPS, getRuleset} from './engine.js';
-import {CAMPAIGN_RULESET_IDS, AUTHORED_AIR_RULESET_ID, deepFreeze} from './rulesets.js';
+import {CAMPAIGN_RULESET_IDS, CITADEL_CAMPAIGN_RULESET_IDS, AUTHORED_AIR_RULESET_ID, AUTHORED_CITADEL_RULESET_ID, deepFreeze} from './rulesets.js';
 import {ONBOARDING_CHAPTER, ONBOARDING_MISSIONS, isOnboardingMission} from './campaign-onboarding.js';
 export {ONBOARDING_CHAPTER, ONBOARDING_MISSIONS, isOnboardingMission} from './campaign-onboarding.js';
 import {INTRO_CHAPTER, INTRO_MISSIONS, introMedalMet, isIntroMission} from './intro-campaign.js';
@@ -307,8 +307,21 @@ export const AUTONOMOUS_AIR_INTRO_MISSIONS=deepFreeze(INTRO_MISSIONS.map(origina
   ...JSON.parse(JSON.stringify(original)),scenarioRevision:AUTONOMOUS_AIR_CAMPAIGN_REVISION,
   rulesetId:AUTHORED_AIR_RULESET_ID,
 })));
+// Citadel purchases change combat eligibility, so deliberate starts receive a
+// new scenario identity. Published rosters, objectives and result identities stay exact.
+export const CITADEL_CAMPAIGN_REVISION=5;
+export const CITADEL_CAMPAIGN_MISSIONS=deepFreeze(AUTONOMOUS_AIR_CAMPAIGN_MISSIONS.map(original=>{
+  const opening=ONBOARDING_MISSIONS.findIndex(m=>m.id===original.id);
+  const source=opening>=0&&opening<2?ONBOARDING_MISSIONS[opening]:original;
+  return {...JSON.parse(JSON.stringify(source)),scenarioRevision:CITADEL_CAMPAIGN_REVISION,mapRevision:1,
+    rulesetId:CITADEL_CAMPAIGN_RULESET_IDS[opening>=0?opening:2],rulesetRevision:1};
+}));
+export const CITADEL_INTRO_MISSIONS=deepFreeze(AUTONOMOUS_AIR_INTRO_MISSIONS.map(original=>({
+  ...JSON.parse(JSON.stringify(original)),scenarioRevision:CITADEL_CAMPAIGN_REVISION,
+  rulesetId:AUTHORED_CITADEL_RULESET_ID,rulesetRevision:1,mapRevision:1,
+})));
 export function getCampaignMission(id,revision=1) {
-  const catalog=revision===1?CAMPAIGN_PROGRESS_MISSIONS:revision===2?PROGRESSION_CAMPAIGN_MISSIONS:revision===3?FLIGHT_CAMPAIGN_MISSIONS:revision===AUTONOMOUS_AIR_CAMPAIGN_REVISION?[...AUTONOMOUS_AIR_CAMPAIGN_MISSIONS,...AUTONOMOUS_AIR_INTRO_MISSIONS]:[];
+  const catalog=revision===1?CAMPAIGN_PROGRESS_MISSIONS:revision===2?PROGRESSION_CAMPAIGN_MISSIONS:revision===3?FLIGHT_CAMPAIGN_MISSIONS:revision===AUTONOMOUS_AIR_CAMPAIGN_REVISION?[...AUTONOMOUS_AIR_CAMPAIGN_MISSIONS,...AUTONOMOUS_AIR_INTRO_MISSIONS]:revision===CITADEL_CAMPAIGN_REVISION?[...CITADEL_CAMPAIGN_MISSIONS,...CITADEL_INTRO_MISSIONS]:[];
   const mission=catalog.find(m=>m.id===id);
   if(!mission)throw new RangeError('Unknown campaign mission or revision: '+String(id)+'@'+String(revision));
   return mission;
@@ -316,8 +329,7 @@ export function getCampaignMission(id,revision=1) {
 /** Current deliberate starts/previews only. Existing attempts use their rules. */
 export function getCurrentCampaignRevision(id,progress) {
   getCampaignMission(id,1);
-  if(isOnboardingMission(id))return onboardingLaunchStage(id,progress)===3?AUTONOMOUS_AIR_CAMPAIGN_REVISION:1;
-  return CAMPAIGN_MISSIONS.some(m=>m.id===id)||isIntroMission(id)?AUTONOMOUS_AIR_CAMPAIGN_REVISION:1;
+  return CITADEL_CAMPAIGN_REVISION;
 }
 function onboardingLaunchStage(id,progress) {
   return Math.max(ONBOARDING_MISSIONS.findIndex(m=>m.id===id)+1,getCampaignRoster(progress).stage);
@@ -332,15 +344,18 @@ export function getCampaignRevisionForRuleset(id,rulesetId,rulesetRevision=1) {
   let revision;
   if(isOnboardingMission(id)) {
     const minimum=ONBOARDING_MISSIONS.findIndex(m=>m.id===id),stage=CAMPAIGN_RULESET_IDS.indexOf(rules.id);
-    if(rules.id===AUTONOMOUS_AIR_CAMPAIGN_RULESET_ID)revision=AUTONOMOUS_AIR_CAMPAIGN_REVISION;
+    if(CITADEL_CAMPAIGN_RULESET_IDS.indexOf(rules.id)>=minimum)revision=CITADEL_CAMPAIGN_REVISION;
+    else if(rules.id===AUTONOMOUS_AIR_CAMPAIGN_RULESET_ID)revision=AUTONOMOUS_AIR_CAMPAIGN_REVISION;
     else if(stage>=minimum)revision=1;
   } else if(isIntroMission(id)) {
-    if(rules.id===AUTHORED_AIR_RULESET_ID)revision=AUTONOMOUS_AIR_CAMPAIGN_REVISION;
+    if(rules.id===AUTHORED_CITADEL_RULESET_ID)revision=CITADEL_CAMPAIGN_REVISION;
+    else if(rules.id===AUTHORED_AIR_RULESET_ID)revision=AUTONOMOUS_AIR_CAMPAIGN_REVISION;
     else if(rules.id==='frontier-legacy')revision=1;
   } else if(rules.id==='frontier-legacy')revision=1;
   else if(rules.id==='frontier-campaign-open')revision=2;
   else if(rules.id==='frontier-campaign-flight')revision=3;
   else if(rules.id===AUTONOMOUS_AIR_CAMPAIGN_RULESET_ID)revision=AUTONOMOUS_AIR_CAMPAIGN_REVISION;
+  else if(rules.id===CITADEL_CAMPAIGN_RULESET_IDS[2])revision=CITADEL_CAMPAIGN_REVISION;
   if(revision===undefined)throw new RangeError('Ruleset does not match campaign mission: '+String(id));
   const mission=getCampaignMission(id,revision);
   if(rules.revision!==(mission.rulesetRevision??1))throw new RangeError('Ruleset revision does not match campaign mission: '+String(id));
@@ -366,7 +381,8 @@ function missionGameOptions(mission) {
 }
 export function createCampaignMission(id,{revision=1,progress}={}) {
   const base=missionFor(id,revision);
-  const mission=revision===1&&progress!==undefined&&isOnboardingMission(id)?{...base,rulesetId:CAMPAIGN_RULESET_IDS[Math.max(ONBOARDING_MISSIONS.findIndex(m=>m.id===id),getCampaignRoster(progress).stage-1)]}:base;
+  const roster=revision===CITADEL_CAMPAIGN_REVISION?CITADEL_CAMPAIGN_RULESET_IDS:CAMPAIGN_RULESET_IDS;
+  const mission=[1,CITADEL_CAMPAIGN_REVISION].includes(revision)&&progress!==undefined&&isOnboardingMission(id)?{...base,rulesetId:roster[Math.max(ONBOARDING_MISSIONS.findIndex(m=>m.id===id),getCampaignRoster(progress).stage-1)]}:base;
   return createAuthoredCampaignMission(mission,missionGameOptions(mission));
 }
 function createAuthoredCampaignMission(mission,options) {
@@ -498,7 +514,7 @@ function hasReturningProgress(clean) {return CAMPAIGN_MISSIONS.some(m=>clean.mis
 export function getCampaignRoster(progress) {
   const clean=normalizeCampaignProgress(progress),returning=hasReturningProgress(clean);
   const stage=returning||clean.missions['shield-at-the-fork']?3:clean.missions['roadside-watch']?2:1;
-  const rulesetId=stage===3?AUTONOMOUS_AIR_CAMPAIGN_RULESET_ID:CAMPAIGN_RULESET_IDS[stage-1];
+  const rulesetId=CITADEL_CAMPAIGN_RULESET_IDS[stage-1];
   return {stage,rulesetId,buildings:Object.keys(getRuleset(rulesetId).buildings),returning,
     unlockedBy:returning?'returning-campaign':stage===3?'shield-at-the-fork':stage===2?'roadside-watch':null};
 }
@@ -511,6 +527,7 @@ export function isMissionUnlocked(progress,id,revision=1) {
 // Both air revisions use the earned full roster, never a fourth progression stage.
 export const CAMPAIGN_RULESET_STAGES=Object.freeze({
   'frontier-campaign-watch':1,'frontier-campaign-fork':2,'frontier-campaign-open':3,'frontier-campaign-flight':3,[AUTONOMOUS_AIR_CAMPAIGN_RULESET_ID]:3,
+  ...Object.fromEntries(CITADEL_CAMPAIGN_RULESET_IDS.map((id,index)=>[id,index+1])),
 });
 export function canUseCampaignRuleset(progress,id,revision,rulesetId) {
   if(!campaignRulesetAllowed(id,revision,rulesetId))return false;
@@ -520,7 +537,10 @@ export function canUseCampaignRuleset(progress,id,revision,rulesetId) {
 /** The explicit launch path. Preview may show locked missions; launch may not. */
 export function getCampaignLaunchMission(id,progress) {
   const revision=getCurrentCampaignRevision(id,progress),mission=getCampaignMission(id,revision);
-  return {...mission,scenarioRevision:revision,...(isOnboardingMission(id)&&revision===1?{rulesetId:CAMPAIGN_RULESET_IDS[onboardingLaunchStage(id,progress)-1]}:{})};
+  const opening=isOnboardingMission(id),stage=opening?onboardingLaunchStage(id,progress):null;
+  const presentation=opening&&stage===3?AUTONOMOUS_AIR_CAMPAIGN_MISSIONS.find(m=>m.id===id):mission;
+  return {...mission,briefing:presentation.briefing,hint:presentation.hint,scenarioRevision:revision,
+    ...(opening?{rulesetId:CITADEL_CAMPAIGN_RULESET_IDS[stage-1]}:{})};
 }
 export function createProgressionCampaignMission(id,progress) {
   const mission=getCampaignLaunchMission(id,progress);
