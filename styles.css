@@ -492,7 +492,11 @@ button:disabled {
 }
 .keyboard-label { grid-column: 1 / -1; overflow-wrap: anywhere; }
 .keyboard-key { font-weight: 700; overflow-wrap: anywhere; }
-.keyboard-row button { min-height: 44px; padding: 6px 10px; }
+.keyboard-row button {
+  min-height: 44px; padding: 6px 10px;
+  color: var(--ink); background: #324231; border: 1px solid var(--muted);
+}
+.keyboard-row button:hover { background: #40543d; border-color: var(--gold); }
 #keyboardStatus { min-height: 1.5em; }
 .hotkey {
   position: absolute;
