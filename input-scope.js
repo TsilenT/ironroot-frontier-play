@@ -72,6 +72,11 @@ export function createInputScopeGuard(initialScope = null) {
       keys.delete(event.code);
       return staleKey(gesture, event);
     },
+    interruptKeys() {
+      // Binding capture retires held keys without swallowing the fresh mouse
+      // click that deliberately moves focus to another native Options control.
+      for (const gesture of keys.values()) gesture.cancelled = true;
+    },
     interrupt() {
       // Blur can lose pointerup/cancel entirely. Retire the same objects, so
       // stale clicks still match their origin and primary fallback, but absent

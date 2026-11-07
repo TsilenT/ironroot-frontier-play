@@ -355,7 +355,7 @@
         </button>
         <p class="save-status hidden" id="saveStatus" role="status"></p>
         <button id="exportUnreadableBattle" class="text-button hidden">Download original save</button>
-        <p class="welcome-foot">Campaign · Skirmish · Field trials · v0.17.0</p>
+        <p class="welcome-foot">Campaign · Skirmish · Field trials · v0.17.1</p>
         <div class="welcome-links">
           <a class="text-button training-link" id="welcomeTraining" href="./training.html" aria-label="Optional guided practice. Learn without changing your saved battle">Guided practice (optional) →</a>
           <button class="text-button" id="welcomeFullscreen" type="button" data-fullscreen aria-pressed="false" aria-describedby="welcomeFullscreenStatus">Enter fullscreen</button>
@@ -433,7 +433,7 @@
           <b>Touch:</b> Tap to build once, then choose again · Drag to pan · Tap the minimap to jump<br /><b
             >Keyboard:</b
           >
-          <span id="buildingKeyHelp">1–7 buildings</span> · R volley · Space pause · Esc cancel · Arrow keys pan
+          <span id="buildingKeyHelp"></span><br /><span id="battleKeyHelp"></span>
         </p>
         <p class="controls">Fullscreen is in Preferences, available from the title screen or pause menu. Use Tab then Enter or Space to activate its button. Browser and device support varies; Esc exits fullscreen.</p>
         <p class="controls" id="controllerHelp">
@@ -533,6 +533,15 @@
         </div>
         <p id="preferenceSaveWarning" class="save-warning hidden" role="status"></p>
         <button id="retryPreferences" class="secondary-button hidden">Retry saving preferences</button>
+        <details class="history-details" id="keyboardSettings">
+          <summary>Battle keyboard controls</summary>
+          <p>Shortcuts use physical key positions, so the labels may differ on non-US keyboards. Build slots follow the current battle’s roster and earned unlocks.</p>
+          <p>Choose Change, then press a letter, digit, numpad digit, arrow or Space. Clear leaves an action unbound. Esc cancels capture; Tab moves on. Esc, Tab, Enter, modifier combinations and system keys are reserved. Only camera panning repeats while held.</p>
+          <p>Optional guided practice retains its default controls. These settings apply to campaign, coaching and skirmishes in the main game.</p>
+          <div id="keyboardRows"></div>
+          <p id="keyboardStatus" role="status" aria-live="polite"></p>
+          <button id="keyboardDefaults" type="button" class="secondary-button">Restore keyboard defaults</button>
+        </details>
         <details class="history-details" id="controllerSettings">
           <summary>Controller controls · experimental</summary>
           <p id="controllerStatus">

@@ -1,6 +1,7 @@
 // Atomic, versioned offline shell. Bump VERSION with every public build.
-const VERSION = 'ironroot-v0.17.0';
+const VERSION = 'ironroot-v0.17.1';
 const FILES = [
+  './keyboard.js',
   './autonomous-air.js',
   './flight-orders.js',
   './flight-orders-view.js',

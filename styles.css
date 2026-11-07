@@ -482,6 +482,18 @@ button:disabled {
   font-weight: 400;
   letter-spacing: 0.3px;
 }
+.keyboard-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  gap: 6px;
+  align-items: center;
+  padding: 8px 0;
+  border-bottom: 1px solid #ffffff20;
+}
+.keyboard-label { grid-column: 1 / -1; overflow-wrap: anywhere; }
+.keyboard-key { font-weight: 700; overflow-wrap: anywhere; }
+.keyboard-row button { min-height: 44px; padding: 6px 10px; }
+#keyboardStatus { min-height: 1.5em; }
 .hotkey {
   position: absolute;
   right: 9px;

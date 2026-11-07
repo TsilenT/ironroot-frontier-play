@@ -1,6 +1,7 @@
 import { BUILDINGS, buildBounds, upgradeCost } from './engine.js';
 import { Renderer, iconSVG } from './render.js';
 import { createInputScopeGuard } from './input-scope.js';
+import { ignoreKeyboardEvent, nativeKeyboardTarget } from './keyboard.js';
 import { TRAINING_LESSONS, createCurrentTrainingSession } from './training.js';
 
 const BUILD_ORDER = ['barracks', 'archery', 'foundry', 'watchtower', 'mint', 'sanctum', 'aerie'];
@@ -479,8 +480,9 @@ export function bootTraining(doc = document) {
   // Continue/Retry can intentionally transfer focus to the new step heading.
   doc.addEventListener('click', () => revealCoachControl(doc.activeElement));
   doc.addEventListener('keydown', (event) => {
-    if (event.code === 'Escape') { event.preventDefault(); choices.reset(); feedback = 'Choice cancelled. No gold spent.'; refresh(); return; }
-    if (event.altKey || event.ctrlKey || event.metaKey || event.target?.closest('button,a,select,input,textarea,summary,[contenteditable="true"]')) return;
+    if (ignoreKeyboardEvent(event)) return;
+    if (event.code === 'Escape') { if (event.repeat) return; event.preventDefault(); choices.reset(); feedback = 'Choice cancelled. No gold spent.'; refresh(); return; }
+    if (nativeKeyboardTarget(event.target)) return;
     if (event.code === 'ArrowLeft' || event.code === 'ArrowRight') {
       event.preventDefault(); renderer.pan(event.code === 'ArrowLeft' ? 75 : -75); updateMinimapDescription(); return;
     }

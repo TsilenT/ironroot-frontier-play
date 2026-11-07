@@ -5,6 +5,7 @@ import {
   normalizeCampaignProgress,
 } from './campaign.js';
 import { CHALLENGES } from './challenges.js';
+import { normalizeKeyboardMap } from './keyboard.js';
 
 export const BACKUP_FORMAT = 'ironroot-backup';
 export const BACKUP_VERSION = 1; // Legacy export remains the default when representable.
@@ -137,10 +138,15 @@ function trials(value) {
   return clean;
 }
 function settings(value) {
-  const keys = ['sound', 'music', 'sfx', 'volume', 'reducedMotion', 'quality'];
+  const keys = ['sound', 'music', 'sfx', 'volume', 'reducedMotion', 'quality', 'keyboard'];
   fields(value, keys, [], 'Preferences');
   const clean = {};
   for (const key of keys) if (own(value, key)) {
+    if (key === 'keyboard') {
+      try { clean.keyboard = normalizeKeyboardMap(value.keyboard); }
+      catch { fail('Battle keyboard controls contain an invalid version, action, key or duplicate binding.'); }
+      continue;
+    }
     if (key === 'volume') number(value[key], 0, 1, 'Volume');
     else if (key === 'quality') { if (!['high', 'low'].includes(value[key])) fail('Preferences contain an unknown quality.'); }
     else if (typeof value[key] !== 'boolean') fail('Preference toggles must be boolean.');

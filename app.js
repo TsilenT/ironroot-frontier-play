@@ -1,6 +1,7 @@
 import { createViewportPause, inspectMobileGeometry, visibleViewportRect, insetViewportRect, fitMobileViewport, protectedToastTop } from './mobile-battlefield.js';
 import { createProfileSession, PROFILE_MARKER_KEY, CURRENT_PROFILE_PROTOCOL_VERSION } from './profile-session.js';
 import { createInputScopeGuard } from './input-scope.js';
+import { ACTIONS, effectiveBindings, normalizeKeyboardMap, bindingConflict, bindableCode, keyLabel, actionLabel, ignoreKeyboardEvent, keyboardAction } from './keyboard.js';
 import { createMenuHistory, seedMenuAncestors } from './menu-history.js';
 import { supportsAutonomousAir } from './autonomous-air.js';
 import { airRulesGuide, airBuildingDescription } from './flight-orders-view.js';
@@ -57,7 +58,6 @@ import {
   createPreferenceSession,
   writeBattle,
   getBattleWriteFailure,
-  nativeSpaceTarget,
 } from './persistence.js';
 import { decodeBattle, encodeBattle, scenarioForBattle, identityOf } from './battle-codec.js';
 import { GameAudio } from './audio.js';
@@ -263,6 +263,7 @@ const preferences = {
   reducedMotion: renderer.reducedMotion,
   quality: 'high',
 };
+let keyboardCapture = null, keyboardLoadWarning = '', keyboardSavePending = false;
 try {
   const saved = JSON.parse(preferenceSession.initial().value || '{}');
   if (saved && typeof saved === 'object') {
@@ -272,6 +273,10 @@ try {
       preferences.volume = Math.max(0, Math.min(1, saved.volume));
     if (['high', 'low'].includes(saved.quality))
       preferences.quality = saved.quality;
+    if (Object.hasOwn(saved, 'keyboard')) {
+      try { preferences.keyboard = normalizeKeyboardMap(saved.keyboard); }
+      catch { keyboardLoadWarning = 'Saved keyboard controls could not be read. Defaults apply on this page; the saved data has not been changed.'; }
+    }
   }
 } catch {}
 let soundOn = preferences.sound;
@@ -309,6 +314,14 @@ function updatePreferenceSaveStatus() {
 function retryPreferences(notify = false) {
   const dirty = preferenceSession.dirty(), ok = preferenceSession.retry();
   updatePreferenceSaveStatus();
+  if (dirty && ok && keyboardSavePending) {
+    keyboardSavePending = false;
+    $('keyboardStatus').textContent = 'Keyboard controls saved.';
+  }
+  if (dirty && ok && keyboardLoadWarning) {
+    keyboardLoadWarning = 'Unreadable keyboard controls were replaced with defaults when preferences were saved.';
+    $('keyboardStatus').textContent = keyboardLoadWarning;
+  }
   if (notify && dirty && ok) toast('Preferences saved.');
   return ok;
 }
@@ -404,7 +417,7 @@ function setSound() {
 setSound();
 function populateBuildCards() {
   $('buildCards').textContent = '';
-  $('buildingKeyHelp').textContent = `1–${Object.keys(game.buildings || BUILDINGS).length} buildings`;
+  updateKeyboardHelp();
 for (const [type, d] of Object.entries(game.buildings || BUILDINGS)) {
   const label = labels[type] || [
     d.name,
@@ -415,8 +428,9 @@ for (const [type, d] of Object.entries(game.buildings || BUILDINGS)) {
   btn.className = 'build-card';
   btn.dataset.type = type;
   btn.title = `${d.name} · ${d.cost} gold. ${d.description}`;
-  btn.setAttribute('aria-label', `${d.name}, ${d.cost} gold. ${d.description}`);
-  btn.innerHTML = `<span class="hotkey">${Object.keys(game.buildings || BUILDINGS).indexOf(type) + 1}</span><div class="card-top"><span class="building-symbol">${iconSVG(type)}</span><div><h3>${label[0]}</h3><span class="role">${label[1]}</span></div></div><span class="cost">◆ ${d.cost}<small>${label[2]}</small></span>`;
+  const code = effectiveBindings(preferences.keyboard)['build' + (Object.keys(game.buildings || BUILDINGS).indexOf(type) + 1)];
+  btn.setAttribute('aria-label', `${d.name}, ${d.cost} gold. ${d.description}${code ? ' Keyboard: ' + keyLabel(code) + '.' : ''}`);
+  btn.innerHTML = `${code ? '<span class="hotkey">' + keyLabel(code) + '</span>' : ''}<div class="card-top"><span class="building-symbol">${iconSVG(type)}</span><div><h3>${label[0]}</h3><span class="role">${label[1]}</span></div></div><span class="cost">◆ ${d.cost}<small>${label[2]}</small></span>`;
   btn.addEventListener('click', () => selectBuild(type));
   $('buildCards').append(btn);
 }
@@ -789,9 +803,9 @@ function pauseControl(mode = coachingHold && !firstBuildHold ? 'resume' : 'pause
   );
   b.title =
     mode === 'pause'
-      ? 'Pause (Space)'
+      ? keyboardTitle('Pause', 'pause')
       : mode === 'resume'
-        ? 'Resume (Space)'
+        ? keyboardTitle('Resume', 'pause')
         : 'Return to title';
 }
 pauseControl();
@@ -1948,8 +1962,9 @@ $('minimap').addEventListener('click', (e) => {
   follow = false;
 });
 window.addEventListener('keydown', (e) => {
-  if (e.repeat && e.code !== 'ArrowLeft' && e.code !== 'ArrowRight') return;
+  if (ignoreKeyboardEvent(e)) return;
   if (e.code === 'Escape') {
+    if (e.repeat) return;
     e.preventDefault();
     if (!$('restartModal').classList.contains('hidden')) hideRestart();
     else if (!$('backupModal').classList.contains('hidden')) hideBackup();
@@ -1979,25 +1994,35 @@ window.addEventListener('keydown', (e) => {
     return;
   // Space/Page/arrow keys scroll the focused lesson; they are not battle commands.
   if ($('campaignCoach').contains(e.target)) return;
-  if (e.code === 'Space' && !nativeSpaceTarget(e.target)) {
+  const button = e.target?.closest?.('button');
+  // Clicking a battle HUD button leaves native focus there. Keep its ordinary
+  // shortcuts usable, but only Resume admits shortcuts in the pause menu.
+  // Native activation, text controls, disclosures and higher dialogs retain
+  // their guards; pause() still owns all recovery/viewport/profile holds.
+  const allowButtonShortcuts = !!button && ((!paused && $('app').contains(button)) ||
+    (!$('pauseVeil').classList.contains('hidden') && button === $('resume')));
+  const action = keyboardAction(e, preferences.keyboard, { allowButtonShortcuts });
+  if (!action) return;
+  if (action === 'pause') {
     e.preventDefault();
     toggleBattlePause();
+    return;
   }
-  if (paused) return;
-  if (e.code === 'ArrowLeft') {
+  if (!canInteract()) return;
+  if (action === 'panLeft') {
     e.preventDefault();
     renderer.pan(75);
     follow = false;
   }
-  if (e.code === 'ArrowRight') {
+  if (action === 'panRight') {
     e.preventDefault();
     renderer.pan(-75);
     follow = false;
   }
-  if (e.code === 'KeyR') $('rally').click();
-  if (/^Digit[1-9]$/.test(e.code)) {
-    const key = Object.keys(game.buildings || BUILDINGS)[Number(e.code.slice(-1)) - 1];
-    if (key) selectBuild(key);
+  if (action === 'volley' && !$('rally').disabled) { e.preventDefault(); $('rally').click(); }
+  if (action.startsWith('build')) {
+    const key = Object.keys(game.buildings || BUILDINGS)[Number(action.slice(5)) - 1];
+    if (key) { e.preventDefault(); selectBuild(key); }
   }
 });
 document.addEventListener('visibilitychange', () => {
@@ -2598,6 +2623,99 @@ $('confirmRestart').onclick = () => {
     $('restartStatus').textContent = 'Restart is unavailable. Your current battle stays paused on this page.';
   }
 };
+function keyboardTitle(label, action) {
+  const code = effectiveBindings(preferences.keyboard)[action];
+  return label + (code ? ' (' + keyLabel(code) + ')' : '');
+}
+function updateKeyboardHelp() {
+  const map = effectiveBindings(preferences.keyboard), buildings = game.buildings || BUILDINGS;
+  $('buildingKeyHelp').textContent = Object.values(buildings).map((building, index) =>
+    `${building.name}: ${keyLabel(map['build' + (index + 1)])}`).join(' · ');
+  $('battleKeyHelp').textContent = `Volley: ${keyLabel(map.volley)} · Pause / resume: ${keyLabel(map.pause)} · Pan left: ${keyLabel(map.panLeft)} · Pan right: ${keyLabel(map.panRight)} · Esc cancel / menu. Remap in Options. Optional guided practice retains defaults.`;
+  $('battle').setAttribute('aria-label', 'Battlefield. Choose a building, then a green build slot to place it once. Hold Shift with a mouse click to keep building. Drag or middle mouse drag to explore. Right-click or Escape cancels placement. ' +
+    `Pan left: ${keyLabel(map.panLeft)}. Pan right: ${keyLabel(map.panRight)}. Battle keyboard controls are in Options.`);
+  $('rally').title = keyboardTitle('Arrow volley', 'volley');
+}
+function syncKeyboardSettings() {
+  const map = effectiveBindings(preferences.keyboard), buildings = started ? game.buildings : {};
+  // Keep the same native buttons and focus throughout capture and save updates.
+  if (!$('keyboardRows').children.length) for (const action of ACTIONS) {
+    const row = document.createElement('div');
+    row.className = 'keyboard-row'; row.dataset.keyboardAction = action;
+    const label = document.createElement('span'); label.className = 'keyboard-label';
+    const key = document.createElement('span'); key.className = 'keyboard-key';
+    const change = document.createElement('button'); change.type = 'button'; change.dataset.keyboardChange = ''; change.textContent = 'Change';
+    change.onclick = () => {
+      cancelKeyboardCapture();
+      change.focus();
+      keyboardCapture = { action, button: change };
+      $('keyboardStatus').textContent = `Press a key for ${actionLabel(action, started ? game.buildings : {})}. Esc cancels; Tab leaves capture.`;
+      inputScope.interruptKeys();
+    };
+    const clear = document.createElement('button'); clear.type = 'button'; clear.dataset.keyboardClear = ''; clear.textContent = 'Clear';
+    clear.onclick = () => { cancelKeyboardCapture(); setKeyboardBinding(action, null); };
+    row.append(label, key, change, clear); $('keyboardRows').append(row);
+  }
+  for (const row of $('keyboardRows').children) {
+    const action = row.dataset.keyboardAction, label = actionLabel(action, buildings);
+    row.querySelector('.keyboard-label').textContent = label;
+    row.querySelector('.keyboard-key').textContent = keyLabel(map[action]);
+    row.querySelector('[data-keyboard-change]').setAttribute('aria-label', `Change ${label}`);
+    row.querySelector('[data-keyboard-clear]').setAttribute('aria-label', `Clear ${label}`);
+  }
+  if (keyboardLoadWarning) $('keyboardStatus').textContent = keyboardLoadWarning;
+}
+function cancelKeyboardCapture(message = 'Keyboard capture cancelled.') {
+  if (!keyboardCapture) return;
+  keyboardCapture = null;
+  $('keyboardStatus').textContent = message;
+  inputScope.interruptKeys();
+}
+function setKeyboardBinding(action, code) {
+  const next = { version: 1, bindings: { ...preferences.keyboard?.bindings, [action]: code } };
+  const conflict = bindingConflict(effectiveBindings(next));
+  if (conflict) {
+    const other = conflict.actions.find(id => id !== action);
+    $('keyboardStatus').textContent = `${keyLabel(code)} is already used by ${actionLabel(other, started ? game.buildings : {})}. Clear or change that binding first.`;
+    return false;
+  }
+  preferences.keyboard = normalizeKeyboardMap(next); keyboardLoadWarning = '';
+  const ok = savePreferences();
+  keyboardSavePending = !ok;
+  syncKeyboardSettings(); populateBuildCards(); pauseControl(); updateCampaignDeck(); updateHUD();
+  $('keyboardStatus').textContent = `${actionLabel(action, started ? game.buildings : {})}: ${keyLabel(code)}. ${ok ? 'Saved.' : 'Applies to this page only. Use Retry saving preferences.'}`;
+  return true;
+}
+function captureKeyboardInput(event) {
+  if (!keyboardCapture) return;
+  if (event.code === 'Tab') { cancelKeyboardCapture(); return; }
+  if (ignoreKeyboardEvent(event)) return;
+  if (event.repeat) return;
+  if (event.code === 'Escape') {
+    event.preventDefault(); event.stopImmediatePropagation(); cancelKeyboardCapture(); return;
+  }
+  if (!bindableCode(event.code)) {
+    // Browser/system keys retain their native behavior. Enter must not activate
+    // the still-focused Change button a second time while it is listening.
+    if (event.code === 'Enter' || event.code === 'NumpadEnter') { event.preventDefault(); event.stopImmediatePropagation(); inputScope.interruptKeys(); }
+    $('keyboardStatus').textContent = 'That key is reserved. Use a letter, digit, numpad digit, arrow or Space; Esc cancels.';
+    return;
+  }
+  event.preventDefault(); event.stopImmediatePropagation();
+  inputScope.interruptKeys(); // Retire the release even when a conflict keeps capture open.
+  const action = keyboardCapture.action;
+  if (setKeyboardBinding(action, event.code)) cancelKeyboardCapture($('keyboardStatus').textContent);
+}
+$('keyboardDefaults').onclick = () => {
+  cancelKeyboardCapture();
+  delete preferences.keyboard; keyboardLoadWarning = '';
+  const ok = savePreferences();
+  keyboardSavePending = !ok;
+  syncKeyboardSettings(); populateBuildCards(); pauseControl(); updateCampaignDeck(); updateHUD();
+  $('keyboardStatus').textContent = 'Keyboard defaults restored. ' + (ok ? 'Saved.' : 'Applies to this page only. Use Retry saving preferences.');
+};
+$('keyboardSettings').addEventListener('toggle', () => { if (!$('keyboardSettings').open) cancelKeyboardCapture(); });
+document.addEventListener('focusin', (event) => { if (keyboardCapture && event.target !== keyboardCapture.button) cancelKeyboardCapture(); });
 let settingsWasPaused = false;
 function showSettings(event) {
   // Touch may not focus its button. Capture the actual opener before pause()
@@ -2615,6 +2733,7 @@ function showSettings(event) {
   if (opener) dialogFocus.set($('settingsModal'), opener);
 }
 function hideSettings() {
+  cancelKeyboardCapture();
   if (recoveryHold || profileGate) {
     updateRecoveryUI();
     return;
@@ -2625,6 +2744,7 @@ function hideSettings() {
     pause(settingsWasPaused);
 }
 function syncSettings() {
+  syncKeyboardSettings();
   $('audioEnabled').checked = soundOn;
   $('musicEnabled').checked = preferences.music;
   $('sfxEnabled').checked = preferences.sfx;
@@ -2818,6 +2938,8 @@ const dialogFocus = new WeakMap();
 const inputScope = createInputScopeGuard();
 function syncInputScope() {
   const dialog = dialogLayers.findLast((layer) => !layer.classList.contains('hidden'));
+  if (keyboardCapture && (dialog !== $('settingsModal') || !$('keyboardSettings').open || recoveryHold || profileGate || document.hidden))
+    cancelKeyboardCapture();
   const next = (dialog?.id === 'viewportModal' ? viewportScope() : dialog) || (!$('pauseVeil').classList.contains('hidden')
     ? 'pause'
     : game.state.winner !== null || objectiveOutcome ? 'ended'
@@ -2851,16 +2973,19 @@ document.addEventListener('click', (event) => {
 }, true);
 document.addEventListener('keydown', (event) => {
   guardInput(event, () => inputScope.keyDown(event));
+  if (!event.defaultPrevented) captureKeyboardInput(event);
 }, true);
 document.addEventListener('keyup', (event) => {
   guardInput(event, () => inputScope.keyUp(event));
 }, true);
 window.addEventListener('blur', () => {
+  cancelKeyboardCapture();
   inputScope.interrupt();
   resetBattleGesture();
 });
 document.addEventListener('visibilitychange', () => {
   if (document.hidden) {
+    cancelKeyboardCapture();
     inputScope.interrupt();
     resetBattleGesture();
   }
