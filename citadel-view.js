@@ -7,7 +7,7 @@ export function citadelStatusText(game,side=0,{paused=false}={}) {
   const s=citadelOptionStatus(game,side);
   if(!s.enabled)return '';
   if(s.ended)return `${s.label || 'Citadel'} · battle ended.`;
-  if(!s.choice)return s.readyWait>0?`Choice available in ${Math.ceil(s.readyWait)}s · 190 gold.`:s.canBuy?'Choose one option · 190 gold.':`Choose one option · ${s.reason}`;
+  if(!s.choice)return s.canBuy?'Choose one option · 190 gold.':`Choose one option · ${s.reason}`;
   if(s.choice==='arrows')return `Extra Arrow · ${s.extraShots} extra shots fired. Needs a second enemy in range.`;
   const restored=`${Math.floor(s.healedTotal)} HP restored.`;
   if(s.blockedByDecay)return `Regeneration stopped during timed decay. ${restored}`;

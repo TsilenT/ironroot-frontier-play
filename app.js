@@ -2717,7 +2717,7 @@ $('skipIntroduction').onclick = () => {
 };
 setMode(mode);
 // Citadel choices reuse the pause menu without changing camera controls.
-var citadelNoticeGame = null, citadelNoticePhase = null, citadelReadyNoticed = false;
+var citadelNoticeGame = null, citadelNoticePhase = null;
 var citadelUnsavedGame = null;
 function updateCitadelSaveWarning() {
   const pending = citadelUnsavedGame === game;
@@ -2748,24 +2748,19 @@ function updateCitadelUI() {
   $('citadelAIPolicy').textContent = game.ai ? CITADEL_AI_TEXT : 'This battle uses a fixed enemy formation. It does not buy citadel choices or make other new spending decisions. The same 190-gold cost and effects apply to either side; no side receives extra gold.';
   $('citadelReadiness').textContent = own.choice ? `${own.label} chosen. One choice per battle.`
     : !citadelDialogSafe() ? 'Purchasing is unavailable while this battle or its saved checkpoint is interrupted.'
-      : own.readyWait > 0 ? `Available in ${Math.ceil(own.readyWait)} simulated seconds, at 1:30. You have ${Math.floor(game.state.gold[0])} gold; each option costs 190.`
-        : own.canBuy ? `Ready. You have ${Math.floor(game.state.gold[0])} gold. Choose one for 190 gold.`
-          : `Ready from 1:30. ${own.reason} You have ${Math.floor(game.state.gold[0])} gold.`;
+      : own.canBuy ? `Ready. You have ${Math.floor(game.state.gold[0])} gold. Choose one for 190 gold.`
+        : `${own.reason} You have ${Math.floor(game.state.gold[0])} gold.`;
   for (const [id, kind, label] of [['buyCitadelArrows','arrows','Extra Arrow'],['buyCitadelRegen','regen','Regeneration']]) {
     const selected = own.choice === kind;
     $(id).disabled = !citadelDialogSafe() || !game.canBuyCitadelOption(kind, 0).ok;
     $(id).textContent = selected ? `${label} chosen` : own.choice ? 'Unavailable · one choice per battle' : `Choose ${label} · 190 gold`;
   }
   const phase = own.choice !== 'regen' ? own.choice : own.blockedByDecay ? 'decay' : own.fullHealth ? 'full' : own.regenWait > 0 ? 'waiting' : 'healing';
-  if (citadelNoticeGame !== game) { citadelNoticeGame = game; citadelNoticePhase = phase; citadelReadyNoticed = own.readyWait <= 0; }
+  if (citadelNoticeGame !== game) { citadelNoticeGame = game; citadelNoticePhase = phase; }
   else if (!paused && phase !== citadelNoticePhase) {
     if (own.choice === 'regen' && ['healing','waiting','full','decay'].includes(phase))
       toast(phase === 'healing' ? 'Citadel recovering · +3 HP/sec.' : phase === 'waiting' ? 'Regeneration interrupted · wait 8 seconds without damage.' : phase === 'full' ? 'Citadel fully repaired.' : 'Timed decay has stopped regeneration.');
     citadelNoticePhase = phase;
-  }
-  if (!paused && !own.choice && own.readyWait <= 0 && !citadelReadyNoticed) {
-    citadelReadyNoticed = true;
-    toast('Citadel choices available · Pause → Citadel choices · 190 gold each.');
   }
 }
 function showCitadelOptions() {
