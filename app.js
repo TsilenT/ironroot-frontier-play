@@ -192,6 +192,9 @@ let mode = 'campaign',
   selectedChapter = CAMPAIGN_CHAPTERS[0].id;
 let expandedBuilds = false, resumedBattle = false, coachEnabled = true;
 let campaignPage = 'mission', briefingMission = null;
+// A confirmed restart keeps only a fresh, page-local briefing choice. It is
+// neither an active battle nor a saved checkpoint until Begin is activated.
+let briefingRestart = null;
 // A teaching hold stops simulation, while ordinary battle commands remain available.
 // Manual, visibility, viewport and storage pauses keep their existing guards.
 let coachingHold = false;
@@ -233,7 +236,9 @@ let knownHistory = historySession.snapshot().rows,
 let campaignProgress = readCampaignProgress(storage),
   progressDirty = false;
 const initialOverview = getCampaignOverview(campaignProgress);
-const nextCampaign = initialOverview.nextMissionId || initialOverview.missions[0].id;
+const nextCampaign = initialOverview.nextMissionId || (initialOverview.completed
+  ? initialOverview.missions.at(-1).id : initialOverview.missions[0].id);
+if (initialOverview.completed) mode = 'skirmish';
 if (nextCampaign) {
   selectedCampaign = nextCampaign;
   selectedChapter = CAMPAIGN_MISSIONS.find(
@@ -1006,8 +1011,12 @@ function start(
   // replacing the retained game; claiming here could adopt another tab's save.
   if (fresh && battleSession.status() !== 'current') {
     $('restartStatus').textContent = 'The checkpoint changed or storage is unavailable. Your current battle stays paused here. Return to title to continue the newer checkpoint.';
+    if (!started) showBriefingWarning('The checkpoint changed or storage is unavailable. Keep this page open, or resume the newer saved battle.');
     return;
   }
+  briefingRestart = null;
+  $('briefingRestartStatus').classList.add('hidden');
+  $('resultRestartStatus').classList.add('hidden');
   battleSafetyReason = null;
   $('battleLimitWarning').classList.add('hidden');
   $('resume').disabled = false;
@@ -1472,7 +1481,69 @@ $('resultReport').addEventListener('click', (event) => {
     if (url) setTimeout(() => URL.revokeObjectURL(url), 10000);
   }
 });
-$('start').onclick = () => start();
+$('start').onclick = () => {
+  const restart = selectedBriefingRestart();
+  if (!restart) { start(); return; }
+  syncProfileSafety();
+  if (recoveryHold || profileGate) { showRecoverySettings(); return; }
+  if (battleSession.status() !== 'current') {
+    updateResume();
+    showBriefingWarning('The checkpoint changed or storage is unavailable. Keep this page open, or resume the newer saved battle.');
+    return;
+  }
+  if (!writeBattle(battleSession, SAVE, restart.game, restart.challenge, restart.campaign, { campaignProgress })) {
+    showBriefingWarning('The new attempt could not be saved or verified. Keep this page open and try again when storage is available.');
+    return;
+  }
+  start(restart.game, restart.challenge, restart.campaign, { fresh: true });
+  if (started) briefingRestart = null;
+};
+function showBriefingWarning(text) {
+  $('briefingRestartStatus').textContent = text;
+  $('briefingRestartStatus').classList.remove('hidden');
+  $('briefingRestartStatus').scrollIntoView({ block: 'nearest' });
+}
+function selectedBriefingRestart() {
+  return briefingRestart && ((mode === 'campaign' && briefingRestart.campaign === selectedCampaign) ||
+    (mode === 'challenges' && briefingRestart.challenge === selectedChallenge)) ? briefingRestart : null;
+}
+function returnToBriefing(statusId) {
+  syncProfileSafety();
+  if (recoveryHold || profileGate) { showRecoverySettings(); return; }
+  const warn = text => {
+    $(statusId).textContent = text;
+    $(statusId).classList.remove('hidden');
+    $(statusId).scrollIntoView({ block: 'nearest' });
+  };
+  if (battleSession.status() !== 'current') {
+    warn('The checkpoint changed or storage is unavailable. Keep this page open. Return to title to continue safely.');
+    return;
+  }
+  try {
+    const candidate = currentCampaign ? createCampaignRestart(game, currentCampaign) : restartChallenge(game, currentChallenge);
+    // Retire only our checkpoint, through the existing profile/ownership fence.
+    // A failed removal keeps the retained attempt and its dialog on this page.
+    if ((progressDirty && !persistProgress()) || !battleSession.remove()) {
+      warn('Restart could not be saved or verified. Keep this page open and try again when storage is available.');
+      return;
+    }
+    interruptMobileInput();
+    briefingRestart = { game: candidate, campaign: currentCampaign, challenge: currentChallenge };
+    if (currentCampaign) {
+      mode = 'campaign';
+      selectedCampaign = currentCampaign;
+      selectedChapter = getCampaignMission(currentCampaign).chapterId;
+    } else {
+      mode = 'challenges';
+      selectedChallenge = currentChallenge;
+    }
+    saveTimer = 0;
+    $('briefingRestartStatus').classList.add('hidden');
+    showTitle({ focusStart: true });
+  } catch {
+    warn('Restart is unavailable. Keep this page open and try again.');
+  }
+}
 function showTitle({ focusStart = false, focusResume = false } = {}) {
   if (recoveryHold || profileGate) {
     showRecoverySettings();
@@ -1503,21 +1574,19 @@ function showTitle({ focusStart = false, focusResume = false } = {}) {
   });
 }
 $('playAgain').onclick = () => {
-  if (currentCampaign && objectiveOutcome?.failed) {
-    mode = 'campaign';
-    selectedCampaign = currentCampaign;
-    start(null, null, null, { scenarioRevision: campaignScenarioForGame(game, currentCampaign).revision });
-    return;
-  }
-  if (currentChallenge && objectiveOutcome?.failed) {
-    mode = 'challenges';
-    selectedChallenge = currentChallenge;
-    start();
+  if ((currentCampaign || currentChallenge) && objectiveOutcome?.failed) {
+    returnToBriefing('resultRestartStatus');
     return;
   }
   if (currentCampaign) {
-    mode = 'campaign';
     const overview = getCampaignOverview(campaignProgress);
+    if (objectiveOutcome?.completed && currentCampaign === overview.missions.at(-1).id) {
+      mode = 'skirmish';
+      battleSession.remove();
+      showTitle({ focusStart: true });
+      return;
+    }
+    mode = 'campaign';
     selectedCampaign = (isIntroMission(currentCampaign) ? overview.legacyIntroduction.nextMissionId : null)
       || overview.nextMissionId || currentCampaign;
     selectedChapter = CAMPAIGN_MISSIONS.find(
@@ -1528,7 +1597,8 @@ $('playAgain').onclick = () => {
   showTitle({ focusStart: !!currentCampaign });
 };
 $('replayMission').onclick = () => {
-  if (!currentCampaign || !objectiveOutcome?.completed || objectiveOutcome.stars >= 3) return;
+  if (!currentCampaign || !objectiveOutcome?.completed ||
+      (objectiveOutcome.stars >= 3 && currentCampaign !== getCampaignOverview(campaignProgress).missions.at(-1).id)) return;
   mode = 'campaign';
   selectedCampaign = currentCampaign;
   start(null, null, null, { scenarioRevision: campaignScenarioForGame(game, currentCampaign).revision });
@@ -1725,12 +1795,14 @@ function finish() {
       $('resultObjectives').append(p);
     }
   }
+  const finalMission = !!mission && currentCampaign === getCampaignOverview(campaignProgress).missions.at(-1).id;
   $('playAgain').innerHTML = mission
-    ? (won ? 'CONTINUE CAMPAIGN' : 'RETRY MISSION') + ' <span>→</span>'
+    ? (won ? finalMission ? 'SKIRMISHES' : 'CONTINUE CAMPAIGN' : 'RETRY MISSION') + ' <span>→</span>'
     : trial
       ? (won ? 'MORE FIELD TRIALS' : 'RETRY FIELD TRIAL') + ' <span>→</span>'
       : 'NEW SKIRMISH <span>→</span>';
-  $('replayMission').classList.toggle('hidden', !mission || !won || objectiveOutcome.stars >= 3);
+  $('replayMission').classList.toggle('hidden', !mission || !won || (!finalMission && objectiveOutcome.stars >= 3));
+  $('replayMission').textContent = finalMission ? 'Replay mission' : 'Replay for more stars';
   $('resultMenu').textContent = mission ? 'Campaign missions' : 'Return to title';
   $('resultModal').classList.remove('hidden');
   const completion = battleSession.captureResult();
@@ -2101,6 +2173,10 @@ window.addEventListener('storage', (event) => {
     return;
   }
   if (event.key !== SAVE) return;
+  // Retire the removed checkpoint's claim, even if identical bytes were saved
+  // again before this event arrived. A different, explicitly claimed checkpoint
+  // must survive an older queued removal; equal-byte claims are indistinguishable.
+  if (event.newValue === null && event.oldValue !== null) battleSession.release(event.oldValue);
   if (
     started &&
     !battleSession.isCurrent() &&
@@ -2354,7 +2430,9 @@ if (
 }
 
 function renderChallenge() {
-  const challenge = CHALLENGES.find((c) => c.id === selectedChallenge);
+  const restart = selectedBriefingRestart();
+  const challenge = restart?.challenge ? getChallengeForGame(restart.game, restart.challenge)
+    : CHALLENGES.find((c) => c.id === selectedChallenge);
   $('challengeChoices').innerHTML = '';
   for (const [index, c] of CHALLENGES.entries()) {
     const button = document.createElement('button');
@@ -2451,7 +2529,14 @@ function renderCampaign() {
     showLegacy = legacy.cleared > 0 || isIntroMission(selectedCampaign) || isIntroMission(currentCampaign),
     chapters = [...overview.chapters, ...(showLegacy ? [legacy.chapter] : [])],
     missions = [...overview.missions, ...(showLegacy ? legacy.missions : [])],
-    mission = missions.find((m) => m.id === selectedCampaign) || overview.missions[0],
+    selected = missions.find((m) => m.id === selectedCampaign) || overview.missions[0],
+    restart = selectedBriefingRestart(),
+    mission = restart?.campaign ? { ...selected,
+      ...getCampaignMission(restart.campaign, campaignScenarioForGame(restart.game, restart.campaign).revision),
+      scenarioRevision: campaignScenarioForGame(restart.game, restart.campaign).revision,
+      rulesetId: restart.game.ruleset.id, rulesetRevision: restart.game.ruleset.revision,
+      unlocked: isMissionUnlocked(campaignProgress, restart.campaign, campaignScenarioForGame(restart.game, restart.campaign).revision),
+    } : selected,
     chapter = chapters.find((c) => c.id === selectedChapter) || chapters.find(c => c.id === mission.chapterId);
   selectedCampaign = mission.id;
   selectedChapter = chapter.id;
@@ -2598,6 +2683,10 @@ function syncPauseMenu() {
   $('restartBattle').textContent = `Restart ${noun}…`;
   $('restartTitle').textContent = `Restart ${noun}?`;
   $('confirmRestart').textContent = `Restart ${noun}`;
+  $('restartDescription').textContent = (mission || trial
+    ? 'This ends your unfinished attempt and returns to its briefing. Begin when you are ready. '
+    : 'This replaces your unfinished battle and its checkpoint. ') +
+    'Campaign progress, medals, preferences and completed battle history are kept.';
   const status = battleSession.status();
   const unsafe = !!(battleSafetyReason || game.limitReason || viewportPause.active);
   $('restartBattle').disabled = status !== 'current' || unsafe || !!(recoveryHold || profileGate);
@@ -2629,6 +2718,7 @@ $('confirmRestart').onclick = () => {
   if (recoveryHold || profileGate) { hideRestart(); showRecoverySettings(); return; }
   if (!started || !paused || game.state.winner !== null || objectiveOutcome ||
       battleSafetyReason || game.limitReason || viewportPause.active) return;
+  if (currentCampaign || currentChallenge) { returnToBriefing('restartStatus'); return; }
   if (battleSession.status() !== 'current') {
     $('restartStatus').textContent = 'The checkpoint changed or storage is unavailable. Keep this battle open. Return to the pause menu to continue safely.';
     return;
