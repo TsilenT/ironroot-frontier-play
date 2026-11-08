@@ -1,6 +1,6 @@
 /** One pure admission boundary for Resume, backup and candidate saves. */
 import { Game, MAPS, getMap, getRuleset, LEGACY_RULESET_ID, validateEngineFields } from './engine.js';
-import { deepFreeze, FOG_SKIRMISH_RULESET_ID } from './rulesets.js';
+import { deepFreeze, FOG_SKIRMISH_RULESET_ID, LANTERNS_RULESET_ID } from './rulesets.js';
 import * as campaign from './campaign.js';
 import { getChallenge, challengeScenarioForGame, evaluateChallenge } from './challenges.js';
 import { TRAINING_LESSONS } from './training.js';
@@ -67,6 +67,8 @@ export function validateBattleIdentity(identity){
   // Apply the supported fog scope here, not only in Game.restore: identity-only
   // history rows and backups must obey the same Classic standard-Skirmish contract.
   if(rules.id===FOG_SKIRMISH_RULESET_ID&&(rules.revision!==1||map.id!=='classic'||map.revision!==1||scenario.kind!=='skirmish'||scenario.id!=='standard'||scenario.revision!==1))fail('Fog is supported only for Classic standard Skirmish.','unsupported-identity');
+  // Campaign fog is one authored identity, never an unlock for older missions.
+  if(rules.id===LANTERNS_RULESET_ID&&(rules.revision!==1||map.id!=='classic'||map.revision!==1||scenario.kind!=='campaign'||scenario.id!=='lanterns-on-the-water'||scenario.revision!==1))fail('Campaign fog is supported only for Lanterns on the Water on Classic.','unsupported-identity');
   if(scenario.kind==='skirmish'){if(rules.campaignOnly||rules.authoredOnly)fail('This roster is only available in its authored scenario.');if(!own(MAPS,map.id))fail('This battlefield is only available in its authored scenario.');}
   else {if(map.id!==scenario.mapId||map.revision!==scenario.mapRevision)fail(`Authored missions require the ${getMap(scenario.mapId,scenario.mapRevision).name} battlefield.`);if(rules.revision!==scenario.rulesetRevision||(scenario.kind==='campaign'?!campaign.campaignRulesetAllowed(scenario.id,scenario.revision,rules.id):rules.id!==scenario.rulesetId))fail('Saved battle does not match its scenario rules.');}
   return deepFreeze({ruleset:{id:rules.id,revision:rules.revision},map:{id:map.id,revision:map.revision},scenario:{kind:scenario.kind,id:scenario.id,revision:scenario.revision}});

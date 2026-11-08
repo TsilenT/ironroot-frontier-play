@@ -4086,6 +4086,8 @@ body.gamepad-active a:focus {
 
 /* Three optional positions use the existing objective dock's reserved space. */
 .protected-targets.trial-targets { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+/* Two authored charts must not inherit the trial's three-position grid. */
+.protected-targets.charted-targets { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 .trial-targets .protected-focus-hint { display: none; }
 .trial-targets .protected-health { grid-column: 1 / -1; }
 .trial-targets .protected-target[data-state='destroyed'] { border-color: #b7d991; background: #293c2c; }

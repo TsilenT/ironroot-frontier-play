@@ -2,10 +2,13 @@ import { signalProtectionRules } from './campaign-presentation.js';
 import { supportsCampaignControl, bridgeZones } from './bridge-control.js';
 import { buildBounds, getMap } from './engine.js';
 
-import { getRuleset } from './rulesets.js';
+import { getRuleset, LANTERNS_RULESET_ID } from './rulesets.js';
 
 /** Read-only briefings from authored deployments, never from a running battle. */
 const LEGEND = 'Squares: your army on the left. Diamonds: enemy army on the right. Shield outline: protect. Dashed ring: destroy.';
+const CHARTED_INTELLIGENCE = 'charted-customs-posts';
+const CHARTED_CONDITION = 'Current HP, level, upgrades and defenders are unknown outside current sight.';
+const CHARTED_LEGEND = 'Squares: your starting army. Hollow diamonds: charted customs posts, not current sightings. Dashed ring: original destruction objective. Terrain is known; enemy forces outside current sight are unknown.';
 const object = value => value !== null && typeof value === 'object' && !Array.isArray(value);
 const key = ({ type, x, lane }) => `${type}/${x}/${lane}`;
 const roadName = (lane, count) => count === 3 ? ['North road', 'Middle road', 'South road'][lane] : count === 2 ? ['North road', 'South road'][lane] : `Road ${lane + 1}`;
@@ -65,6 +68,42 @@ function markTargets(value, buildings, kind, map, field, definitions) {
   return targets.size;
 }
 
+// This is one authored intelligence contract, not an opt-in for arbitrary
+// missions. A malformed Lanterns identity must never fall back to a full reveal.
+function chartedCustomsPolicy(mission, ruleset) {
+  const missionId = 'lanterns-on-the-water', rulesetId = LANTERNS_RULESET_ID;
+  if (mission.intelligence === undefined && mission.id !== missionId && ruleset.id !== rulesetId) return false;
+  if (mission.intelligence !== CHARTED_INTELLIGENCE || mission.id !== missionId ||
+      mission.scenarioRevision !== 1 || mission.rulesetId !== rulesetId ||
+      mission.rulesetRevision !== 1 || ruleset.id !== rulesetId || ruleset.revision !== 1) {
+    throw new TypeError('Scouting charted customs intelligence requires the Lanterns mission and ruleset at revision 1.');
+  }
+  return true;
+}
+
+function chartedCustomsLandmarks(mission, map, definitions) {
+  const targets = list(mission.markedTargets, 'markedTargets');
+  if (targets.length !== 2) throw new RangeError('Scouting charted customs intelligence requires two named original posts.');
+  const occupied = new Set();
+  return Array.from(targets, target => {
+    if (!object(target)) throw new TypeError('Scouting markedTargets must contain target objects.');
+    location(target.type, target.x, target.lane, map, 'markedTargets', definitions);
+    if (target.type !== 'watchtower' || typeof target.name !== 'string' || !target.name.trim()) {
+      throw new TypeError('Scouting charted customs posts must be named watchtowers.');
+    }
+    const position = `${target.x}/${target.lane}`;
+    if (occupied.has(position)) throw new RangeError('Scouting charted customs posts repeat a position.');
+    occupied.add(position);
+    // Deliberately whitelist chart data. Neither authored enemy deployment nor
+    // hidden health, upgrades, defenders or runtime memories enter this view.
+    return {
+      id: `${mission.id}/${key(target)}`, type: target.type, name: definitions[target.type].name,
+      targetName: target.name, side: 1, x: target.x, y: map.lanes[target.lane], lane: target.lane,
+      roadName: roadName(target.lane, map.lanes.length), targetKind: 'destroy', condition: 'unknown',
+    };
+  }).sort((a, b) => a.lane - b.lane || a.x - b.x);
+}
+
 function groupsFor(buildings, definitions) {
   const rosterOrder = Object.keys(definitions);
   return rosterOrder.flatMap(type => {
@@ -98,8 +137,21 @@ function armyFor(buildings, side, map, definitions) {
   };
 }
 
+function unknownEnemyArmy(map) {
+  return {
+    side: 1, position: 'right', label: 'Enemy army · right', shape: 'diamond',
+    buildingCount: null, buildings: [], groups: [],
+    roads: map.lanes.map((y, lane) => ({
+      lane, y, name: roadName(lane, map.lanes.length), count: null,
+      summary: 'Defenders and other enemy structures are unknown outside current sight.',
+    })),
+    summary: 'Enemy force size, placements, levels and upgrades are unknown outside current sight. Only the two original customs posts are charted.',
+  };
+}
+
 /**
- * Return a deeply frozen report. Omitted arrays mean empty deployments/targets;
+ * Return a deeply frozen report. In full-deployment missions, omitted arrays
+ * mean empty deployments/targets. Lanterns requires its two charted landmarks;
  * omitted mapId means Classic. Other malformed data throws, rather than showing
  * a plausible but false briefing. Raw report strings are TEXT, not safe HTML.
  */
@@ -109,12 +161,14 @@ export function getMissionScouting(mission, context = null) {
   const suppliedRuleset = context?.ruleset || context;
   const ruleset = suppliedRuleset ? getRuleset(suppliedRuleset.id, suppliedRuleset.revision) : getRuleset(mission.rulesetId, mission.rulesetRevision);
   if (mission.rulesetId !== undefined && (mission.rulesetId !== ruleset.id || (mission.rulesetRevision ?? 1) !== ruleset.revision)) throw new TypeError('Scouting ruleset does not match the mission.');
+  const charted = chartedCustomsPolicy(mission, ruleset);
   const definitions = ruleset.buildings;
   const sourceMap = getMap(mission.mapId, mission.mapRevision);
   const left = placements(mission.playerBuildings, 0, sourceMap, 'playerBuildings', definitions);
-  const right = placements(mission.enemyBuildings, 1, sourceMap, 'enemyBuildings', definitions);
+  const right = charted ? [] : placements(mission.enemyBuildings, 1, sourceMap, 'enemyBuildings', definitions);
+  const landmarks = charted ? chartedCustomsLandmarks(mission, sourceMap, definitions) : null;
   const protectedCount = markTargets(mission.protectedTargets, left, 'protect', sourceMap, 'protectedTargets', definitions);
-  const markedCount = markTargets(mission.markedTargets, right, 'destroy', sourceMap, 'markedTargets', definitions);
+  const markedCount = charted ? landmarks.length : markTargets(mission.markedTargets, right, 'destroy', sourceMap, 'markedTargets', definitions);
   const map = {
     id: sourceMap.id, name: sourceMap.name, width: sourceMap.width, height: sourceMap.height,
     lanes: [...sourceMap.lanes], roadCount: sourceMap.lanes.length, siteLimit: sourceMap.buildLimit,
@@ -122,27 +176,31 @@ export function getMissionScouting(mission, context = null) {
     territories: [0, 1].map(side => ({ side, ...buildBounds(sourceMap, side) })),
     summary: `${sourceMap.name} · ${sourceMap.width} × ${sourceMap.height} world units · ${sourceMap.lanes.length} roads · ${sourceMap.buildLimit}-building limit per side`,
   };
-  const armies = [armyFor(left, 0, sourceMap, definitions), armyFor(right, 1, sourceMap, definitions)];
+  const armies = [armyFor(left, 0, sourceMap, definitions), charted ? unknownEnemyArmy(sourceMap) : armyFor(right, 1, sourceMap, definitions)];
   const required = mission.requiredTargets;
   if (required !== undefined && (!Number.isInteger(required) || required < 1 || required > markedCount)) throw new RangeError('Scouting has an invalid required target count.');
+  if (charted && required !== undefined && required !== markedCount) throw new RangeError('Scouting Lanterns requires both original customs posts.');
   const control = supportsCampaignControl(ruleset) ? ruleset.campaignControl : null;
   const signals = signalProtectionRules(mission);
   const evacuationTime = signals ? `${Math.floor(signals.seconds / 60)}:${String(signals.seconds % 60).padStart(2, '0')}` : '';
   const objectives = {
     protectedCount, markedCount,
     ...(control ? {control:{seconds:control.seconds,bridges:control.requiredBridges,zones:bridgeZones(sourceMap)}} : {}),
-    summary: signals ? `Keep at least 1 of 2 original signals until ${evacuationTime}, or destroy the enemy citadel with a signal still alive. Either signal may fall to enemy attacks, but losing the last fails the mission. Signals cannot be salvaged; replacements do not count. Keeping both earns an optional medal.` : control ? `Secure any ${control.requiredBridges} of ${sourceMap.lanes.length} central crossings for ${control.seconds} cumulative seconds. Contested progress pauses without resetting. No bridge gold bonus. Destroying the enemy citadel also wins.` : required !== undefined ? `Destroy any ${required} of ${markedCount} named enemy positions; the others may remain standing.` : `${protectedCount} allied structure${protectedCount === 1 ? '' : 's'} to protect; ${markedCount} enemy destruction target${markedCount === 1 ? '' : 's'}.`,
+    summary: charted ? 'Destroy both original customs posts, or destroy the enemy citadel. Your citadel must survive. Objective dispatch confirms each original post\'s destruction even outside current sight; this does not reveal nearby enemies or the surviving post\'s condition. Replacements do not count.' : signals ? `Keep at least 1 of 2 original signals until ${evacuationTime}, or destroy the enemy citadel with a signal still alive. Either signal may fall to enemy attacks, but losing the last fails the mission. Signals cannot be salvaged; replacements do not count. Keeping both earns an optional medal.` : control ? `Secure any ${control.requiredBridges} of ${sourceMap.lanes.length} central crossings for ${control.seconds} cumulative seconds. Contested progress pauses without resetting. No bridge gold bonus. Destroying the enemy citadel also wins.` : required !== undefined ? `Destroy any ${required} of ${markedCount} named enemy positions; the others may remain standing.` : `${protectedCount} allied structure${protectedCount === 1 ? '' : 's'} to protect; ${markedCount} enemy destruction target${markedCount === 1 ? '' : 's'}.`,
   };
   return freeze({
-    missionName: mission.name || 'Mission', map, armies, objectives, legend: LEGEND + (control ? ' Outlined rectangles at the river mark the three capture zones.' : ''),
-    summary: `${map.summary}. Your army starts on the left with ${left.length} building${left.length === 1 ? '' : 's'}; the enemy starts on the right with ${right.length}. ${objectives.summary}`,
+    missionName: mission.name || 'Mission', map, armies, objectives,
+    ...(charted ? { intelligence: CHARTED_INTELLIGENCE, landmarks } : {}),
+    legend: charted ? CHARTED_LEGEND : LEGEND + (control ? ' Outlined rectangles at the river mark the three capture zones.' : ''),
+    summary: charted ? `${map.summary}. Your army starts on the left with ${left.length} building${left.length === 1 ? '' : 's'}. Enemy force size and deployment are unknown. ${CHARTED_CONDITION} ${objectives.summary}` : `${map.summary}. Your army starts on the left with ${left.length} building${left.length === 1 ? '' : 's'}; the enemy starts on the right with ${right.length}. ${objectives.summary}`,
   });
 }
 
 function svgFor(report) {
   const { map } = report;
-  const title = `${report.missionName}: starting deployment`;
-  const description = `${report.summary} North is at the top. ${report.legend} Symbols show starting positions and are enlarged for readability. Building names, levels and roads are listed below the map.`;
+  const charted = report.intelligence === CHARTED_INTELLIGENCE;
+  const title = `${report.missionName}: ${charted ? 'charted battlefield' : 'starting deployment'}`;
+  const description = charted ? `${report.summary} North is at the top. ${report.legend} Symbols show your starting positions and charted landmarks, not current enemy sightings, and are enlarged for readability.` : `${report.summary} North is at the top. ${report.legend} Symbols show starting positions and are enlarged for readability. Building names, levels and roads are listed below the map.`;
   const territories = map.territories.map(bounds => `<rect x="${bounds.minX}" y="${bounds.minY}" width="${bounds.maxX - bounds.minX}" height="${bounds.maxY - bounds.minY}" rx="45" fill="${bounds.side === 0 ? '#9abc86' : '#d9856f'}" fill-opacity=".07"/>`).join('');
   const roads = map.lanes.map((y, lane) => `<g class="scouting-road" data-lane="${lane}"><path d="M 0 ${y} H ${map.width}" stroke="#666e5e" stroke-width="32"/><path d="M 0 ${y} H ${map.width}" stroke="#9fae9c" stroke-opacity=".65" stroke-width="4" stroke-dasharray="20 28"/></g>`).join('');
   const crossings = (report.objectives.control?.zones || []).map(zone => `<rect class="scouting-crossing" x="${zone.x-zone.width/2}" y="${zone.y-zone.height/2}" width="${zone.width}" height="${zone.height}" fill="#e6c56f" fill-opacity=".2" stroke="#e6c56f" stroke-width="12"/>`).join('');
@@ -157,9 +215,13 @@ function svgFor(report) {
     const label = `${building.targetName ? building.targetName + ': ' : ''}${army.side === 0 ? 'Allied' : 'Enemy'} ${building.name}, level ${building.level}, ${building.roadName}${building.targetKind ? `, ${building.targetKind}` : ''}`;
     return `<g class="scouting-building" data-side="${army.side}" data-lane="${building.lane}" data-kind="${building.targetKind || 'ordinary'}" transform="translate(${building.x} ${building.y})"><title>${escape(label)}</title>${objective}${glyph}</g>`;
   })).join('');
+  const landmarks = (report.landmarks || []).map(landmark => {
+    const label = `${landmark.targetName}: charted ${landmark.name}, ${landmark.roadName}, x ${landmark.x}. ${CHARTED_CONDITION}`;
+    return `<g class="scouting-landmark" data-side="1" data-lane="${landmark.lane}" data-kind="destroy" transform="translate(${landmark.x} ${landmark.y})"><title>${escape(label)}</title><circle class="scouting-destroy" r="56" fill="none" stroke="#eee9d9" stroke-width="9" stroke-dasharray="15 9"/><path class="scouting-charted" d="M 0 -39 L 39 0 L 0 39 L -39 0 Z" fill="none" stroke="#e6c56f" stroke-width="7"/></g>`;
+  }).join('');
   // No IDs, event handlers, external resources, animation, or dynamic CSS.
   // The real world viewBox preserves both map width and vertical road spacing.
-  return `<svg class="scouting-map" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${map.width} ${map.height}" width="${map.width}" height="${map.height}" preserveAspectRatio="xMidYMid meet" role="img" aria-label="${escape(`${title}. ${description}`)}" focusable="false" style="display:block;width:100%;height:auto"><title>${escape(title)}</title><desc>${escape(description)}</desc><g aria-hidden="true"><rect width="${map.width}" height="${map.height}" rx="45" fill="#101916"/>${territories}${roads}<path d="M ${map.width / 2} 140 V ${map.height - 140}" stroke="#9fae9c" stroke-opacity=".45" stroke-width="5" stroke-dasharray="16 20"/>${crossings}${buildings}</g></svg>`;
+  return `<svg class="scouting-map" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${map.width} ${map.height}" width="${map.width}" height="${map.height}" preserveAspectRatio="xMidYMid meet" role="img" aria-label="${escape(`${title}. ${description}`)}" focusable="false" style="display:block;width:100%;height:auto"><title>${escape(title)}</title><desc>${escape(description)}</desc><g aria-hidden="true"><rect width="${map.width}" height="${map.height}" rx="45" fill="#101916"/>${territories}${roads}<path d="M ${map.width / 2} 140 V ${map.height - 140}" stroke="#9fae9c" stroke-opacity=".45" stroke-width="5" stroke-dasharray="16 20"/>${crossings}${buildings}${landmarks}</g></svg>`;
 }
 
 /** Standalone safe SVG. Accepts a mission, not an unchecked report or HTML. */
@@ -173,6 +235,8 @@ export function renderScoutingSvg(mission, context = null) {
  */
 export function renderMissionScouting(mission, context = null) {
   const report = getMissionScouting(mission, context);
-  const armies = report.armies.map(army => `<section class="scouting-army scouting-army-${army.position}" aria-label="${escape(army.label)}"><p class="scouting-army-title"><strong>${escape(army.label)}</strong> · ${army.buildingCount} starting building${army.buildingCount === 1 ? '' : 's'}</p><p class="scouting-roster">${escape(army.summary)}</p><ul class="scouting-roads">${army.roads.map(road => `<li><strong>${escape(road.name)}:</strong> ${escape(road.summary)}</li>`).join('')}</ul></section>`).join('');
-  return `<div class="mission-scouting"><p class="scouting-map-facts">${escape(report.map.summary)}.</p>${svgFor(report)}<p class="scouting-legend">${escape(report.legend)}</p><p class="scouting-objectives">${escape(report.objectives.summary)}</p><div class="scouting-armies">${armies}</div><p class="scouting-note">Shows starting buildings. Symbols are enlarged for readability. The map does not predict how the battle will unfold.</p></div>`;
+  const armies = report.armies.map(army => `<section class="scouting-army scouting-army-${army.position}" aria-label="${escape(army.label)}"><p class="scouting-army-title"><strong>${escape(army.label)}</strong> · ${army.buildingCount === null ? 'Current force unknown' : `${army.buildingCount} starting building${army.buildingCount === 1 ? '' : 's'}`}</p><p class="scouting-roster">${escape(army.summary)}</p><ul class="scouting-roads">${army.roads.map(road => `<li><strong>${escape(road.name)}:</strong> ${escape(road.summary)}</li>`).join('')}</ul></section>`).join('');
+  const landmarks = report.landmarks ? `<section class="scouting-landmarks" aria-label="Charted customs posts"><p><strong>Charted customs posts</strong></p><ul>${report.landmarks.map(landmark => `<li><strong>${escape(landmark.targetName)}:</strong> ${escape(landmark.name)} · ${escape(landmark.roadName)} · x ${landmark.x}. ${CHARTED_CONDITION}</li>`).join('')}</ul></section>` : '';
+  const note = report.landmarks ? 'Shows your starting buildings and charted customs-post locations, not last-seen memories or current enemy sightings. Symbols are enlarged for readability. Scout to learn the current defenses.' : 'Shows starting buildings. Symbols are enlarged for readability. The map does not predict how the battle will unfold.';
+  return `<div class="mission-scouting"><p class="scouting-map-facts">${escape(report.map.summary)}.</p>${svgFor(report)}<p class="scouting-legend">${escape(report.legend)}</p><p class="scouting-objectives">${escape(report.objectives.summary)}</p>${landmarks}<div class="scouting-armies">${armies}</div><p class="scouting-note">${note}</p></div>`;
 }

@@ -1,6 +1,7 @@
 import {Game, BUILDINGS, MAPS, getRuleset} from './engine.js';
-import {CAMPAIGN_RULESET_IDS, CITADEL_CAMPAIGN_RULESET_IDS, AUTHORED_AIR_RULESET_ID, AUTHORED_CITADEL_RULESET_ID, SHARED_CROSSING_RULESET_ID, ONE_SIGNAL_RULESET_ID, deepFreeze} from './rulesets.js';
+import {CAMPAIGN_RULESET_IDS, CITADEL_CAMPAIGN_RULESET_IDS, AUTHORED_AIR_RULESET_ID, AUTHORED_CITADEL_RULESET_ID, SHARED_CROSSING_RULESET_ID, ONE_SIGNAL_RULESET_ID, LANTERNS_RULESET_ID, deepFreeze} from './rulesets.js';
 import {campaignControlStatus, CAMPAIGN_CONTROL_RULES_TEXT} from './bridge-control.js';
+import {supportsFog, createFog, refreshFog} from './fog.js';
 import {ONBOARDING_CHAPTER, ONBOARDING_MISSIONS, isOnboardingMission} from './campaign-onboarding.js';
 export {ONBOARDING_CHAPTER, ONBOARDING_MISSIONS, isOnboardingMission} from './campaign-onboarding.js';
 import {INTRO_CHAPTER, INTRO_MISSIONS, introMedalMet, isIntroMission} from './intro-campaign.js';
@@ -262,6 +263,25 @@ export const ONE_SIGNAL_MISSIONS=[{
   briefing:['Keep at least 1 of 2 signals until 3:30. The evacuation clock is continuous, even after one post falls. Your citadel must survive; 1 HP is enough.','Original signal posts cannot be salvaged. Replacements do not restore a lost signal or earn the save-both distinction.','Your starting structures represent 770 gold; the enemy’s starting force represents 1,463 gold of buildings and upgrades. All purchases use ordinary prices and income.'],
 }];
 
+export const LANTERNS_MISSIONS=[{
+  id:'lanterns-on-the-water',chapterId:'river-compact',number:19,name:'Lanterns on the Water',subtitle:'Read the river through the fog',
+  scenarioRevision:1,mapId:'classic',mapRevision:1,rulesetId:LANTERNS_RULESET_ID,rulesetRevision:1,intelligence:'charted-customs-posts',
+  description:'Sera knows where the old customs houses stand, but the patrols between them have stopped answering signals. Scout the roads or push through with the force you can fund.',
+  dialogue:{speaker:'Scout Sera',text:'I have marked the customs houses on the chart, but nobody has reported what is between them. We can send a small company ahead to find out or take the road in force, as long as we leave enough troops to hold the camp.'},
+  victoryText:'Both river approaches are open. The compact lights its own lanterns along the water.',
+  objective:'Destroy both charted original customs houses or the enemy citadel within 10:00. Your citadel must survive. Dispatch confirms original-house destruction even outside sight; replacements do not count.',
+  hint:'Your middle troops make first contact while the outer towers protect the camp. Forward production scouts through its troops; gryphons see farther but may pursue nearby enemies. Probe before spending on a road, or fund a stronger push immediately. No unit is required.',
+  difficulty:'normal',seed:6301,timeLimit:600,startingGold:1050,startingHealth:6000,enemyGold:80,ai:true,prerequisites:['one-signal-is-enough'],
+  playerBuildings:[['barracks',1110,1],['archery',970,1],['watchtower',830,0],['watchtower',830,2],['mint',410,1]],
+  enemyBuildings:[['watchtower',2090,0],['watchtower',2090,2],['barracks',1950,1],['barracks',2230,0],['barracks',2230,2],['archery',2370,1],['mint',2790,1]],
+  objectives:[destroy('customs-houses','Destroy both original customs houses',[{type:'watchtower',x:2090,lane:0,name:'North Customs House'},{type:'watchtower',x:2090,lane:2,name:'River Customs House'}])],
+  medals:[swift(180),intact(4500)],
+  briefing:['Known terrain, limited sight: the two original customs-house locations are charted. Enemy troops, current HP, upgrades and replacements are unknown outside current sight. Remembered buildings show last-seen information, not live intelligence.',
+    'Dispatch confirms destruction of an original house even outside sight. Rebuilding at its location does not undo that objective credit. Destroy both originals or the enemy citadel by 10:00, with your own citadel alive.',
+    'At 5:00, ordinary escalation speeds production ×1.65, multiplies troop damage to structures ×1.75, and lowers citadel shot damage from 32 to 18. There is no forced citadel drain.',
+    'Your starting camp represents 945 gold of buildings and produces 7.5 gold/sec. The enemy uses ordinary income and prices, sees through the same sight rules, and can build, upgrade and cast throughout the battle.'],
+}];
+
 /** New chapter briefings derive force counts/levels from the actual paid setup. */
 function describeDeployment(placements,map) {
   const names=map.lanes.length===2?['North','South']:['North','Middle','South'];
@@ -277,18 +297,19 @@ const firstAuthoredIds=Object.fromEntries(Object.keys(MAPS).map(mapId=>[mapId,ne
 // Legacy catalogs retain their order, totals and completion semantics.
 export const ALL_CAMPAIGN_MISSIONS=[...CAMPAIGN_MISSIONS,...INTRO_MISSIONS];
 export const ALL_CAMPAIGN_CHAPTERS=[INTRO_CHAPTER,...CAMPAIGN_CHAPTERS];
-export const CAMPAIGN_PROGRESS_MISSIONS=[...ALL_CAMPAIGN_MISSIONS,...ONBOARDING_MISSIONS,...SHARED_CROSSING_MISSIONS,...ONE_SIGNAL_MISSIONS];
+export const CAMPAIGN_PROGRESS_MISSIONS=[...ALL_CAMPAIGN_MISSIONS,...ONBOARDING_MISSIONS,...SHARED_CROSSING_MISSIONS,...ONE_SIGNAL_MISSIONS,...LANTERNS_MISSIONS];
 for(const mission of CAMPAIGN_PROGRESS_MISSIONS) {
   mission.mapId=mission.mapId||'classic';
   mission.ai=mission.ai===true;
   if(mission.chapterId==='frontier'||mission.chapterId==='river-compact') {
     const map=MAPS[mission.mapId];
-    mission.deployment={player:describeDeployment(mission.playerBuildings,map),enemy:describeDeployment(mission.enemyBuildings,map)};
+    const charted=mission.intelligence==='charted-customs-posts';
+    mission.deployment={player:describeDeployment(mission.playerBuildings,map),enemy:charted?'Charted customs houses on the north and south roads; patrols and other buildings are unknown':describeDeployment(mission.enemyBuildings,map)};
     mission.briefing=[
       `${map.name}: ${map.width.toLocaleString('en-US')}-unit battlefield, ${map.lanes.length} lanes, ${map.buildLimit} building sites per side`,
-      `${mission.startingGold.toLocaleString('en-US')} starting gold; your citadel starts at ${mission.startingHealth.toLocaleString('en-US')} HP; enemy citadel starts at 6,000 HP`,
+      `${mission.startingGold.toLocaleString('en-US')} starting gold; your citadel starts at ${mission.startingHealth.toLocaleString('en-US')} HP${charted?'':'; enemy citadel starts at 6,000 HP'}`, 
       `Your deployment: ${mission.deployment.player}`,
-      `Enemy deployment: ${mission.deployment.enemy}`,
+      `${charted?'Charted intelligence':'Enemy deployment'}: ${mission.deployment.enemy}`,
       mission.ai?`${mission.difficulty[0].toUpperCase()+mission.difficulty.slice(1)} adaptive enemy starts with ${mission.enemyGold||0} gold and ordinary income; it pays for buildings, upgrades and arrow volleys`:'Fixed enemy deployment; no new enemy buildings, upgrades or arrow volleys',
       ...mission.briefing
     ];
@@ -302,11 +323,13 @@ for(const mission of CAMPAIGN_PROGRESS_MISSIONS) {
   mission.mode=mission.objectives[0].type;
   mission.markedTargets=mission.objectives.flatMap(o=>o.type==='destroy'?o.targets:[]);
   mission.protectedTargets=mission.objectives.flatMap(o=>o.type==='protect'?o.targets:[]);
-  if(!mission.optional&&!isOnboardingMission(mission.id))mission.reward=`Unlocks ${CAMPAIGN_MISSIONS.filter(m=>m.prerequisites.includes(mission.id)).map(m=>m.name).join(' / ')||'the campaign epilogue'}`;
+  if(mission.id==='lanterns-on-the-water')mission.reward='Completes the current Chapter 6 route';
+  else if(!mission.optional&&!isOnboardingMission(mission.id))mission.reward=`Unlocks ${CAMPAIGN_MISSIONS.filter(m=>m.prerequisites.includes(mission.id)).map(m=>m.name).join(' / ')||'the campaign epilogue'}`;
 }
 
 deepFreeze(SHARED_CROSSING_MISSIONS);
 deepFreeze(ONE_SIGNAL_MISSIONS);
+deepFreeze(LANTERNS_MISSIONS);
 
 // Published revision 1/2/3 descriptors stay exact. Current starts select a
 // separate automatic-air revision without changing old saves or replay records.
@@ -373,7 +396,7 @@ export function getCampaignMission(id,revision=1) {
 /** Current deliberate starts/previews only. Existing attempts use their rules. */
 export function getCurrentCampaignRevision(id,progress) {
   getCampaignMission(id,1);
-  return ['shared-crossing','one-signal-is-enough'].includes(id)?1:CITADEL_CAMPAIGN_REVISION;
+  return ['shared-crossing','one-signal-is-enough','lanterns-on-the-water'].includes(id)?1:CITADEL_CAMPAIGN_REVISION;
 }
 function onboardingLaunchStage(id,progress) {
   return Math.max(ONBOARDING_MISSIONS.findIndex(m=>m.id===id)+1,getCampaignRoster(progress).stage);
@@ -386,7 +409,9 @@ export function getCampaignRevisionForRuleset(id,rulesetId,rulesetRevision=1) {
   let rules;
   try{rules=getRuleset(rulesetId,rulesetRevision);}catch{throw new RangeError('Unknown campaign ruleset identity: '+String(rulesetId));}
   let revision;
-  if(id==='one-signal-is-enough'){
+  if(id==='lanterns-on-the-water'){
+    if(rules.id===LANTERNS_RULESET_ID)revision=1;
+  } else if(id==='one-signal-is-enough'){
     if(rules.id===ONE_SIGNAL_RULESET_ID)revision=1;
   } else if(id==='shared-crossing'){
     if(rules.id===SHARED_CROSSING_RULESET_ID)revision=1;
@@ -444,6 +469,8 @@ function createAuthoredCampaignMission(mission,options) {
   }
   s.gold=[mission.startingGold,mission.enemyGold||0];s.bases[0].hp=mission.startingHealth;
   s.income=[currentIncome(game,0),currentIncome(game,1)];
+  // Construction is authoring, not observation. Discard all intermediate/default memories.
+  if(supportsFog(game.ruleset)){s.fog=createFog();refreshFog(game);}
   return game;
 }
 
@@ -585,7 +612,7 @@ export function isMissionUnlocked(progress,id,revision=1) {
 export const CAMPAIGN_RULESET_STAGES=Object.freeze({
   'frontier-campaign-watch':1,'frontier-campaign-fork':2,'frontier-campaign-open':3,'frontier-campaign-flight':3,[AUTONOMOUS_AIR_CAMPAIGN_RULESET_ID]:3,
   ...Object.fromEntries(CITADEL_CAMPAIGN_RULESET_IDS.map((id,index)=>[id,index+1])),
-  [SHARED_CROSSING_RULESET_ID]:3,[ONE_SIGNAL_RULESET_ID]:3,
+  [SHARED_CROSSING_RULESET_ID]:3,[ONE_SIGNAL_RULESET_ID]:3,[LANTERNS_RULESET_ID]:3,
 });
 export function canUseCampaignRuleset(progress,id,revision,rulesetId) {
   if(!campaignRulesetAllowed(id,revision,rulesetId))return false;
@@ -599,7 +626,7 @@ export function getCampaignLaunchMission(id,progress) {
   const presentation=opening&&stage===3?AUTONOMOUS_AIR_CAMPAIGN_MISSIONS.find(m=>m.id===id):mission;
   return {...mission,briefing:presentation.briefing,hint:presentation.hint,scenarioRevision:revision,
     // Current navigation copy only; published scenario descriptors remain immutable.
-    ...(id==='common-ground'?{reward:'Unlocks Shared Crossing'}:id==='shared-crossing'?{reward:'Unlocks One Signal Is Enough'}:id==='one-signal-is-enough'?{reward:'Completes the current Chapter 6 route'}:{}),
+    ...(id==='common-ground'?{reward:'Unlocks Shared Crossing'}:id==='shared-crossing'?{reward:'Unlocks One Signal Is Enough'}:id==='one-signal-is-enough'?{reward:'Unlocks Lanterns on the Water'}:id==='lanterns-on-the-water'?{reward:'Completes the current Chapter 6 route'}:{}),
     ...(opening?{rulesetId:CITADEL_CAMPAIGN_RULESET_IDS[stage-1]}:{})};
 }
 export function createProgressionCampaignMission(id,progress) {
@@ -609,7 +636,7 @@ export function createProgressionCampaignMission(id,progress) {
 }
 export function getProgressionCampaignOverview(progress) {
   const clean=normalizeCampaignProgress(progress),roster=getCampaignRoster(clean);
-  const missions=[...ONBOARDING_MISSIONS,...PROGRESSION_CAMPAIGN_MISSIONS,...SHARED_CROSSING_MISSIONS,...ONE_SIGNAL_MISSIONS].map(m=>{
+  const missions=[...ONBOARDING_MISSIONS,...PROGRESSION_CAMPAIGN_MISSIONS,...SHARED_CROSSING_MISSIONS,...ONE_SIGNAL_MISSIONS,...LANTERNS_MISSIONS].map(m=>{
     const launch=getCampaignLaunchMission(m.id,clean);
     return {...launch,record:clean.missions[m.id]||null,
       unlocked:isMissionUnlocked(clean,m.id,launch.scenarioRevision),completed:!!clean.missions[m.id]};

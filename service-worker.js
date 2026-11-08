@@ -1,5 +1,5 @@
 // Atomic, versioned offline shell. Bump VERSION with every public build.
-const VERSION = 'ironroot-v0.23.0';
+const VERSION = 'ironroot-v0.24.1';
 const FILES = [
   './fog.js',
   './fog-view.js',
@@ -44,6 +44,7 @@ const FILES = [
   './codex.js',
   './challenges.js',
   './campaign.js', './campaign-onboarding.js',
+  './campaign-intelligence.js',
   './campaign-flow.js',
   './campaign-presentation.js', './campaign-control-view.js',
   './scouting.js',

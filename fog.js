@@ -1,7 +1,7 @@
 /** Experimental, deterministic known-terrain observation. No DOM, RNG or profile access. */
-import { RULESETS, FOG, FOG_RULESET_ID, FOG_SKIRMISH_RULESET_ID } from './rulesets.js';
-export { FOG, FOG_RULESET_ID, FOG_SKIRMISH_RULESET_ID } from './rulesets.js';
-export const supportsFog=ruleset=>!!ruleset&&(ruleset.id===FOG_RULESET_ID||ruleset.id===FOG_SKIRMISH_RULESET_ID)&&RULESETS[ruleset.id]===ruleset&&ruleset.revision===1&&ruleset.fog?.policy===FOG.policy;
+import { RULESETS, FOG, FOG_RULESET_ID, FOG_SKIRMISH_RULESET_ID, LANTERNS_RULESET_ID } from './rulesets.js';
+export { FOG, FOG_RULESET_ID, FOG_SKIRMISH_RULESET_ID, LANTERNS_RULESET_ID } from './rulesets.js';
+export const supportsFog=ruleset=>!!ruleset&&(ruleset.id===FOG_RULESET_ID||ruleset.id===FOG_SKIRMISH_RULESET_ID||ruleset.id===LANTERNS_RULESET_ID)&&RULESETS[ruleset.id]===ruleset&&ruleset.revision===1&&ruleset.fog?.policy===FOG.policy;
 const clone=value=>JSON.parse(JSON.stringify(value));
 const sideOK=side=>side===0||side===1;
 const eventViews=new WeakMap();
@@ -82,8 +82,17 @@ export function observerFront(game,side=0){
 }
 /** Detached, sanitized contact data shared by AI and UI. No action methods or raw-state references. */
 export function observe(game,side=0){
+  return observation(game,side);
+}
+/** Presentation only: the caller supplies a trusted campaign objective result.
+ * Ordinary observe() and AI remain fogged until an actual engine victory. */
+export function observeObjectiveResult(game,side=0,outcome=null){
+  const terminal=!!outcome&&typeof outcome==='object'&&!Array.isArray(outcome)&&typeof outcome.completed==='boolean'&&typeof outcome.failed==='boolean'&&outcome.completed!==outcome.failed;
+  return observation(game,side,terminal);
+}
+function observation(game,side,revealObjective=false){
   if(!sideOK(side))throw new Error('Invalid observation side');
-  const s=game.state,enabled=supportsFog(game.ruleset),revealed=s.winner!==null;
+  const s=game.state,enabled=supportsFog(game.ruleset),revealed=s.winner!==null||revealObjective;
   if(!enabled||revealed){const state=clone(s);for(const key of ['effects','projectiles'])state[key]=s[key].map(e=>{const {fogSeen,...publicEvent}=e;return {...publicEvent,eventId:eventId(game,side,e)};});delete state.fog;return {map:game.map,ruleset:game.ruleset,units:game.units,buildings:game.buildings,state,fog:{enabled:false,revealed,side,observers:[],memories:[],knownBases:s.bases.map(b=>({id:b.id,type:b.type,side:b.side,x:b.x,y:b.y,visible:true})),frontX:enabled?observerFront(game,side):s.frontline}};}
   const observers=sightSnapshot(game)[side],visible=e=>e.side===side||pointInSight(observers,e.x,e.y);
   const bases=s.bases.map(b=>visible(b)?publicEntity(b,b.side===side):{id:b.id,type:b.type,side:b.side,x:b.x,y:b.y,hp:null,maxHp:null});
@@ -103,7 +112,7 @@ export function observe(game,side=0){
 export function validateFog(fog,{map,ruleset,state,nextId},fail){
   const shape=(v,keys)=>v&&typeof v==='object'&&!Array.isArray(v)&&Object.keys(v).length===keys.length&&keys.every(k=>Object.hasOwn(v,k));
   const number=(n,min,max,integer=false)=>typeof n==='number'&&Number.isFinite(n)&&n>=min&&n<=max&&(!integer||Number.isSafeInteger(n));
-  if(map.id!=='classic'||map.revision!==1||ruleset.endgame.forcedDecay||ruleset.economy.policy!=='legacy'||ruleset.campaignOnly||ruleset.authoredOnly)fail('fog supports only Classic open-ended without bridge income');
+  if(!supportsFog(ruleset)||map.id!=='classic'||map.revision!==1||ruleset.endgame.forcedDecay||ruleset.economy.policy!=='legacy'||(ruleset.campaignOnly&&ruleset.id!==LANTERNS_RULESET_ID)||ruleset.authoredOnly)fail('fog supports only Classic open-ended without bridge income');
   if(!Array.isArray(state.effects)||state.effects.some(e=>!Number.isInteger(e.fogSeen)||e.fogSeen<1||e.fogSeen>3)||[0,1].some(side=>state.effects.filter(e=>e.fogSeen&(1<<side)).length>FOG.maxEffectsPerSide))fail('invalid fog effect budget');
   if(!Array.isArray(state.projectiles)||state.projectiles.length)fail('fog prototype does not retain projectiles');
   if(!shape(fog,['version','sides'])||fog.version!==1||!Array.isArray(fog.sides)||fog.sides.length!==2)fail('invalid fog state');

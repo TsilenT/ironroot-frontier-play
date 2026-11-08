@@ -6,7 +6,7 @@ import { createMenuHistory, seedMenuAncestors } from './menu-history.js';
 import { supportsAutonomousAir } from './autonomous-air.js';
 import { supportsCitadelOptions, citadelOptionStatus, CITADEL_AI_TEXT } from './citadel-options.js';
 import { skirmishRulesetId, citadelStatusText, fogSetupAllowed, observedEnemyCitadelText } from './citadel-view.js';
-import { supportsFog, observe } from './fog.js';
+import { supportsFog, observe, observeObjectiveResult } from './fog.js';
 import { FogRenderer, observationFacade, observationHUD, ObservationAudio } from './fog-view.js';
 import { bridgeIncome, bridgeStatus, bridgeSummary, BRIDGE_RULES_TEXT, supportsCampaignControl, campaignControlStatus, CAMPAIGN_CONTROL_RULES_TEXT } from './bridge-control.js';
 import { controlProgressLabel, controlProgressDescription, CONTROL_MAP_LEGEND } from './campaign-control-view.js';
@@ -70,6 +70,7 @@ import { GameAudio } from './audio.js';
 import { advanceObjectiveBattle } from './objectives.js';
 import { campaignBuildChoices, campaignTeaching, campaignCoach, drawCampaignGuidance, guidancePointVisible } from './campaign-flow.js';
 import { missionBriefing, signalProtectionSummary } from './campaign-presentation.js';
+import { hasChartedIntelligence, chartedObjectiveTargets, chartedObjectiveObservation } from './campaign-intelligence.js';
 import { createProtectedObjectiveMonitor, protectedLossDetails, isProtectedCampaignBuilding } from './protected-objectives.js';
 import { createObjectiveAlertPolicy } from './objective-alerts.js';
 import {
@@ -103,7 +104,12 @@ const fogAudio = new ObservationAudio({ ownCommandSounds: false });
 let presentation = null, presentationGame = null;
 function refreshPresentation() {
   presentationGame = game;
-  presentation = supportsFog(game.ruleset) ? observationFacade(observe(game, 0)) : game;
+  if (supportsFog(game.ruleset)) {
+    const observed = objectiveOutcome ? observeObjectiveResult(game, 0, objectiveOutcome) : observe(game, 0);
+    const charted = chartedMission();
+    presentation = observationFacade(charted
+      ? chartedObjectiveObservation(charted, observed, getCampaignTargets(game, currentCampaign)) : observed);
+  } else presentation = game;
   return presentation;
 }
 function battleView() { return presentationGame === game && presentation ? presentation : refreshPresentation(); }
@@ -1118,6 +1124,8 @@ function start(
       : currentChallenge
         ? createCurrentChallenge(currentChallenge)
         : new Game({ difficulty, seed: Date.now() >>> 0, mapId: selectedMap, mapRevision: 1, rulesetId: skirmishRulesetId(selectedRuleset, $('skirmishBridgeIncome').checked, $('skirmishFog').checked), rulesetRevision: 1 }));
+  // An ended attempt must not grant terminal sight to its replacement.
+  objectiveOutcome = null;
   resetBattlePresentation();
   populateBuildCards();
   populateFieldGuide(game);
@@ -1145,7 +1153,6 @@ function start(
   speed = 1;
   resultShown = false;
   follow = false;
-  objectiveOutcome = null;
   heardEffects = new WeakSet();
   heardProjectiles = new WeakSet();
   renderer.vfx?.reset();
@@ -1212,7 +1219,15 @@ function start(
   globalThis.queueMicrotask?.(syncMenuHistory);
 }
 // Named optional trial positions share the existing stable focus controls and mobile dock.
+function chartedMission() {
+  if (!currentCampaign) return null;
+  const scenario = campaignScenarioForGame(game, currentCampaign);
+  const mission = getCampaignMission(currentCampaign, scenario.revision);
+  return hasChartedIntelligence(mission) ? mission : null;
+}
 function objectiveFocusTargets() {
+  const charted = chartedMission();
+  if (charted) return chartedObjectiveTargets(charted, battleView(), getCampaignTargets(game, currentCampaign));
   if (protectedMonitor) return protectedMonitor.read();
   if (!currentChallenge) return [];
   return getChallengeTargets(game, currentChallenge).filter(target => target.name).map(target => ({
@@ -1229,7 +1244,7 @@ function currentSignalProtection(targets = protectedMonitor?.read() || []) {
   return signalProtectionSummary(getCampaignMission(currentCampaign, scenario.revision), targets, game.state.time);
 }
 function beginProtectedObjectives() {
-  protectedMonitor = currentCampaign
+  protectedMonitor = currentCampaign && !chartedMission()
     ? createProtectedObjectiveMonitor(game, currentCampaign) : null;
   protectedControls.clear();
   protectedAnnouncementUntil = 0;
@@ -1239,7 +1254,7 @@ function beginProtectedObjectives() {
   $('resultProtectedLoss').textContent = '';
   $('resultProtectedLoss').classList.add('hidden');
   const targets = objectiveFocusTargets();
-  const signals = currentSignalProtection(targets);
+  const signals = currentSignalProtection(targets), charted = chartedMission();
   protectedAlerts = protectedMonitor && targets.length
     ? createObjectiveAlertPolicy({battleKey:protectedMonitor,targetIds:targets.map(target=>target.originalId)}) : null;
   protectedAlerts?.observe(targets,{battleKey:protectedMonitor});
@@ -1252,9 +1267,10 @@ function beginProtectedObjectives() {
   $('objectiveHUD').classList.toggle('protect-hud', !!targets.length);
   $('protectedTargets').classList.toggle('hidden', !targets.length);
   $('objectiveIdentity').classList.toggle('hidden', !targets.length);
-  $('objectiveIdentity').textContent = targets.length ? currentChallenge ? `FIELD TRIAL · ANY ${getChallengeForGame(game, currentChallenge).requiredTargets} OF ${targets.length}` : `${game.difficulty.toUpperCase()} · ${signals ? 'KEEP 1 SIGNAL' : 'PROTECT'}` : '';
-  $('protectedTargets').classList.toggle('trial-targets', !!currentChallenge && !!targets.length);
-  $('protectedTargets').setAttribute('aria-label', currentChallenge ? 'Choose any two enemy positions; activate a standing position to focus camera' : signals ? 'Keep at least one original signal; activate a standing signal to focus camera' : 'Protected original structures; activate to focus camera');
+  $('objectiveIdentity').textContent = targets.length ? currentChallenge ? `FIELD TRIAL · ANY ${getChallengeForGame(game, currentChallenge).requiredTargets} OF ${targets.length}` : `${game.difficulty.toUpperCase()} · ${charted ? 'FOG · CHARTED POSTS' : signals ? 'KEEP 1 SIGNAL' : 'PROTECT'}` : '';
+  $('protectedTargets').classList.toggle('trial-targets', (!!currentChallenge || !!charted) && !!targets.length);
+  $('protectedTargets').classList.toggle('charted-targets', !!charted && !!targets.length);
+  $('protectedTargets').setAttribute('aria-label', charted ? 'Charted original customs posts. Health unknown outside current sight; dispatch confirms destruction. Activate a post to focus its known location.' : currentChallenge ? 'Choose any two enemy positions; activate a standing position to focus camera' : signals ? 'Keep at least one original signal; activate a standing signal to focus camera' : 'Protected original structures; activate to focus camera');
   for (const target of targets) {
     const button = document.createElement('button');
     button.type = 'button';
@@ -1267,7 +1283,7 @@ function beginProtectedObjectives() {
     name.className = 'protected-name';
     // Keep the authored name readable in the existing compact two-line cards;
     // full road context remains in the accessible label and focus feedback.
-    name.textContent = signals ? target.label.split(' · ')[0] : target.label;
+    name.textContent = signals || charted ? target.label.split(' · ')[0] : target.label;
     const health = document.createElement('span');
     health.className = 'protected-health';
     health.id = `protected-health-${target.originalId}`;
@@ -1421,7 +1437,7 @@ window.addEventListener('blur', () => { armedProtectedControl = null; });
 function updateProtectedObjectives() {
   const targets = objectiveFocusTargets();
   if (!targets.length) return;
-  const signals = currentSignalProtection(targets);
+  const signals = currentSignalProtection(targets), charted = chartedMission();
   const enabled = canFocusProtectedObjective();
   const announcements = [];
   for (const target of targets) {
@@ -1429,21 +1445,25 @@ function updateProtectedObjectives() {
     if (!control) continue;
     // Keep these exact nodes mounted: damage must not steal focus or change a
     // held touch's target. Announce status transitions, never every HP tick.
-    const health = target.status === 'destroyed' ? 'Destroyed'
+    const health = charted ? target.status === 'destroyed' ? 'Cleared'
+      : target.status === 'visible' ? `Visible · ${target.percent ?? '?'}% HP`
+      : target.status === 'last-seen' ? 'Last seen · HP unknown' : 'Charted · HP unknown'
+      : target.status === 'destroyed' ? 'Destroyed'
       : target.status === 'standing' ? `${target.road} · ${target.percent}%`
       : target.status === 'lost' ? signals ? 'Signal lost' : 'Original missing'
       : signals?.lastSignalId === target.originalId ? `${target.percent}% · Last signal`
       : `${target.percent}% HP${target.status === 'critical' ? ' · Critical' : ''}`;
     if (control.health.textContent !== health) control.health.textContent = health;
-    control.health.setAttribute('aria-label', target.status === 'destroyed' ? 'Position destroyed.' : target.status === 'lost' ? 'Original structure missing; health unavailable.'
+    control.health.setAttribute('aria-label', charted ? target.statusText : target.status === 'destroyed' ? 'Position destroyed.' : target.status === 'lost' ? 'Original structure missing; health unavailable.'
       : `${Math.ceil(target.hp)} of ${Math.ceil(target.maxHp)} health. ${target.status}.`);
     control.fill.style.width = `${target.percent ?? 0}%`;
+    control.fill.parentNode.style.visibility = charted && target.percent === null ? 'hidden' : '';
     control.button.dataset.state = target.status;
     control.button.disabled = !enabled || ['lost', 'destroyed'].includes(target.status);
     if (control.status !== target.status && target.status === 'lost')
       announcements.push(`${target.label}: original structure lost.`);
     if (control.status !== target.status && target.status === 'destroyed')
-      announcements.push(`${target.label} destroyed. ${evaluateChallenge(game, currentChallenge).label}`);
+      announcements.push(charted ? `Dispatch confirms ${target.label} destroyed. Replacements do not restore the original post.` : `${target.label} destroyed. ${evaluateChallenge(game, currentChallenge).label}`);
     control.status = target.status;
   }
   if (announcements.length) {
@@ -1499,7 +1519,7 @@ function beginBattleReport(resumed) {
       identity: identityOf(game, scenarioForBattle(currentChallenge, currentCampaign, game)),
       mode: currentCampaign ? 'campaign' : currentChallenge ? 'challenge' : 'skirmish',
       id: currentCampaign || currentChallenge,
-      name: authored?.name || `${game.map.name} skirmish${supportsFog(game.ruleset) ? ' · Fog · post-battle full information' : ''}`,
+      name: `${authored?.name || `${game.map.name} skirmish`}${supportsFog(game.ruleset) ? ' · Fog · post-battle full information' : ''}`,
     });
   } catch { reportFault = true; }
 }
@@ -2114,6 +2134,11 @@ function activateBattlePoint(w, { repeatBuild = false } = {}) {
       toast(result.reason);
       sound('error');
     }
+  } else if (citadelDialogSafe() && renderer.hitCitadel(w, battleView(), 0)) {
+    // The home citadel owns its upgrades, just as production buildings own
+    // theirs. Placement/spells above and drag/cancel guards stay authoritative.
+    showCitadelOptions();
+    sound('click');
   } else {
     const b = battleView().state.buildings
       .filter((b) => b.side === 0)
@@ -2387,7 +2412,7 @@ function updateHUD() {
           : evaluateChallenge(game, currentChallenge));
     $('phase').textContent = authored.name.toUpperCase();
     const label = document.createElement('small');
-    label.textContent = currentCampaign ? 'CAMPAIGN' : 'FIELD TRIAL';
+    label.textContent = currentCampaign ? supportsFog(game.ruleset) ? `CAMPAIGN · FOG${s.overtime ? ' · FASTER WAVES' : ''}` : 'CAMPAIGN' : 'FIELD TRIAL';
     $('phase').append(label);
     $('objectiveProgress').textContent =
       currentCampaign && !outcome.completed && !outcome.failed
@@ -2396,7 +2421,7 @@ function updateHUD() {
               o.type === 'control'
                 ? controlProgressLabel(crossing)
                 : o.type === 'destroy'
-                ? `${o.value}/${o.target} targets`
+                ? `${o.value}/${o.target} ${chartedMission() ? 'posts confirmed destroyed' : 'targets'}`
                 : o.type === 'protect'
                   ? `${o.value}/${o.target} protected`
                   : o.type === 'income'
@@ -2589,6 +2614,7 @@ function frame(now) {
   ui.protectedTargets = missionTargets
     .filter((t) => t.kind === 'protect' && t.building)
     .map((t) => t.building.id);
+  ui.chartedTargets = chartedMission() ? objectiveFocusTargets() : [];
   renderer.draw(battleView(), ui, dt);
   if (started && !paused && !objectiveOutcome) drawCampaignGuidance(renderer, game, ui);
   hudTimer += dt;
@@ -2881,7 +2907,7 @@ $('skipIntroduction').onclick = () => {
   showCampaignPage('mission', 'campaignMissionTitle');
 };
 setMode(mode);
-// Citadel choices reuse the pause menu without changing camera controls.
+// Clicking the home citadel opens its upgrades. The pause menu remains an accessible shortcut.
 var citadelNoticeGame = null, citadelNoticePhase = null;
 var citadelUnsavedGame = null;
 function updateCitadelSaveWarning() {
@@ -2908,7 +2934,7 @@ function updateCitadelUI() {
   const view = battleView();
   const text = citadelStatusText(game, 0, {paused});
   $('pauseCitadelStatus').textContent = text;
-  $('citadelBattleStatus').textContent = text;
+  $('citadelBattleStatus').textContent = `${text} Select your home citadel to view upgrades, or open Citadel upgrades in the pause menu.`;
   $('citadelPlayerStatus').textContent = `${Math.ceil(game.state.bases[0].hp)} / ${game.state.bases[0].maxHp} HP. ${text}`;
   $('citadelEnemyStatus').textContent = view.fog ? observedEnemyCitadelText(view) : `${Math.ceil(game.state.bases[1].hp)} / ${game.state.bases[1].maxHp} HP. ${citadelStatusText(game, 1, {paused})}`;
   $('citadelAIPolicy').textContent = game.ai ? CITADEL_AI_TEXT : 'This battle uses a fixed enemy formation. It does not buy citadel choices or make other new spending decisions. The same 190-gold cost and effects apply to either side; no side receives extra gold.';
@@ -3492,7 +3518,11 @@ function keepDialogFocus() {
     activeDialog.contains(document.activeElement)
   )
     return;
-  dialogDefaultFocus(activeDialog)?.focus();
+  // Pointer taps on labels/text can leave focus on the body (notably when
+  // their input is disabled). Repair the focus trap without moving a reader
+  // away from the control they just tapped in a scrolled mobile dialog.
+  // Explicit dialog entry and keyboard Tab navigation still reveal focus.
+  dialogDefaultFocus(activeDialog)?.focus({ preventScroll: true });
 }
 for (const event of ['focusin', 'focusout', 'click']) {
   document.addEventListener(event, () => {

@@ -1,4 +1,4 @@
-import { citadelOptionStatus } from './citadel-options.js';
+import { citadelOptionStatus, supportsCitadelOptions } from './citadel-options.js';
 import { bridgeZones, bridgeStatus, supportsBridgeControl, supportsCampaignControl } from './bridge-control.js';
 import { drawRootwarden, drawWardenLodge } from './rootwarden-art.js';
 import { sampleCombatFeedback } from './combat-feedback.js';
@@ -1201,6 +1201,49 @@ export class Renderer {
     }
     c.restore();
   }
+  // Keep the visible upgrade/status badge and its pointer target in sync.
+  // This is UI picking only; it never changes combat or placement geometry.
+  citadelBadge(b, game) {
+    // Fog presents only the detached own choice. The ordinary status helper
+    // expects complete enemy health/timers, which an observation must not have.
+    if (game?.fog && b.side !== game.fog.side) return null;
+    const status = game?.fog ? {
+      enabled: supportsCitadelOptions(game.ruleset),
+      choice: game.state.citadelOptions?.sides?.[b.side]?.choice,
+      ended: game.state.winner !== null,
+    } : game && citadelOptionStatus(game, b.side);
+    const visibleLeft = this.camera - this.width / (2 * this.scale);
+    const visibleRight = this.camera + this.width / (2 * this.scale);
+    if (!status?.enabled || b.hp <= 0 || b.x < visibleLeft || b.x > visibleRight ||
+        (!status.choice && (b.side !== (game?.fog?.side ?? 0) || status.ended))) return null;
+    const label = !status.choice ? 'UPGRADES'
+      : status.choice === 'arrows' ? 'EXTRA ARROW'
+        : game?.fog ? 'REGENERATION'
+        : status.blockedByDecay ? 'REGEN · DECAY'
+          : status.fullHealth ? 'REGEN · FULL'
+            : status.regenWait > 0 ? `REGEN · WAIT ${Math.ceil(status.regenWait)}s` : 'REGEN · +3 HP/s';
+    const size = Math.max(13, 11 / this.scale);
+    const font = `bold ${size}px "DM Sans",sans-serif`;
+    this.c.save();
+    this.c.font = font;
+    const width = this.c.measureText(label).width + 14;
+    this.c.restore();
+    const margin = 4 / this.scale;
+    const x = Math.max(visibleLeft - b.x + width / 2 + margin,
+      Math.min(visibleRight - b.x - width / 2 - margin, 0));
+    return {label, size, font, width, x, healing: status.healingActive};
+  }
+  hitCitadel(point, game, side = 0) {
+    const base = game?.state?.bases?.[side];
+    if (!base || !Number.isFinite(base.hp) || base.hp <= 0 || !Number.isFinite(point?.x) || !Number.isFinite(point?.y)) return false;
+    const x = point.x - base.x, y = point.y - base.y;
+    // Includes the towers, flag, gate, health bar and name. At minimum scale
+    // the citadel itself remains a 49 CSS-pixel-wide touch target.
+    if (Math.abs(x) <= 77 && y >= -150 && y <= 92) return true;
+    const badge = this.citadelBadge(base, game);
+    return !!badge && x >= badge.x - badge.width / 2 && x <= badge.x + badge.width / 2 &&
+      y >= 94 && y <= 104 + badge.size;
+  }
   drawBase(b, game = null) {
     const c = this.c,
       co = COLORS[b.side];
@@ -1270,25 +1313,13 @@ export class Renderer {
     c.textAlign = 'center';
     c.fillText(b.side ? 'IRON CITADEL' : 'HOME CITADEL', 0, 87);
     this.health(-54, 65, 108, b.hp / b.maxHp, co.bright);
-    const status = game && citadelOptionStatus(game, b.side);
-    const visibleLeft = this.camera - this.width / (2 * this.scale);
-    const visibleRight = this.camera + this.width / (2 * this.scale);
-    if (status?.choice && b.hp > 0 && b.x >= visibleLeft && b.x <= visibleRight) {
-      const label = status.choice === 'arrows' ? 'EXTRA ARROW'
-        : status.blockedByDecay ? 'REGEN · DECAY'
-          : status.fullHealth ? 'REGEN · FULL'
-            : status.regenWait > 0 ? `REGEN · WAIT ${Math.ceil(status.regenWait)}s` : 'REGEN · +3 HP/s';
-      const size = Math.max(13, 11 / this.scale);
-      c.font = `bold ${size}px "DM Sans",sans-serif`;
-      const width = c.measureText(label).width + 14;
-      // Keep the complete status readable at either world edge on short phones.
-      const margin = 4 / this.scale;
-      const badgeX = Math.max(visibleLeft - b.x + width / 2 + margin,
-        Math.min(visibleRight - b.x - width / 2 - margin, 0));
+    const badge = this.citadelBadge(b, game);
+    if (badge) {
+      c.font = badge.font;
       c.fillStyle = '#142d2deb';
-      c.fillRect(badgeX - width / 2, 94, width, size + 10);
-      c.fillStyle = status.healingActive ? '#bcf1cf' : '#d7e9ed';
-      c.fillText(label, badgeX, 99 + size);
+      c.fillRect(badge.x - badge.width / 2, 94, badge.width, badge.size + 10);
+      c.fillStyle = badge.healing ? '#bcf1cf' : '#d7e9ed';
+      c.fillText(badge.label, badge.x, 99 + badge.size);
     }
     c.restore();
   }

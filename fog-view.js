@@ -194,6 +194,7 @@ export class FogRenderer extends Renderer {
     super.draw(view, safeUI, dt);
     if (view.fog.enabled) {
       this.drawMask(this.c, this.mask, this.width, this.height, view, false);
+      this.drawChartedTargets(view, safeUI.chartedTargets, false);
       this.drawMemories(view, false);
       if (safeUI.spell && safeUI.pointer && !pointInObservation(view, safeUI.pointer.x, safeUI.pointer.y)) {
         const p = this.worldToScreen(safeUI.pointer.x, safeUI.pointer.y), c = this.c;
@@ -216,6 +217,12 @@ export class FogRenderer extends Renderer {
         label.labels.forEach((text, i) => c.fillText(text, label.x, 75 + i * label.lineHeight));
       }
       c.restore();
+      return;
+    }
+    // Own upgrades use the shared badge/picking geometry, but only the detached
+    // own observation. Enemy rendering never receives private status helpers.
+    if (base.side === view.fog.side) {
+      super.drawBase(base, view);
       return;
     }
     // The stock status helper expects private timers and counters. Never give it
@@ -287,11 +294,45 @@ export class FogRenderer extends Renderer {
     }
     c.restore();
   }
+  /** Authored map symbols, never buildings or synthetic last-seen records. */
+  drawChartedTargets(view, targets, mini) {
+    // Preserve existing fog output and raster/memory work when no chart exists.
+    if (!Array.isArray(targets) || !targets.length) return;
+    const markers = targets.filter(target => !target.confirmedDestroyed && target.status !== 'destroyed'
+      && !view.state.buildings.some(b => b.id === target.originalId)
+      && Number.isFinite(target.x) && Number.isFinite(target.y)
+      && target.x >= 0 && target.x <= view.map.width && target.y >= 0 && target.y <= view.map.height);
+    if (!markers.length) return;
+    const c = mini ? this.m : this.c;
+    c.save(); c.setTransform(this.dpr, 0, 0, this.dpr, 0, 0); c.setLineDash([]);
+    for (const target of markers) {
+      const p = mini ? { x: target.x / view.map.width * this.mw, y: target.y / view.map.height * this.mh }
+        : this.worldToScreen(target.x, target.y);
+      // Sit above the true site, clear of its possible stale-building glyph.
+      // Names and health-unknown text belong in the stable DOM focus cards.
+      const x = p.x, y = mini ? p.y : p.y - Math.max(24, 70 * this.scale) - 13, r = mini ? 5 : 10;
+      if (!mini && (x + r < 0 || x - r > this.width || y + r < 0 || y - r > this.height)) continue;
+      c.beginPath(); c.moveTo(x, y - r); c.lineTo(x + r, y); c.lineTo(x, y + r); c.lineTo(x - r, y); c.closePath();
+      c.strokeStyle = '#122720'; c.lineWidth = mini ? 3 : 4; c.stroke();
+      c.strokeStyle = '#f1d295'; c.lineWidth = mini ? 1.25 : 1.75; c.stroke();
+      // A folded-chart glyph makes the hollow diamond distinct from a live
+      // objective's filled diamond and a memory's dashed building rectangle.
+      const u = mini ? .45 : .9;
+      c.beginPath(); c.moveTo(x - 4 * u, y - 3 * u); c.lineTo(x - u, y - 4 * u);
+      c.lineTo(x + u, y - 2 * u); c.lineTo(x + 4 * u, y - 3 * u);
+      c.lineTo(x + 4 * u, y + 3 * u); c.lineTo(x + u, y + 4 * u);
+      c.lineTo(x - u, y + 2 * u); c.lineTo(x - 4 * u, y + 3 * u); c.closePath();
+      c.moveTo(x - u, y - 4 * u); c.lineTo(x - u, y + 2 * u);
+      c.moveTo(x + u, y - 2 * u); c.lineTo(x + u, y + 4 * u); c.stroke();
+    }
+    c.restore();
+  }
   drawMinimap(state, view, ui) {
     super.drawMinimap(state, view, ui);
     if (!view.fog.enabled) return;
     this.drawMask(this.m, this.miniMask, this.mw, this.mh, view, true);
     this.drawMemories(view, true);
+    this.drawChartedTargets(view, ui.chartedTargets, true);
     const width = Math.min(this.mw, this.width / this.scale / view.map.width * this.mw), x = this.camera / view.map.width * this.mw - width / 2;
     this.m.save(); this.m.strokeStyle = '#fff5ce'; this.m.lineWidth = 1.5; this.m.strokeRect(x + .75, .75, width - 1.5, this.mh - 1.5); this.m.restore();
   }

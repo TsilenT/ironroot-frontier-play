@@ -1,5 +1,6 @@
 // Briefing copy only. Mission identity, unlocks and victory rules stay in campaign.js.
 const GOALS = {
+  'lanterns-on-the-water': 'Scout the roads and destroy both charted customs houses, or break the enemy citadel before 10:00.',
   'one-signal-is-enough': 'Keep either original signal standing while the column evacuates, or destroy the enemy citadel with a signal still alive.',
   'shared-crossing': 'Keep any two bridges clear long enough for the supply column to cross, or destroy the enemy citadel.',
   'roadside-watch': 'Build your first army and clear the marked raider barracks from the road.',
