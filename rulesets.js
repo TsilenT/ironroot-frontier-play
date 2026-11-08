@@ -1,5 +1,6 @@
 import { BRIDGE_CONTROL, CAMPAIGN_CONTROL } from './bridge-control.js';
 import { CITADEL_OPTIONS } from './citadel-options.js';
+export const ONE_SIGNAL_RULESET_ID='frontier-campaign-one-signal';
 export const SHARED_CROSSING_RULESET_ID='frontier-campaign-shared-crossing';
 export const FOG_RULESET_ID='frontier-fog-experimental-open';
 export const FOG_SKIRMISH_RULESET_ID='frontier-fog-skirmish-open';
@@ -74,6 +75,7 @@ const authoredAirEntry=id=>deepFreeze({
   movement:{policy:'autonomous-air-local-v1',autonomousAir:{perception:300,retention:420,adjacentOnly:true}}
 });
 export const RULESETS=deepFreeze({
+  [ONE_SIGNAL_RULESET_ID]:deepFreeze({...autonomousAirEntry(ONE_SIGNAL_RULESET_ID,'Campaign · One Signal Is Enough',false,true),citadel:CITADEL_OPTIONS}),
   [SHARED_CROSSING_RULESET_ID]:deepFreeze({...autonomousAirEntry(SHARED_CROSSING_RULESET_ID,'Campaign · Shared Crossing',false,true),citadel:CITADEL_OPTIONS,campaignControl:CAMPAIGN_CONTROL}),
   [FOG_RULESET_ID]:deepFreeze({...citadelEntry(FOG_RULESET_ID,false),name:'Fog of war (experimental) · Open-ended',experimental:true,qaOnly:true,fog:FOG}),
   [FOG_SKIRMISH_RULESET_ID]:deepFreeze({...citadelEntry(FOG_SKIRMISH_RULESET_ID,false),name:'Fog of war (experimental) · Open-ended',experimental:true,fog:FOG}),

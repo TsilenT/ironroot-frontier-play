@@ -1,3 +1,4 @@
+import { signalProtectionRules } from './campaign-presentation.js';
 import { supportsCampaignControl, bridgeZones } from './bridge-control.js';
 import { buildBounds, getMap } from './engine.js';
 
@@ -125,10 +126,12 @@ export function getMissionScouting(mission, context = null) {
   const required = mission.requiredTargets;
   if (required !== undefined && (!Number.isInteger(required) || required < 1 || required > markedCount)) throw new RangeError('Scouting has an invalid required target count.');
   const control = supportsCampaignControl(ruleset) ? ruleset.campaignControl : null;
+  const signals = signalProtectionRules(mission);
+  const evacuationTime = signals ? `${Math.floor(signals.seconds / 60)}:${String(signals.seconds % 60).padStart(2, '0')}` : '';
   const objectives = {
     protectedCount, markedCount,
     ...(control ? {control:{seconds:control.seconds,bridges:control.requiredBridges,zones:bridgeZones(sourceMap)}} : {}),
-    summary: control ? `Secure any ${control.requiredBridges} of ${sourceMap.lanes.length} central crossings for ${control.seconds} cumulative seconds. Contested progress pauses without resetting. No bridge gold bonus. Destroying the enemy citadel also wins.` : required !== undefined ? `Destroy any ${required} of ${markedCount} named enemy positions; the others may remain standing.` : `${protectedCount} allied structure${protectedCount === 1 ? '' : 's'} to protect; ${markedCount} enemy destruction target${markedCount === 1 ? '' : 's'}.`,
+    summary: signals ? `Keep at least 1 of 2 original signals until ${evacuationTime}, or destroy the enemy citadel with a signal still alive. Either signal may fall to enemy attacks, but losing the last fails the mission. Signals cannot be salvaged; replacements do not count. Keeping both earns an optional medal.` : control ? `Secure any ${control.requiredBridges} of ${sourceMap.lanes.length} central crossings for ${control.seconds} cumulative seconds. Contested progress pauses without resetting. No bridge gold bonus. Destroying the enemy citadel also wins.` : required !== undefined ? `Destroy any ${required} of ${markedCount} named enemy positions; the others may remain standing.` : `${protectedCount} allied structure${protectedCount === 1 ? '' : 's'} to protect; ${markedCount} enemy destruction target${markedCount === 1 ? '' : 's'}.`,
   };
   return freeze({
     missionName: mission.name || 'Mission', map, armies, objectives, legend: LEGEND + (control ? ' Outlined rectangles at the river mark the three capture zones.' : ''),

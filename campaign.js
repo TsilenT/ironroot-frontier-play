@@ -1,5 +1,5 @@
 import {Game, BUILDINGS, MAPS, getRuleset} from './engine.js';
-import {CAMPAIGN_RULESET_IDS, CITADEL_CAMPAIGN_RULESET_IDS, AUTHORED_AIR_RULESET_ID, AUTHORED_CITADEL_RULESET_ID, SHARED_CROSSING_RULESET_ID, deepFreeze} from './rulesets.js';
+import {CAMPAIGN_RULESET_IDS, CITADEL_CAMPAIGN_RULESET_IDS, AUTHORED_AIR_RULESET_ID, AUTHORED_CITADEL_RULESET_ID, SHARED_CROSSING_RULESET_ID, ONE_SIGNAL_RULESET_ID, deepFreeze} from './rulesets.js';
 import {campaignControlStatus, CAMPAIGN_CONTROL_RULES_TEXT} from './bridge-control.js';
 import {ONBOARDING_CHAPTER, ONBOARDING_MISSIONS, isOnboardingMission} from './campaign-onboarding.js';
 export {ONBOARDING_CHAPTER, ONBOARDING_MISSIONS, isOnboardingMission} from './campaign-onboarding.js';
@@ -246,6 +246,22 @@ export const SHARED_CROSSING_MISSIONS=[{
   briefing:[CAMPAIGN_CONTROL_RULES_TEXT,'Your starting mine represents 190 gold of investment; the enemy’s fixed force represents 1,369 gold of buildings and upgrades. You must fund the troops for your chosen two roads.'],
 }];
 
+export const ONE_SIGNAL_MISSIONS=[{
+  id:'one-signal-is-enough',chapterId:'river-compact',number:18,name:'One Signal Is Enough',subtitle:'Guide the last column home',
+  scenarioRevision:1,mapId:'classic',mapRevision:1,rulesetId:ONE_SIGNAL_RULESET_ID,rulesetRevision:1,
+  description:'Two signal posts cover the evacuation road. Either can guide the last column home; losing the first is an allowed sacrifice.',
+  dialogue:{speaker:'Captain Rowan',text:'Keep one fire burning. I would rather lose a post than the whole company. Save both if you can, but bring our people home.'},
+  victoryText:'The last column reaches safety beneath the surviving signal fire.',
+  objective:'Keep at least 1 of 2 original signals alive until 3:30, or destroy the enemy citadel while one remains. Losing the first signal is allowed; losing the last signal or your citadel fails immediately.',
+  hint:'Ridge Signal faces siege: forward ground troops can reach its foundry. River Signal faces infantry and flyers: use the longer rear yard for layered anti-air. Choose either signal, or try to save both. There is no required unit.',
+  difficulty:'normal',seed:6201,timeLimit:210,startingGold:1100,startingHealth:6000,enemyGold:0,ai:true,prerequisites:['shared-crossing'],
+  playerBuildings:[['watchtower',970,0],['watchtower',1250,2],['mint',410,1],['barracks',690,1]],
+  enemyBuildings:[['foundry',2230,0],['barracks',2370,0],['archery',2650,0],['barracks',1950,2,2],['aerie',2090,2],['aerie',2370,2],['barracks',2510,1]],
+  objectives:[survive(210),{id:'signals',type:'protect',label:'Keep at least one original signal alive',minimumSurvivors:1,targets:[{type:'watchtower',x:970,lane:0,name:'Ridge Signal'},{type:'watchtower',x:1250,lane:2,name:'River Signal'}]}],
+  medals:[{id:'both-signals',type:'original-survivors',amount:2,label:'Save both original signals'},swift(180)],
+  briefing:['Keep at least 1 of 2 signals until 3:30. The evacuation clock is continuous, even after one post falls. Your citadel must survive; 1 HP is enough.','Original signal posts cannot be salvaged. Replacements do not restore a lost signal or earn the save-both distinction.','Your starting structures represent 770 gold; the enemy’s starting force represents 1,463 gold of buildings and upgrades. All purchases use ordinary prices and income.'],
+}];
+
 /** New chapter briefings derive force counts/levels from the actual paid setup. */
 function describeDeployment(placements,map) {
   const names=map.lanes.length===2?['North','South']:['North','Middle','South'];
@@ -261,7 +277,7 @@ const firstAuthoredIds=Object.fromEntries(Object.keys(MAPS).map(mapId=>[mapId,ne
 // Legacy catalogs retain their order, totals and completion semantics.
 export const ALL_CAMPAIGN_MISSIONS=[...CAMPAIGN_MISSIONS,...INTRO_MISSIONS];
 export const ALL_CAMPAIGN_CHAPTERS=[INTRO_CHAPTER,...CAMPAIGN_CHAPTERS];
-export const CAMPAIGN_PROGRESS_MISSIONS=[...ALL_CAMPAIGN_MISSIONS,...ONBOARDING_MISSIONS,...SHARED_CROSSING_MISSIONS];
+export const CAMPAIGN_PROGRESS_MISSIONS=[...ALL_CAMPAIGN_MISSIONS,...ONBOARDING_MISSIONS,...SHARED_CROSSING_MISSIONS,...ONE_SIGNAL_MISSIONS];
 for(const mission of CAMPAIGN_PROGRESS_MISSIONS) {
   mission.mapId=mission.mapId||'classic';
   mission.ai=mission.ai===true;
@@ -277,6 +293,12 @@ for(const mission of CAMPAIGN_PROGRESS_MISSIONS) {
       ...mission.briefing
     ];
   }
+  for(const objective of mission.objectives)if(objective.type==='protect'&&Object.hasOwn(objective,'minimumSurvivors')) {
+    const keys=objective.targets.map(t=>`${t.type}/${t.x}/${t.lane}`);
+    if(!Number.isInteger(objective.minimumSurvivors)||objective.minimumSurvivors<1||objective.minimumSurvivors>keys.length||new Set(keys).size!==keys.length||
+      !objective.targets.every(t=>mission.playerBuildings.some(([type,x,lane])=>type===t.type&&x===t.x&&lane===t.lane)))
+      throw new RangeError('Invalid minimum-survivors objective: '+mission.id);
+  }
   mission.mode=mission.objectives[0].type;
   mission.markedTargets=mission.objectives.flatMap(o=>o.type==='destroy'?o.targets:[]);
   mission.protectedTargets=mission.objectives.flatMap(o=>o.type==='protect'?o.targets:[]);
@@ -284,6 +306,7 @@ for(const mission of CAMPAIGN_PROGRESS_MISSIONS) {
 }
 
 deepFreeze(SHARED_CROSSING_MISSIONS);
+deepFreeze(ONE_SIGNAL_MISSIONS);
 
 // Published revision 1/2/3 descriptors stay exact. Current starts select a
 // separate automatic-air revision without changing old saves or replay records.
@@ -350,7 +373,7 @@ export function getCampaignMission(id,revision=1) {
 /** Current deliberate starts/previews only. Existing attempts use their rules. */
 export function getCurrentCampaignRevision(id,progress) {
   getCampaignMission(id,1);
-  return id==='shared-crossing'?1:CITADEL_CAMPAIGN_REVISION;
+  return ['shared-crossing','one-signal-is-enough'].includes(id)?1:CITADEL_CAMPAIGN_REVISION;
 }
 function onboardingLaunchStage(id,progress) {
   return Math.max(ONBOARDING_MISSIONS.findIndex(m=>m.id===id)+1,getCampaignRoster(progress).stage);
@@ -363,7 +386,9 @@ export function getCampaignRevisionForRuleset(id,rulesetId,rulesetRevision=1) {
   let rules;
   try{rules=getRuleset(rulesetId,rulesetRevision);}catch{throw new RangeError('Unknown campaign ruleset identity: '+String(rulesetId));}
   let revision;
-  if(id==='shared-crossing'){
+  if(id==='one-signal-is-enough'){
+    if(rules.id===ONE_SIGNAL_RULESET_ID)revision=1;
+  } else if(id==='shared-crossing'){
     if(rules.id===SHARED_CROSSING_RULESET_ID)revision=1;
   } else if(isOnboardingMission(id)) {
     const minimum=ONBOARDING_MISSIONS.findIndex(m=>m.id===id),stage=CAMPAIGN_RULESET_IDS.indexOf(rules.id);
@@ -476,6 +501,10 @@ function metric(game,objective,atDeadline,targets) {
   if(objective.type==='protect') {
     const own=targets.filter(t=>t.kind==='protect'&&objective.targets.some(x=>x.type===t.type&&x.x===t.x&&x.lane===t.lane));
     const count=own.filter(t=>t.building).length;
+    if(Object.hasOwn(objective,'minimumSurvivors')) {
+      const required=objective.minimumSurvivors;
+      return {met:count>=required,failed:count<required,progress:Math.min(1,count/required),value:count,target:own.length,required,text:`${count}/${own.length} signals alive; need ${required}`};
+    }
     return {met:count===own.length,failed:count<own.length,progress:count/own.length,value:count,target:own.length,text:`${count}/${own.length} protected structures alive`};
   }
   if(objective.type==='income') {const value=currentIncome(game);return {met:atDeadline&&value>=objective.amount,progress:Math.min(1,value/objective.amount),value,target:objective.amount,text:`${value.toFixed(1)}/${objective.amount} gold/sec`};}
@@ -483,7 +512,8 @@ function metric(game,objective,atDeadline,targets) {
   if(objective.type==='citadel') {const value=s.bases[1].maxHp-s.bases[1].hp;return {met:s.bases[1].hp<=0,progress:value/s.bases[1].maxHp,value,target:s.bases[1].maxHp,text:`Enemy citadel: ${Math.ceil(s.bases[1].hp)} HP`};}
   const value=Math.min(s.time,objective.seconds);return {met:s.time+1e-7>=objective.seconds,progress:value/objective.seconds,value,target:objective.seconds,text:`${Math.floor(value)}/${objective.seconds}s held`};
 }
-function medalMet(game,medal) {
+function medalMet(game,medal,targets) {
+  if(medal.type==='original-survivors')return targets.filter(t=>t.kind==='protect'&&t.building).length>=medal.amount;
   const intro=introMedalMet(game,medal);if(intro!==null)return intro;
   if(medal.type==='time')return game.state.time<=medal.seconds+1e-7;
   if(medal.type==='health')return game.state.bases[0].hp>=medal.amount;
@@ -504,7 +534,7 @@ export function evaluateCampaignMission(game,id,revision) {
   if(mission.mode==='income')progress=Math.min(progress,s.time/mission.timeLimit);
   if(completed)progress=1;
   const label=defeated?'Your citadel fell.':broken?`${broken.label}: failed.`:completed?coreVictory?'Enemy citadel destroyed.':'All mission objectives complete.':objectives.map(o=>o.text).join(' · ')+(failed?' · Time expired.':'');
-  const medals=mission.medals.map(m=>({...m,earned:completed&&medalMet(game,m)}));
+  const medals=mission.medals.map(m=>({...m,earned:completed&&medalMet(game,m,targets)}));
   return {completed,failed,progress:Math.max(0,Math.min(1,progress)),label,objectives,medals,stars:completed?1+medals.filter(m=>m.earned).length:0};
 }
 
@@ -555,7 +585,7 @@ export function isMissionUnlocked(progress,id,revision=1) {
 export const CAMPAIGN_RULESET_STAGES=Object.freeze({
   'frontier-campaign-watch':1,'frontier-campaign-fork':2,'frontier-campaign-open':3,'frontier-campaign-flight':3,[AUTONOMOUS_AIR_CAMPAIGN_RULESET_ID]:3,
   ...Object.fromEntries(CITADEL_CAMPAIGN_RULESET_IDS.map((id,index)=>[id,index+1])),
-  [SHARED_CROSSING_RULESET_ID]:3,
+  [SHARED_CROSSING_RULESET_ID]:3,[ONE_SIGNAL_RULESET_ID]:3,
 });
 export function canUseCampaignRuleset(progress,id,revision,rulesetId) {
   if(!campaignRulesetAllowed(id,revision,rulesetId))return false;
@@ -569,7 +599,7 @@ export function getCampaignLaunchMission(id,progress) {
   const presentation=opening&&stage===3?AUTONOMOUS_AIR_CAMPAIGN_MISSIONS.find(m=>m.id===id):mission;
   return {...mission,briefing:presentation.briefing,hint:presentation.hint,scenarioRevision:revision,
     // Current navigation copy only; published scenario descriptors remain immutable.
-    ...(id==='common-ground'?{reward:'Unlocks Shared Crossing'}:id==='shared-crossing'?{reward:'Completes the Chapter 6 preview'}:{}),
+    ...(id==='common-ground'?{reward:'Unlocks Shared Crossing'}:id==='shared-crossing'?{reward:'Unlocks One Signal Is Enough'}:id==='one-signal-is-enough'?{reward:'Completes the current Chapter 6 route'}:{}),
     ...(opening?{rulesetId:CITADEL_CAMPAIGN_RULESET_IDS[stage-1]}:{})};
 }
 export function createProgressionCampaignMission(id,progress) {
@@ -579,7 +609,7 @@ export function createProgressionCampaignMission(id,progress) {
 }
 export function getProgressionCampaignOverview(progress) {
   const clean=normalizeCampaignProgress(progress),roster=getCampaignRoster(clean);
-  const missions=[...ONBOARDING_MISSIONS,...PROGRESSION_CAMPAIGN_MISSIONS,...SHARED_CROSSING_MISSIONS].map(m=>{
+  const missions=[...ONBOARDING_MISSIONS,...PROGRESSION_CAMPAIGN_MISSIONS,...SHARED_CROSSING_MISSIONS,...ONE_SIGNAL_MISSIONS].map(m=>{
     const launch=getCampaignLaunchMission(m.id,clean);
     return {...launch,record:clean.missions[m.id]||null,
       unlocked:isMissionUnlocked(clean,m.id,launch.scenarioRevision),completed:!!clean.missions[m.id]};

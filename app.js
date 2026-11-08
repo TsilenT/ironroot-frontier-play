@@ -69,8 +69,8 @@ import { decodeBattle, encodeBattle, scenarioForBattle, identityOf } from './bat
 import { GameAudio } from './audio.js';
 import { advanceObjectiveBattle } from './objectives.js';
 import { campaignBuildChoices, campaignTeaching, campaignCoach, drawCampaignGuidance, guidancePointVisible } from './campaign-flow.js';
-import { missionBriefing } from './campaign-presentation.js';
-import { createProtectedObjectiveMonitor, protectedLossDetails } from './protected-objectives.js';
+import { missionBriefing, signalProtectionSummary } from './campaign-presentation.js';
+import { createProtectedObjectiveMonitor, protectedLossDetails, isProtectedCampaignBuilding } from './protected-objectives.js';
 import { createObjectiveAlertPolicy } from './objective-alerts.js';
 import {
   ALL_CAMPAIGN_CHAPTERS as LEGACY_CAMPAIGN_CHAPTERS,
@@ -200,6 +200,7 @@ const viewportPause = createViewportPause();
 let mobileLayout = 'ordinary';
 let protectedMonitor = null;
 let protectedAlerts = null;
+let protectedAnnouncementUntil = 0;
 const protectedControls = new Map();
 let armedProtectedControl = null;
 let battleJournal = null, lastBattleReport = null, hasLastResult = false, reportFault = false;
@@ -773,12 +774,13 @@ function updateSelection() {
     game.state.winner !== null;
   $('sell').textContent =
     `Salvage · +${Math.floor((b.invested * 0.5 * b.hp) / b.maxHp)}`;
+  const protectedOriginal = isProtectedCampaignBuilding(game, currentCampaign, b.id);
   $('sell').disabled =
-    paused || game.state.winner !== null || ui.protectedTargets?.includes(b.id);
-  if (ui.protectedTargets?.includes(b.id)) {
+    paused || game.state.winner !== null || protectedOriginal;
+  if (protectedOriginal) {
     $('sell').textContent = 'Protected objective';
     $('selectionDescription').textContent =
-      'Keep this building standing. ' + d.description;
+      (currentSignalProtection()?.selectionDescription || 'Keep this building standing.') + ' ' + d.description;
   }
 }
 $('upgrade').onclick = () => {
@@ -799,6 +801,13 @@ $('upgrade').onclick = () => {
 };
 $('sell').onclick = () => {
   if (!canInteract() || battleSession.status() !== 'current') return;
+  // Resolve the authored originals at action time rather than trusting a
+  // disabled button or the previous render frame's protected-target list.
+  if (isProtectedCampaignBuilding(game, currentCampaign, ui.selected)) {
+    toast('Original mission objectives cannot be salvaged.');
+    refreshPresentation(); updateHUD();
+    return;
+  }
   const r = game.sell(ui.selected);
   if (r.ok) {
     sound('click');
@@ -1214,16 +1223,23 @@ function objectiveFocusTargets() {
     status: target.building ? 'standing' : 'destroyed',
   }));
 }
+function currentSignalProtection(targets = protectedMonitor?.read() || []) {
+  if (!currentCampaign) return null;
+  const scenario = campaignScenarioForGame(game, currentCampaign);
+  return signalProtectionSummary(getCampaignMission(currentCampaign, scenario.revision), targets, game.state.time);
+}
 function beginProtectedObjectives() {
   protectedMonitor = currentCampaign
     ? createProtectedObjectiveMonitor(game, currentCampaign) : null;
   protectedControls.clear();
+  protectedAnnouncementUntil = 0;
   armedProtectedControl = null;
   $('protectedTargets').textContent = '';
   $('protectedAlert').textContent = '';
   $('resultProtectedLoss').textContent = '';
   $('resultProtectedLoss').classList.add('hidden');
   const targets = objectiveFocusTargets();
+  const signals = currentSignalProtection(targets);
   protectedAlerts = protectedMonitor && targets.length
     ? createObjectiveAlertPolicy({battleKey:protectedMonitor,targetIds:targets.map(target=>target.originalId)}) : null;
   protectedAlerts?.observe(targets,{battleKey:protectedMonitor});
@@ -1236,9 +1252,9 @@ function beginProtectedObjectives() {
   $('objectiveHUD').classList.toggle('protect-hud', !!targets.length);
   $('protectedTargets').classList.toggle('hidden', !targets.length);
   $('objectiveIdentity').classList.toggle('hidden', !targets.length);
-  $('objectiveIdentity').textContent = targets.length ? currentChallenge ? `FIELD TRIAL · ANY ${getChallengeForGame(game, currentChallenge).requiredTargets} OF ${targets.length}` : `${game.difficulty.toUpperCase()} · PROTECT` : '';
+  $('objectiveIdentity').textContent = targets.length ? currentChallenge ? `FIELD TRIAL · ANY ${getChallengeForGame(game, currentChallenge).requiredTargets} OF ${targets.length}` : `${game.difficulty.toUpperCase()} · ${signals ? 'KEEP 1 SIGNAL' : 'PROTECT'}` : '';
   $('protectedTargets').classList.toggle('trial-targets', !!currentChallenge && !!targets.length);
-  $('protectedTargets').setAttribute('aria-label', currentChallenge ? 'Choose any two enemy positions; activate a standing position to focus camera' : 'Protected original structures; activate to focus camera');
+  $('protectedTargets').setAttribute('aria-label', currentChallenge ? 'Choose any two enemy positions; activate a standing position to focus camera' : signals ? 'Keep at least one original signal; activate a standing signal to focus camera' : 'Protected original structures; activate to focus camera');
   for (const target of targets) {
     const button = document.createElement('button');
     button.type = 'button';
@@ -1249,7 +1265,9 @@ function beginProtectedObjectives() {
     button.title = `Show ${target.label} on the battlefield. Cancels placement.`;
     const name = document.createElement('span');
     name.className = 'protected-name';
-    name.textContent = target.label;
+    // Keep the authored name readable in the existing compact two-line cards;
+    // full road context remains in the accessible label and focus feedback.
+    name.textContent = signals ? target.label.split(' · ')[0] : target.label;
     const health = document.createElement('span');
     health.className = 'protected-health';
     health.id = `protected-health-${target.originalId}`;
@@ -1403,6 +1421,7 @@ window.addEventListener('blur', () => { armedProtectedControl = null; });
 function updateProtectedObjectives() {
   const targets = objectiveFocusTargets();
   if (!targets.length) return;
+  const signals = currentSignalProtection(targets);
   const enabled = canFocusProtectedObjective();
   const announcements = [];
   for (const target of targets) {
@@ -1412,7 +1431,8 @@ function updateProtectedObjectives() {
     // held touch's target. Announce status transitions, never every HP tick.
     const health = target.status === 'destroyed' ? 'Destroyed'
       : target.status === 'standing' ? `${target.road} · ${target.percent}%`
-      : target.status === 'lost' ? 'Original missing'
+      : target.status === 'lost' ? signals ? 'Signal lost' : 'Original missing'
+      : signals?.lastSignalId === target.originalId ? `${target.percent}% · Last signal`
       : `${target.percent}% HP${target.status === 'critical' ? ' · Critical' : ''}`;
     if (control.health.textContent !== health) control.health.textContent = health;
     control.health.setAttribute('aria-label', target.status === 'destroyed' ? 'Position destroyed.' : target.status === 'lost' ? 'Original structure missing; health unavailable.'
@@ -1426,11 +1446,17 @@ function updateProtectedObjectives() {
       announcements.push(`${target.label} destroyed. ${evaluateChallenge(game, currentChallenge).label}`);
     control.status = target.status;
   }
-  if (announcements.length) $('protectedAlert').textContent = announcements.join(' ');
+  if (announcements.length) {
+    $('protectedAlert').textContent = signals?.permittedLossMessage || announcements.join(' ');
+    if (signals?.permittedLossMessage) protectedAnnouncementUntil = performance.now() / 1000 + 2.5;
+  }
 }
 function flushProtectedWarnings(now) {
   if (!protectedAlerts) return;
   protectedAlerts.observe(protectedMonitor.read(),{battleKey:protectedMonitor});
+  // Let an allowed sacrifice announcement finish before a queued critical
+  // warning replaces it. Observation continues, so lost targets are removed.
+  if (now < protectedAnnouncementUntil) return;
   const alert = protectedAlerts.flush({
     battleKey:protectedMonitor,
     active:canFocusProtectedObjective() && !document.hidden,
@@ -1441,7 +1467,7 @@ function flushProtectedWarnings(now) {
   if (!alert) return;
   // Reuse the named live status and existing red/HP objective controls. Never
   // steal focus or replace a paid-action toast just to deliver a warning.
-  $('protectedAlert').textContent = alert.message;
+  $('protectedAlert').textContent = currentSignalProtection()?.criticalMessage || alert.message;
   if (alert.sound) sound(alert.sound,{volume:.65});
 }
 function finishProtectedObjectives() {
@@ -1576,7 +1602,7 @@ function selectedBriefingRestart() {
   return briefingRestart && ((mode === 'campaign' && briefingRestart.campaign === selectedCampaign) ||
     (mode === 'challenges' && briefingRestart.challenge === selectedChallenge)) ? briefingRestart : null;
 }
-function returnToBriefing(statusId) {
+function returnToBriefing(statusId, { replay = false } = {}) {
   syncProfileSafety();
   if (recoveryHold || profileGate) { showRecoverySettings(); return; }
   const warn = text => {
@@ -1589,7 +1615,17 @@ function returnToBriefing(statusId) {
     return;
   }
   try {
-    const candidate = currentCampaign ? createCampaignRestart(game, currentCampaign) : restartChallenge(game, currentChallenge);
+    // A deliberate replay keeps the previous launch policy: earned opening
+    // rosters are available, while historical legacy missions stay legacy.
+    // Restart of an unfinished attempt retains its exact admitted identity.
+    const legacyReplay = replay && currentCampaign &&
+      campaignScenarioForGame(game, currentCampaign).revision === 1 &&
+      !getCampaignMission(currentCampaign).rulesetId?.startsWith('frontier-campaign-');
+    const candidate = currentCampaign
+      ? replay
+        ? legacyReplay ? createCampaignMission(currentCampaign) : createProgressionCampaignMission(currentCampaign, campaignProgress)
+        : createCampaignRestart(game, currentCampaign)
+      : restartChallenge(game, currentChallenge);
     // Retire only our checkpoint, through the existing profile/ownership fence.
     // A failed removal keeps the retained attempt and its dialog on this page.
     if ((progressDirty && !persistProgress()) || !battleSession.remove()) {
@@ -1669,9 +1705,7 @@ $('playAgain').onclick = () => {
 $('replayMission').onclick = () => {
   if (!currentCampaign || !objectiveOutcome?.completed ||
       (objectiveOutcome.stars >= 3 && currentCampaign !== getCampaignOverview(campaignProgress).missions.at(-1).id)) return;
-  mode = 'campaign';
-  selectedCampaign = currentCampaign;
-  start(null, null, null, { scenarioRevision: campaignScenarioForGame(game, currentCampaign).revision });
+  returnToBriefing('resultRestartStatus', { replay: true });
 };
 $('resultMenu').onclick = () => showTitle({ focusStart: true });
 $('inspectBattle').onclick = () => {
@@ -2378,6 +2412,12 @@ function updateHUD() {
     if (controlMode) $('objectiveProgress').setAttribute('aria-label', controlProgressDescription(crossing));
     $('objectiveTime').textContent =
       `${timeText(Math.ceil(Math.max(0, authored.timeLimit - s.time)))} remaining`;
+    const signals = currentSignalProtection();
+    if (signals && !outcome.completed && !outcome.failed) {
+      $('objectiveProgress').textContent = signals.hudLabel;
+      $('objectiveProgress').setAttribute('aria-label', `${signals.hudLabel}. ${signals.evacuationLabel}.`);
+      $('objectiveTime').textContent = `${timeText(Math.ceil(Math.max(0, signals.seconds - s.time)))} to evacuate`;
+    }
   }
   updateProtectedObjectives();
   updateCompactBuildControl();

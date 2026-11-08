@@ -8,10 +8,22 @@ const road = (lane, count) => count === 2 ? ['North', 'South'][lane]
   : count === 3 ? ['North', 'Middle', 'South'][lane] : `Road ${lane + 1}`;
 export function protectedTargetLabels(targets, laneCount) {
   return targets.map(target => {
+    if (typeof target.name === 'string' && target.name.trim()) {
+      const label = `${target.name.trim()} · ${road(target.lane, laneCount)} road`;
+      const duplicates = targets.filter(other => typeof other.name === 'string' && other.name.trim() === target.name.trim() && other.lane === target.lane);
+      return duplicates.length > 1 ? `${label} · site ${target.x}` : label;
+    }
     const label = `${road(target.lane, laneCount)} ${BUILDINGS[target.type].name.toLowerCase()}`;
     const duplicates = targets.filter(other => other.lane === target.lane && other.type === target.type);
     return duplicates.length > 1 ? `${label} · site ${target.x}` : label;
   });
+}
+
+// Resolve fresh authored original IDs at action time, not a previous UI frame.
+// Invalid real mission identities deliberately propagate the campaign error.
+export function isProtectedCampaignBuilding(game, missionId, buildingId) {
+  if (!missionId) return null;
+  return getCampaignTargets(game, missionId).some(target => target.kind === 'protect' && target.originalId === buildingId);
 }
 
 /** Current-page observations only; an initial absence cannot establish a death time. */
