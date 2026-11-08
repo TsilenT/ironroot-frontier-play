@@ -1,6 +1,7 @@
 // Current presentation only. Mission identity, unlocks and victory rules stay in campaign.js.
 export const CURRENT_RIVER_COMPACT_EPILOGUE = 'From the lantern-lit banks to the borrowed yard, the river towns now share the watch over crossings and signal fires, so the next convoy need not depend on Rowan’s company to reach the far bank.';
 const GOALS = {
+  'false-quiet': 'Scout or commit directly: destroy the original Middle Road Fort, or break the enemy citadel before 10:00.',
   'a-river-between-us': 'Destroy the original North Command Post and secure any two crossings for 60 seconds in total, in either order. Or destroy the enemy citadel before 10:00.',
   'lanterns-on-the-water': 'Scout the roads and destroy both charted customs houses, or break the enemy citadel before 10:00.',
   'one-signal-is-enough': 'Keep either original signal standing while the column evacuates, or destroy the enemy citadel with a signal still alive.',
@@ -84,6 +85,7 @@ export function missionBriefing(mission) {
   else facts.push(`${clock(mission.timeLimit)} time limit`);
   if (control) facts.push(`Hold any ${control.bridges} bridges for ${control.seconds} seconds in total`, 'Contested progress pauses; secured time is kept', 'No bridge gold bonus');
   if (mission.id === 'a-river-between-us') facts.push('Both goals required; either order', 'North Command Post: original north-road watchtower', 'Your citadel must survive; replacements do not count');
+  if (mission.id === 'false-quiet') facts.push('Two possible enemy layouts; scout to identify this attempt', 'Restart and Resume preserve the layout', 'Your citadel must survive; replacements do not count');
   if (hold && hold.seconds !== mission.timeLimit) facts.push(`Hold for ${clock(hold.seconds)}`);
   if (health) facts.push(`Keep at least ${health.amount.toLocaleString('en-US')} citadel HP`);
   if (signals) facts.push(`Keep at least 1 of 2 signals until ${clock(signals.seconds)}`);

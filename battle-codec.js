@@ -1,6 +1,6 @@
 /** One pure admission boundary for Resume, backup and candidate saves. */
 import { Game, MAPS, getMap, getRuleset, LEGACY_RULESET_ID, validateEngineFields } from './engine.js';
-import { deepFreeze, FOG_SKIRMISH_RULESET_ID, LANTERNS_RULESET_ID, BORROWED_GROUND_RULESET_ID, RIVER_BETWEEN_RULESET_ID } from './rulesets.js';
+import { deepFreeze, FOG_SKIRMISH_RULESET_ID, LANTERNS_RULESET_ID, FALSE_QUIET_RULESET_IDS, BORROWED_GROUND_RULESET_ID, RIVER_BETWEEN_RULESET_ID } from './rulesets.js';
 import * as campaign from './campaign.js';
 import { getChallenge, challengeScenarioForGame, evaluateChallenge } from './challenges.js';
 import { TRAINING_LESSONS } from './training.js';
@@ -73,6 +73,9 @@ export function validateBattleIdentity(identity){
   if((rules.id===RIVER_BETWEEN_RULESET_ID||scenario.id==='a-river-between-us')&&
     (rules.id!==RIVER_BETWEEN_RULESET_ID||rules.revision!==1||map.id!=='classic'||map.revision!==1||scenario.kind!=='campaign'||scenario.id!=='a-river-between-us'||scenario.revision!==1))
     fail('A River Between Us requires its exact campaign, Classic and ruleset identities.','unsupported-identity');
+  if((FALSE_QUIET_RULESET_IDS.includes(rules.id)||scenario.id==='false-quiet')&&
+    (!FALSE_QUIET_RULESET_IDS.includes(rules.id)||rules.revision!==1||map.id!=='classic'||map.revision!==1||scenario.kind!=='campaign'||scenario.id!=='false-quiet'||scenario.revision!==1))
+    fail('False Quiet requires an exact campaign layout, Classic and ruleset identity.','unsupported-identity');
   // Apply the supported fog scope here, not only in Game.restore: identity-only
   // history rows and backups must obey the same Classic standard-Skirmish contract.
   if(rules.id===FOG_SKIRMISH_RULESET_ID&&(rules.revision!==1||map.id!=='classic'||map.revision!==1||scenario.kind!=='skirmish'||scenario.id!=='standard'||scenario.revision!==1))fail('Fog is supported only for Classic standard Skirmish.','unsupported-identity');

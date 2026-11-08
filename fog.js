@@ -1,7 +1,7 @@
 /** Experimental, deterministic known-terrain observation. No DOM, RNG or profile access. */
-import { RULESETS, FOG, FOG_RULESET_ID, FOG_SKIRMISH_RULESET_ID, LANTERNS_RULESET_ID } from './rulesets.js';
+import { RULESETS, FOG, FOG_RULESET_ID, FOG_SKIRMISH_RULESET_ID, LANTERNS_RULESET_ID, CAMPAIGN_FOG_RULESET_IDS } from './rulesets.js';
 export { FOG, FOG_RULESET_ID, FOG_SKIRMISH_RULESET_ID, LANTERNS_RULESET_ID } from './rulesets.js';
-export const supportsFog=ruleset=>!!ruleset&&(ruleset.id===FOG_RULESET_ID||ruleset.id===FOG_SKIRMISH_RULESET_ID||ruleset.id===LANTERNS_RULESET_ID)&&RULESETS[ruleset.id]===ruleset&&ruleset.revision===1&&ruleset.fog?.policy===FOG.policy;
+export const supportsFog=ruleset=>!!ruleset&&(ruleset.id===FOG_RULESET_ID||ruleset.id===FOG_SKIRMISH_RULESET_ID||CAMPAIGN_FOG_RULESET_IDS.includes(ruleset.id))&&RULESETS[ruleset.id]===ruleset&&ruleset.revision===1&&ruleset.fog?.policy===FOG.policy;
 const clone=value=>JSON.parse(JSON.stringify(value));
 const sideOK=side=>side===0||side===1;
 const eventViews=new WeakMap();
@@ -112,7 +112,7 @@ function observation(game,side,revealObjective=false){
 export function validateFog(fog,{map,ruleset,state,nextId},fail){
   const shape=(v,keys)=>v&&typeof v==='object'&&!Array.isArray(v)&&Object.keys(v).length===keys.length&&keys.every(k=>Object.hasOwn(v,k));
   const number=(n,min,max,integer=false)=>typeof n==='number'&&Number.isFinite(n)&&n>=min&&n<=max&&(!integer||Number.isSafeInteger(n));
-  if(!supportsFog(ruleset)||map.id!=='classic'||map.revision!==1||ruleset.endgame.forcedDecay||ruleset.economy.policy!=='legacy'||(ruleset.campaignOnly&&ruleset.id!==LANTERNS_RULESET_ID)||ruleset.authoredOnly)fail('fog supports only Classic open-ended without bridge income');
+  if(!supportsFog(ruleset)||map.id!=='classic'||map.revision!==1||ruleset.endgame.forcedDecay||ruleset.economy.policy!=='legacy'||(ruleset.campaignOnly&&!CAMPAIGN_FOG_RULESET_IDS.includes(ruleset.id))||ruleset.authoredOnly)fail('fog supports only Classic open-ended without bridge income');
   if(!Array.isArray(state.effects)||state.effects.some(e=>!Number.isInteger(e.fogSeen)||e.fogSeen<1||e.fogSeen>3)||[0,1].some(side=>state.effects.filter(e=>e.fogSeen&(1<<side)).length>FOG.maxEffectsPerSide))fail('invalid fog effect budget');
   if(!Array.isArray(state.projectiles)||state.projectiles.length)fail('fog prototype does not retain projectiles');
   if(!shape(fog,['version','sides'])||fog.version!==1||!Array.isArray(fog.sides)||fog.sides.length!==2)fail('invalid fog state');

@@ -1,8 +1,12 @@
 /** Presentation policy for the immutable chart, not a second fog-memory store. */
 export function hasChartedIntelligence(mission) {
-  return !!mission && mission.id === 'lanterns-on-the-water' && mission.scenarioRevision === 1
-    && mission.rulesetId === 'frontier-campaign-lanterns' && mission.rulesetRevision === 1
-    && mission.intelligence === 'charted-customs-posts';
+  if (!mission || mission.scenarioRevision !== 1 || mission.rulesetRevision !== 1) return false;
+  return (mission.id === 'lanterns-on-the-water'
+    && mission.rulesetId === 'frontier-campaign-lanterns'
+    && mission.intelligence === 'charted-customs-posts')
+    || (mission.id === 'false-quiet'
+      && ['frontier-campaign-false-quiet-a', 'frontier-campaign-false-quiet-b'].includes(mission.rulesetId)
+      && mission.intelligence === 'charted-central-fort');
 }
 
 const roadName = (lane, count) => count === 2 ? ['North', 'South'][lane]

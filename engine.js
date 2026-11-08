@@ -1,4 +1,4 @@
-import { BUILDINGS, UNITS, SPELL, getRuleset, LEGACY_RULESET_ID, LANTERNS_RULESET_ID, BORROWED_GROUND_RULESET_ID } from './rulesets.js';
+import { BUILDINGS, UNITS, SPELL, getRuleset, LEGACY_RULESET_ID, LANTERNS_RULESET_ID, CAMPAIGN_FOG_RULESET_IDS, BORROWED_GROUND_RULESET_ID } from './rulesets.js';
 import { supportsFlightOrders, flightGateHome, flightGateX } from './flight-orders.js';
 import { supportsAutonomousAir, autonomousAirTarget, retainedAirTarget, releaseAirTarget } from './autonomous-air.js';
 import { supportsBridgeControl, createBridgeControl, advanceBridgeControl, bridgeIncome, validateBridgeControl, supportsCampaignControl, createCampaignControl, advanceCampaignControl, campaignControlEnded, validateCampaignControl } from './bridge-control.js';
@@ -47,7 +47,7 @@ export class Game {
     });
     const map=this.map;
     if((map.id==='borrowed-yard')!==(ruleset.id===BORROWED_GROUND_RULESET_ID))throw new Error('Borrowed Yard requires the Borrowed Ground campaign ruleset.');
-    if(supportsFog(ruleset)&&(map.id!=='classic'||map.revision!==1||ruleset.endgame.forcedDecay||ruleset.economy.policy!=='legacy'||(ruleset.campaignOnly&&ruleset.id!==LANTERNS_RULESET_ID)||ruleset.authoredOnly))throw new Error('Experimental fog requires Classic open-ended Skirmish or Lanterns on the Water');
+    if(supportsFog(ruleset)&&(map.id!=='classic'||map.revision!==1||ruleset.endgame.forcedDecay||ruleset.economy.policy!=='legacy'||(ruleset.campaignOnly&&!CAMPAIGN_FOG_RULESET_IDS.includes(ruleset.id))||ruleset.authoredOnly))throw new Error('Experimental fog requires Classic open-ended Skirmish or an explicitly supported campaign mission');
     if(supportsCampaignControl(ruleset)&&(map.id!=='classic'||map.revision!==1))throw new Error('Campaign control requires Classic');
     if(supportsBridgeControl(ruleset)&&!Object.hasOwn(MAPS,map.id))throw new Error('Bridge income requires a Skirmish battlefield');
     if(supportsCitadelOptions(ruleset)&&ruleset.skirmishOnly&&!Object.hasOwn(MAPS,map.id))throw new Error('Citadel choices require a Skirmish battlefield');

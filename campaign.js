@@ -1,5 +1,5 @@
 import {Game, BUILDINGS, MAPS, getMap, getRuleset} from './engine.js';
-import {CAMPAIGN_RULESET_IDS, CITADEL_CAMPAIGN_RULESET_IDS, AUTHORED_AIR_RULESET_ID, AUTHORED_CITADEL_RULESET_ID, SHARED_CROSSING_RULESET_ID, ONE_SIGNAL_RULESET_ID, LANTERNS_RULESET_ID, BORROWED_GROUND_RULESET_ID, RIVER_BETWEEN_RULESET_ID, deepFreeze} from './rulesets.js';
+import {CAMPAIGN_RULESET_IDS, CITADEL_CAMPAIGN_RULESET_IDS, AUTHORED_AIR_RULESET_ID, AUTHORED_CITADEL_RULESET_ID, SHARED_CROSSING_RULESET_ID, ONE_SIGNAL_RULESET_ID, LANTERNS_RULESET_ID, BORROWED_GROUND_RULESET_ID, RIVER_BETWEEN_RULESET_ID, FALSE_QUIET_RULESET_IDS, deepFreeze} from './rulesets.js';
 import {campaignControlStatus, CAMPAIGN_CONTROL_RULES_TEXT} from './bridge-control.js';
 import {CURRENT_RIVER_COMPACT_EPILOGUE} from './campaign-presentation.js';
 import {supportsFog, createFog, refreshFog} from './fog.js';
@@ -323,6 +323,32 @@ export const RIVER_BETWEEN_MISSIONS=[{
     'At 5:00, ordinary escalation speeds production ×1.65, multiplies troop damage to structures ×1.75, and lowers citadel shot damage from 32 to 18. There is no forced citadel drain.'],
 }];
 
+
+export const UNLIT_ROADS_CHAPTER={id:'unlit-roads',number:7,name:'The Unlit Roads',subtitle:'Find the army behind the silence',theme:'woodland',description:'Beyond the river, the upland watchfires have gone dark. Sera charts the old forts, but the holdout garrisons move their troops between the roads. The company must decide when to scout and when to commit.',epilogue:'The middle fort is open. Sera follows the newly charted road toward the coast.'};
+export const FALSE_QUIET_VARIANTS=deepFreeze({
+  a:{rulesetId:FALSE_QUIET_RULESET_IDS[0],enemyBuildings:[['watchtower',2230,1,2],['barracks',1950,1],['barracks',2230,0],['foundry',2230,2],['archery',2370,1],['barracks',2510,2],['mint',2790,1]]},
+  b:{rulesetId:FALSE_QUIET_RULESET_IDS[1],enemyBuildings:[['watchtower',2230,1,2],['aerie',1950,1],['aerie',2230,0],['barracks',2230,2],['archery',2370,1],['barracks',2510,2],['mint',2790,1]]},
+});
+export const FALSE_QUIET_MISSIONS=[{
+  id:'false-quiet',chapterId:'unlit-roads',number:22,name:'False Quiet',subtitle:'Find what waits behind the middle fort',
+  scenarioRevision:1,mapId:'classic',mapRevision:1,rulesetId:FALSE_QUIET_RULESET_IDS[0],rulesetRevision:1,intelligence:'charted-central-fort',
+  description:'The middle fort marks the shortest road through the reeds. Its commander alternates between a ground-heavy line and an aerial flank force; the quiet road does not tell Sera which company holds it today.',
+  dialogue:{speaker:'Scout Sera',text:'The fort has not moved, but the troops behind it have. A small company can find out what is waiting before we spend the whole purse. We can also take the middle road in force, if we leave enough to answer the flanks.'},
+  victoryText:'The road beyond the fort is open. Sera can chart the approach for the next company.',
+  objective:'Destroy the charted original Middle Road Fort or the enemy citadel within 10:00. Your citadel must survive. Dispatch confirms the original fort’s destruction even outside sight; replacements do not count.',
+  hint:'Probe with ordinary troops and watch the first contacts before choosing more archers, a screen or siege. A supported direct assault is also possible. Side-road pressure still reaches your camp. No unit or scouting purchase is required.',
+  difficulty:'normal',seed:7301,timeLimit:600,startingGold:1000,startingHealth:6000,enemyGold:120,ai:true,prerequisites:['a-river-between-us'],
+  playerBuildings:[['barracks',1110,1],['archery',970,1],['watchtower',830,0],['watchtower',830,2],['mint',410,1]],
+  enemyBuildings:FALSE_QUIET_VARIANTS.a.enemyBuildings,
+  objectives:[destroy('middle-fort','Destroy the original Middle Road Fort',[{type:'watchtower',x:2230,lane:1,name:'Middle Road Fort'}])],
+  medals:[swift(180),intact(4500)],
+  briefing:['The Middle Road Fort is charted. Each fresh attempt selects one of two starting production layouts: a ground-heavy line or an aerial flank force. The chosen layout is hidden until observed. Resume, Restart and result Replay keep it; a new attempt from the campaign selects again.',
+    'Only the fort’s location and type are known. Current HP, upgrades, enemy troops and later buildings are unknown outside sight. Remembered structures are last-seen information. The enemy follows the same sight rules.',
+    'Dispatch confirms destruction of the original fort even outside sight. Later replacements do not undo that credit. Destroy the fort or enemy citadel by 10:00 with your own citadel alive; 1 HP is enough.',
+    'The adaptive enemy starts with real income and pays ordinary prices for every later building, upgrade and arrow volley. There are no hidden reserves or free reinforcement waves.',
+    'At 5:00, ordinary escalation speeds production ×1.65, multiplies troop damage to structures ×1.75, and lowers citadel shot damage from 32 to 18. There is no forced citadel drain.'],
+}];
+
 /** New chapter briefings derive force counts/levels from the actual paid setup. */
 function describeDeployment(placements,map) {
   const names=map.lanes.length===2?['North','South']:['North','Middle','South'];
@@ -338,14 +364,15 @@ const firstAuthoredIds=Object.fromEntries(Object.keys(MAPS).map(mapId=>[mapId,ne
 // Legacy catalogs retain their order, totals and completion semantics.
 export const ALL_CAMPAIGN_MISSIONS=[...CAMPAIGN_MISSIONS,...INTRO_MISSIONS];
 export const ALL_CAMPAIGN_CHAPTERS=[INTRO_CHAPTER,...CAMPAIGN_CHAPTERS];
-export const CAMPAIGN_PROGRESS_MISSIONS=[...ALL_CAMPAIGN_MISSIONS,...ONBOARDING_MISSIONS,...SHARED_CROSSING_MISSIONS,...ONE_SIGNAL_MISSIONS,...LANTERNS_MISSIONS,...BORROWED_GROUND_MISSIONS,...RIVER_BETWEEN_MISSIONS];
+export const CURRENT_CAMPAIGN_CHAPTERS=deepFreeze([ONBOARDING_CHAPTER,...ALL_CAMPAIGN_CHAPTERS,SHARED_CROSSING_CHAPTER,UNLIT_ROADS_CHAPTER]);
+export const CAMPAIGN_PROGRESS_MISSIONS=[...ALL_CAMPAIGN_MISSIONS,...ONBOARDING_MISSIONS,...SHARED_CROSSING_MISSIONS,...ONE_SIGNAL_MISSIONS,...LANTERNS_MISSIONS,...BORROWED_GROUND_MISSIONS,...RIVER_BETWEEN_MISSIONS,...FALSE_QUIET_MISSIONS];
 for(const mission of CAMPAIGN_PROGRESS_MISSIONS) {
   mission.mapId=mission.mapId||'classic';
   mission.ai=mission.ai===true;
-  if(mission.chapterId==='frontier'||mission.chapterId==='river-compact') {
+  if(mission.chapterId==='frontier'||mission.chapterId==='river-compact'||mission.chapterId==='unlit-roads') {
     const map=getMap(mission.mapId,mission.mapRevision??1);
-    const charted=mission.intelligence==='charted-customs-posts';
-    mission.deployment={player:describeDeployment(mission.playerBuildings,map),enemy:charted?'Charted customs houses on the north and south roads; patrols and other buildings are unknown':describeDeployment(mission.enemyBuildings,map)};
+    const charted=['charted-customs-posts','charted-central-fort'].includes(mission.intelligence);
+    mission.deployment={player:describeDeployment(mission.playerBuildings,map),enemy:charted?(mission.id==='false-quiet'?'Charted original Middle Road Fort; the selected production layout, patrols and other buildings are unknown':'Charted customs houses on the north and south roads; patrols and other buildings are unknown'):describeDeployment(mission.enemyBuildings,map)};
     mission.briefing=[
       `${map.name}: ${map.width.toLocaleString('en-US')}-unit battlefield, ${map.lanes.length} lanes, ${map.buildLimit} building sites per side`,
       `${mission.startingGold.toLocaleString('en-US')} starting gold; your citadel starts at ${mission.startingHealth.toLocaleString('en-US')} HP${charted?'':'; enemy citadel starts at 6,000 HP'}`, 
@@ -365,6 +392,7 @@ for(const mission of CAMPAIGN_PROGRESS_MISSIONS) {
   mission.markedTargets=mission.objectives.flatMap(o=>o.type==='destroy'?o.targets:[]);
   mission.protectedTargets=mission.objectives.flatMap(o=>o.type==='protect'?o.targets:[]);
   if(['lanterns-on-the-water','borrowed-ground','a-river-between-us'].includes(mission.id))mission.reward='Completes the current Chapter 6 route';
+  else if(mission.id==='false-quiet')mission.reward='Completes the current Unlit Roads route';
   else if(!mission.optional&&!isOnboardingMission(mission.id))mission.reward=`Unlocks ${CAMPAIGN_MISSIONS.filter(m=>m.prerequisites.includes(mission.id)).map(m=>m.name).join(' / ')||'the campaign epilogue'}`;
 }
 
@@ -373,6 +401,8 @@ deepFreeze(ONE_SIGNAL_MISSIONS);
 deepFreeze(LANTERNS_MISSIONS);
 deepFreeze(BORROWED_GROUND_MISSIONS);
 deepFreeze(RIVER_BETWEEN_MISSIONS);
+deepFreeze(FALSE_QUIET_MISSIONS);
+deepFreeze(UNLIT_ROADS_CHAPTER);
 
 // Published revision 1/2/3 descriptors stay exact. Current starts select a
 // separate automatic-air revision without changing old saves or replay records.
@@ -439,7 +469,7 @@ export function getCampaignMission(id,revision=1) {
 /** Current deliberate starts/previews only. Existing attempts use their rules. */
 export function getCurrentCampaignRevision(id,progress) {
   getCampaignMission(id,1);
-  return ['shared-crossing','one-signal-is-enough','lanterns-on-the-water','borrowed-ground','a-river-between-us'].includes(id)?1:CITADEL_CAMPAIGN_REVISION;
+  return ['shared-crossing','one-signal-is-enough','lanterns-on-the-water','borrowed-ground','a-river-between-us','false-quiet'].includes(id)?1:CITADEL_CAMPAIGN_REVISION;
 }
 function onboardingLaunchStage(id,progress) {
   return Math.max(ONBOARDING_MISSIONS.findIndex(m=>m.id===id)+1,getCampaignRoster(progress).stage);
@@ -452,7 +482,9 @@ export function getCampaignRevisionForRuleset(id,rulesetId,rulesetRevision=1) {
   let rules;
   try{rules=getRuleset(rulesetId,rulesetRevision);}catch{throw new RangeError('Unknown campaign ruleset identity: '+String(rulesetId));}
   let revision;
-  if(id==='a-river-between-us'){
+  if(id==='false-quiet'){
+    if(FALSE_QUIET_RULESET_IDS.includes(rules.id))revision=1;
+  } else if(id==='a-river-between-us'){
     if(rules.id===RIVER_BETWEEN_RULESET_ID)revision=1;
   } else if(id==='borrowed-ground'){
     if(rules.id===BORROWED_GROUND_RULESET_ID)revision=1;
@@ -499,13 +531,24 @@ function missionGameOptions(mission) {
   return {difficulty:mission.difficulty,seed:mission.seed,ai:mission.ai,mapId:mission.mapId,
     ...(mission.rulesetId?{rulesetId:mission.rulesetId,rulesetRevision:mission.rulesetRevision,mapRevision:mission.mapRevision}:{})};
 }
-export function createCampaignMission(id,{revision=1,progress}={}) {
+export function createCampaignMission(id,{revision=1,progress,variant}={}) {
   const base=missionFor(id,revision);
   const roster=revision===CITADEL_CAMPAIGN_REVISION?CITADEL_CAMPAIGN_RULESET_IDS:CAMPAIGN_RULESET_IDS;
   const mission=[1,CITADEL_CAMPAIGN_REVISION].includes(revision)&&progress!==undefined&&isOnboardingMission(id)?{...base,rulesetId:roster[Math.max(ONBOARDING_MISSIONS.findIndex(m=>m.id===id),getCampaignRoster(progress).stage-1)]}:base;
+  if(id==='false-quiet'){
+    const choice=variant??(Math.random()<.5?'a':'b');
+    if(!Object.hasOwn(FALSE_QUIET_VARIANTS,choice))throw new RangeError('Unknown False Quiet layout: '+String(choice));
+    return createAuthoredCampaignMission(mission,{...missionGameOptions(mission),rulesetId:FALSE_QUIET_VARIANTS[choice].rulesetId});
+  }
+  if(variant!==undefined)throw new RangeError('This campaign mission has no variable layout.');
   return createAuthoredCampaignMission(mission,missionGameOptions(mission));
 }
 function createAuthoredCampaignMission(mission,options) {
+  if(mission.id==='false-quiet'){
+    const variant=Object.values(FALSE_QUIET_VARIANTS).find(v=>v.rulesetId===options.rulesetId);
+    if(!variant)throw new RangeError('False Quiet requires its exact authored layout identity.');
+    mission={...mission,...variant};
+  }
   const game=new Game(options),id=mission.id;
   const s=game.state;
   s.buildings=[];s.effects=[];s.stats.built=[0,0];s.gold=[10000,10000];
@@ -601,7 +644,7 @@ export function evaluateCampaignMission(game,id,revision) {
   const defeated=s.winner===1||s.winner==='draw'||s.bases[0].hp<=0;
   const broken=objectives.find(o=>o.failed);
   const coreVictory=s.winner===0||s.bases[1].hp<=0;
-  const completed=!defeated&&!broken&&((mission.mode!=='control'&&mission.id!=='borrowed-ground')||s.time<=mission.timeLimit+1e-7)&&(coreVictory||objectives.every(o=>o.met));
+  const completed=!defeated&&!broken&&((mission.mode!=='control'&&!['borrowed-ground','false-quiet'].includes(mission.id))||s.time<=mission.timeLimit+1e-7)&&(coreVictory||objectives.every(o=>o.met));
   const failed=defeated||!!broken||(!completed&&atDeadline);
   const advancing=objectives.filter(o=>!['protect','health'].includes(o.type));
   let progress=advancing.reduce((n,o)=>n+o.progress,0)/advancing.length;
@@ -659,7 +702,7 @@ export function isMissionUnlocked(progress,id,revision=1) {
 export const CAMPAIGN_RULESET_STAGES=Object.freeze({
   'frontier-campaign-watch':1,'frontier-campaign-fork':2,'frontier-campaign-open':3,'frontier-campaign-flight':3,[AUTONOMOUS_AIR_CAMPAIGN_RULESET_ID]:3,
   ...Object.fromEntries(CITADEL_CAMPAIGN_RULESET_IDS.map((id,index)=>[id,index+1])),
-  [SHARED_CROSSING_RULESET_ID]:3,[ONE_SIGNAL_RULESET_ID]:3,[LANTERNS_RULESET_ID]:3,[BORROWED_GROUND_RULESET_ID]:3,[RIVER_BETWEEN_RULESET_ID]:3,
+  [SHARED_CROSSING_RULESET_ID]:3,[ONE_SIGNAL_RULESET_ID]:3,[LANTERNS_RULESET_ID]:3,[BORROWED_GROUND_RULESET_ID]:3,[RIVER_BETWEEN_RULESET_ID]:3,...Object.fromEntries(FALSE_QUIET_RULESET_IDS.map(id=>[id,3])),
 });
 export function canUseCampaignRuleset(progress,id,revision,rulesetId) {
   if(!campaignRulesetAllowed(id,revision,rulesetId))return false;
@@ -673,7 +716,7 @@ export function getCampaignLaunchMission(id,progress) {
   const presentation=opening&&stage===3?AUTONOMOUS_AIR_CAMPAIGN_MISSIONS.find(m=>m.id===id):mission;
   return {...mission,briefing:presentation.briefing,hint:presentation.hint,scenarioRevision:revision,
     // Current navigation copy only; published scenario descriptors remain immutable.
-    ...(id==='common-ground'?{reward:'Unlocks Shared Crossing'}:id==='shared-crossing'?{reward:'Unlocks One Signal Is Enough',subtitle:'Secure the convoy route'}:id==='one-signal-is-enough'?{reward:'Unlocks Lanterns on the Water'}:id==='lanterns-on-the-water'?{reward:'Unlocks Borrowed Ground'}:id==='borrowed-ground'?{reward:'Unlocks A River Between Us'}:id==='a-river-between-us'?{reward:'Completes The River Compact'}:{}),
+    ...(id==='common-ground'?{reward:'Unlocks Shared Crossing'}:id==='shared-crossing'?{reward:'Unlocks One Signal Is Enough',subtitle:'Secure the convoy route'}:id==='one-signal-is-enough'?{reward:'Unlocks Lanterns on the Water'}:id==='lanterns-on-the-water'?{reward:'Unlocks Borrowed Ground'}:id==='borrowed-ground'?{reward:'Unlocks A River Between Us'}:id==='a-river-between-us'?{reward:'Unlocks False Quiet'}:{}),
     ...(opening?{rulesetId:CITADEL_CAMPAIGN_RULESET_IDS[stage-1]}:{})};
 }
 export function createProgressionCampaignMission(id,progress) {
@@ -683,12 +726,12 @@ export function createProgressionCampaignMission(id,progress) {
 }
 export function getProgressionCampaignOverview(progress) {
   const clean=normalizeCampaignProgress(progress),roster=getCampaignRoster(clean);
-  const missions=[...ONBOARDING_MISSIONS,...PROGRESSION_CAMPAIGN_MISSIONS,...SHARED_CROSSING_MISSIONS,...ONE_SIGNAL_MISSIONS,...LANTERNS_MISSIONS,...BORROWED_GROUND_MISSIONS,...RIVER_BETWEEN_MISSIONS].map(m=>{
+  const missions=[...ONBOARDING_MISSIONS,...PROGRESSION_CAMPAIGN_MISSIONS,...SHARED_CROSSING_MISSIONS,...ONE_SIGNAL_MISSIONS,...LANTERNS_MISSIONS,...BORROWED_GROUND_MISSIONS,...RIVER_BETWEEN_MISSIONS,...FALSE_QUIET_MISSIONS].map(m=>{
     const launch=getCampaignLaunchMission(m.id,clean);
     return {...launch,record:clean.missions[m.id]||null,
       unlocked:isMissionUnlocked(clean,m.id,launch.scenarioRevision),completed:!!clean.missions[m.id]};
   });
-  const chapters=[ONBOARDING_CHAPTER,...CAMPAIGN_CHAPTERS,SHARED_CROSSING_CHAPTER].map(c=>{const own=missions.filter(m=>m.chapterId===c.id);return {...c,...(c.id===SHARED_CROSSING_CHAPTER.id?{epilogue:CURRENT_RIVER_COMPACT_EPILOGUE}:{}),completed:own.every(m=>m.completed),unlocked:own.some(m=>m.unlocked),cleared:own.filter(m=>m.completed).length,total:own.length,stars:own.reduce((n,m)=>n+(m.record?.stars||0),0),maxStars:own.length*3};});
+  const chapters=[ONBOARDING_CHAPTER,...CAMPAIGN_CHAPTERS,SHARED_CROSSING_CHAPTER,UNLIT_ROADS_CHAPTER].map(c=>{const own=missions.filter(m=>m.chapterId===c.id);return {...c,...(c.id===SHARED_CROSSING_CHAPTER.id?{epilogue:CURRENT_RIVER_COMPACT_EPILOGUE}:{}),completed:own.every(m=>m.completed),unlocked:own.some(m=>m.unlocked),cleared:own.filter(m=>m.completed).length,total:own.length,stars:own.reduce((n,m)=>n+(m.record?.stars||0),0),maxStars:own.length*3};});
   const next=missions.find(m=>m.unlocked&&!m.completed&&(!roster.returning||!isOnboardingMission(m.id)));
   const cleared=missions.filter(m=>m.completed).length,stars=missions.reduce((n,m)=>n+(m.record?.stars||0),0);
   const historicalIntroduction=getCampaignOverview(clean).introduction;

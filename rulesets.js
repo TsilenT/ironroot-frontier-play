@@ -1,9 +1,11 @@
 import { BRIDGE_CONTROL, CAMPAIGN_CONTROL, RIVER_BETWEEN_CONTROL } from './bridge-control.js';
 import { CITADEL_OPTIONS } from './citadel-options.js';
+export const FALSE_QUIET_RULESET_IDS=Object.freeze(['frontier-campaign-false-quiet-a','frontier-campaign-false-quiet-b']);
 export const RIVER_BETWEEN_RULESET_ID='frontier-campaign-river-between';
 export const ONE_SIGNAL_RULESET_ID='frontier-campaign-one-signal';
 export const SHARED_CROSSING_RULESET_ID='frontier-campaign-shared-crossing';
 export const LANTERNS_RULESET_ID='frontier-campaign-lanterns';
+export const CAMPAIGN_FOG_RULESET_IDS=Object.freeze([LANTERNS_RULESET_ID,...FALSE_QUIET_RULESET_IDS]);
 export const BORROWED_GROUND_RULESET_ID='frontier-campaign-borrowed-ground';
 export const FOG_RULESET_ID='frontier-fog-experimental-open';
 export const FOG_SKIRMISH_RULESET_ID='frontier-fog-skirmish-open';
@@ -78,6 +80,7 @@ const authoredAirEntry=id=>deepFreeze({
   movement:{policy:'autonomous-air-local-v1',autonomousAir:{perception:300,retention:420,adjacentOnly:true}}
 });
 export const RULESETS=deepFreeze({
+  ...Object.fromEntries(FALSE_QUIET_RULESET_IDS.map(id=>[id,deepFreeze({...autonomousAirEntry(id,'Campaign · False Quiet',false,true),citadel:CITADEL_OPTIONS,fog:FOG})])),
   [RIVER_BETWEEN_RULESET_ID]:deepFreeze({...autonomousAirEntry(RIVER_BETWEEN_RULESET_ID,'Campaign · A River Between Us',false,true),citadel:CITADEL_OPTIONS,campaignControl:RIVER_BETWEEN_CONTROL}),
   [BORROWED_GROUND_RULESET_ID]:deepFreeze({...autonomousAirEntry(BORROWED_GROUND_RULESET_ID,'Campaign · Borrowed Ground',false,true),citadel:CITADEL_OPTIONS}),
   [LANTERNS_RULESET_ID]:deepFreeze({...autonomousAirEntry(LANTERNS_RULESET_ID,'Campaign · Lanterns on the Water',false,true),citadel:CITADEL_OPTIONS,fog:FOG}),

@@ -74,9 +74,8 @@ import { hasChartedIntelligence, chartedObjectiveTargets, chartedObjectiveObserv
 import { createProtectedObjectiveMonitor, protectedLossDetails, isProtectedCampaignBuilding } from './protected-objectives.js';
 import { createObjectiveAlertPolicy } from './objective-alerts.js';
 import {
-  ALL_CAMPAIGN_CHAPTERS as LEGACY_CAMPAIGN_CHAPTERS,
+  CURRENT_CAMPAIGN_CHAPTERS as CAMPAIGN_CHAPTERS,
   ONBOARDING_CHAPTER,
-  SHARED_CROSSING_CHAPTER,
   CAMPAIGN_PROGRESS_MISSIONS as CAMPAIGN_MISSIONS,
   isIntroMission,
   createCampaignMission,
@@ -96,7 +95,6 @@ import {
   getProgressionCampaignOverview as getCampaignOverview,
   isMissionUnlocked,
 } from './campaign.js';
-const CAMPAIGN_CHAPTERS = [ONBOARDING_CHAPTER, ...LEGACY_CAMPAIGN_CHAPTERS, SHARED_CROSSING_CHAPTER];
 const $ = (id) => document.getElementById(id);
 const ordinaryRenderer = new Renderer($('battle'), $('minimap'));
 let renderer = ordinaryRenderer, fogRenderer = null;
@@ -1272,10 +1270,10 @@ function beginProtectedObjectives() {
   $('objectiveHUD').classList.toggle('protect-hud', !!targets.length);
   $('protectedTargets').classList.toggle('hidden', !targets.length);
   $('objectiveIdentity').classList.toggle('hidden', !targets.length);
-  $('objectiveIdentity').textContent = targets.length ? currentChallenge ? `FIELD TRIAL · ANY ${getChallengeForGame(game, currentChallenge).requiredTargets} OF ${targets.length}` : `${game.difficulty.toUpperCase()} · ${charted ? 'FOG · CHARTED POSTS' : signals ? 'KEEP 1 SIGNAL' : 'PROTECT'}` : '';
+  $('objectiveIdentity').textContent = targets.length ? currentChallenge ? `FIELD TRIAL · ANY ${getChallengeForGame(game, currentChallenge).requiredTargets} OF ${targets.length}` : `${game.difficulty.toUpperCase()} · ${charted ? (charted.id==='false-quiet'?'FOG · CHARTED FORT':'FOG · CHARTED POSTS') : signals ? 'KEEP 1 SIGNAL' : 'PROTECT'}` : '';
   $('protectedTargets').classList.toggle('trial-targets', (!!currentChallenge || !!charted) && !!targets.length);
   $('protectedTargets').classList.toggle('charted-targets', !!charted && !!targets.length);
-  $('protectedTargets').setAttribute('aria-label', charted ? 'Charted original customs posts. Health unknown outside current sight; dispatch confirms destruction. Activate a post to focus its known location.' : currentChallenge ? 'Choose any two enemy positions; activate a standing position to focus camera' : signals ? 'Keep at least one original signal; activate a standing signal to focus camera' : 'Protected original structures; activate to focus camera');
+  $('protectedTargets').setAttribute('aria-label', charted ? (charted.id==='false-quiet'?'Charted original Middle Road Fort. Health unknown outside current sight; dispatch confirms destruction. Activate the fort to focus its known location.':'Charted original customs posts. Health unknown outside current sight; dispatch confirms destruction. Activate a post to focus its known location.') : currentChallenge ? 'Choose any two enemy positions; activate a standing position to focus camera' : signals ? 'Keep at least one original signal; activate a standing signal to focus camera' : 'Protected original structures; activate to focus camera');
   for (const target of targets) {
     const button = document.createElement('button');
     button.type = 'button';
@@ -1468,7 +1466,7 @@ function updateProtectedObjectives() {
     if (control.status !== target.status && target.status === 'lost')
       announcements.push(`${target.label}: original structure lost.`);
     if (control.status !== target.status && target.status === 'destroyed')
-      announcements.push(charted ? `Dispatch confirms ${target.label} destroyed. Replacements do not restore the original post.` : `${target.label} destroyed. ${evaluateChallenge(game, currentChallenge).label}`);
+      announcements.push(charted ? `Dispatch confirms ${target.label} destroyed. Replacements do not restore the original ${charted.id==='false-quiet'?'fort':'post'}.` : `${target.label} destroyed. ${evaluateChallenge(game, currentChallenge).label}`);
     control.status = target.status;
   }
   if (announcements.length) {
@@ -2433,7 +2431,7 @@ function updateHUD() {
               o.type === 'control'
                 ? controlProgressLabel(crossing)
                 : o.type === 'destroy'
-                ? `${o.value}/${o.target} ${chartedMission() ? 'posts confirmed destroyed' : 'targets'}`
+                ? `${o.value}/${o.target} ${chartedMission() ? (currentCampaign==='false-quiet'?'fort confirmed destroyed':'posts confirmed destroyed') : 'targets'}`
                 : o.type === 'protect'
                   ? `${o.value}/${o.target} protected`
                   : o.type === 'income'

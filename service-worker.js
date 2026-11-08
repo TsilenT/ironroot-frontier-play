@@ -1,5 +1,5 @@
 // Atomic, versioned offline shell. Bump VERSION with every public build.
-const VERSION = 'ironroot-v0.26.1';
+const VERSION = 'ironroot-v0.27.0';
 const FILES = [
   './fog.js',
   './fog-view.js',
@@ -61,7 +61,9 @@ self.addEventListener('install', (event) =>
   event.waitUntil(
     caches
       .open(VERSION)
-      .then((cache) => cache.addAll(FILES))
+      // A new CacheStorage name does not invalidate the browser's HTTP cache.
+      // Fetch fresh bytes for the entire shell before activating this release.
+      .then((cache) => cache.addAll(FILES.map((path) => new Request(path, { cache: 'reload' }))))
       .then(() => self.skipWaiting()),
   ),
 );
