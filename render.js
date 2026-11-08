@@ -1,5 +1,5 @@
 import { citadelOptionStatus } from './citadel-options.js';
-import { bridgeZones, bridgeStatus, supportsBridgeControl } from './bridge-control.js';
+import { bridgeZones, bridgeStatus, supportsBridgeControl, supportsCampaignControl } from './bridge-control.js';
 import { drawRootwarden, drawWardenLodge } from './rootwarden-art.js';
 import { sampleCombatFeedback } from './combat-feedback.js';
 import { BattleVFX } from './vfx.js';
@@ -723,7 +723,8 @@ export class Renderer {
     this.drawMinimap(s, game, ui);
   }
   drawBridgeZones(game, layer = 'all') {
-    if (!supportsBridgeControl(game.ruleset)) return;
+    if (!supportsBridgeControl(game.ruleset) && !supportsCampaignControl(game.ruleset)) return;
+    const controlMode = supportsCampaignControl(game.ruleset);
     const c = this.c, states = bridgeStatus(game), zones = bridgeZones(game.map);
     c.save();
     c.lineWidth = Math.max(2, 1.5 / this.scale);
@@ -745,7 +746,8 @@ export class Renderer {
       }
       if (layer === 'zones') continue;
       const owner = state.owner === null ? 'UNOWNED' : state.owner === 0 ? 'YOU' : 'ENEMY';
-      const label = `${zone.lane + 1} ${owner}`;
+      const road = controlMode ? ['NORTH', 'MIDDLE', 'SOUTH'][zone.lane] : zone.lane + 1;
+      const label = `${road} ${owner}`;
       const detail = capturing ? `${state.capturing === 0 ? 'Y' : 'E'} → ${Math.floor(state.progress / 2 * 100)}%`
         : state.blocked ? 'X BLOCKED' : state.owner === null ? 'GROUND 2s' : 'HELD';
       const fontSize = Math.max(20, 10 / this.scale), line = fontSize * 1.15;
@@ -1804,7 +1806,7 @@ export class Renderer {
       }
     }
     drawFlightMinimap(c, game, { width: w, height: h, selected: ui.selected });
-    if (game && supportsBridgeControl(game.ruleset)) {
+    if (game && (supportsBridgeControl(game.ruleset) || supportsCampaignControl(game.ruleset))) {
       c.save(); c.font = 'bold 8px sans-serif'; c.textAlign = 'center'; c.textBaseline = 'middle';
       for (const bridge of bridgeStatus(game)) {
         const x = w / 2, y = game.map.lanes[bridge.lane] / game.map.height * h;

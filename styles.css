@@ -4134,3 +4134,12 @@ body.gamepad-active a:focus {
 
 #citadelRetrySave { min-height: 44px; margin-bottom: 12px; }
 #citadelSaveWarning { color: #f3cd89; border-left: 3px solid #d7b971; padding: 10px 12px; }
+/* Unknown information has no percentage fill. The adjacent text says unknown. */
+.hp-track i.hp-unknown { width: 100%; background: repeating-linear-gradient(135deg, #5e685c 0 4px, #303e35 4px 8px); opacity: .65; }
+#skirmishConfig :disabled { opacity: .5; cursor: not-allowed; }
+
+/* Memory details reuse the existing hint and Pause space, never resize the field. */
+#fogMemoryHint { white-space: nowrap; }
+.fog-memory-details ul { margin: 8px 0 0; padding-left: 20px; max-height: 180px; overflow-y: auto; overscroll-behavior: contain; }
+.fog-memory-details li { min-height: 44px; padding: 8px 4px; line-height: 1.5; overflow-wrap: anywhere; }
+.fog-memory-details li:focus-visible { outline: 2px solid var(--gold); outline-offset: -2px; }

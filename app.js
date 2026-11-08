@@ -5,8 +5,11 @@ import { ACTIONS, effectiveBindings, normalizeKeyboardMap, bindingConflict, bind
 import { createMenuHistory, seedMenuAncestors } from './menu-history.js';
 import { supportsAutonomousAir } from './autonomous-air.js';
 import { supportsCitadelOptions, citadelOptionStatus, CITADEL_AI_TEXT } from './citadel-options.js';
-import { skirmishRulesetId, citadelStatusText } from './citadel-view.js';
-import { bridgeIncome, bridgeStatus, bridgeSummary, BRIDGE_RULES_TEXT } from './bridge-control.js';
+import { skirmishRulesetId, citadelStatusText, fogSetupAllowed, observedEnemyCitadelText } from './citadel-view.js';
+import { supportsFog, observe } from './fog.js';
+import { FogRenderer, observationFacade, observationHUD, ObservationAudio } from './fog-view.js';
+import { bridgeIncome, bridgeStatus, bridgeSummary, BRIDGE_RULES_TEXT, supportsCampaignControl, campaignControlStatus, CAMPAIGN_CONTROL_RULES_TEXT } from './bridge-control.js';
+import { controlProgressLabel, controlProgressDescription, CONTROL_MAP_LEGEND } from './campaign-control-view.js';
 import { airRulesGuide, airBuildingDescription } from './flight-orders-view.js';
 import {
   GamepadInput,
@@ -72,6 +75,7 @@ import { createObjectiveAlertPolicy } from './objective-alerts.js';
 import {
   ALL_CAMPAIGN_CHAPTERS as LEGACY_CAMPAIGN_CHAPTERS,
   ONBOARDING_CHAPTER,
+  SHARED_CROSSING_CHAPTER,
   CAMPAIGN_PROGRESS_MISSIONS as CAMPAIGN_MISSIONS,
   isIntroMission,
   createCampaignMission,
@@ -91,9 +95,43 @@ import {
   getProgressionCampaignOverview as getCampaignOverview,
   isMissionUnlocked,
 } from './campaign.js';
-const CAMPAIGN_CHAPTERS = [ONBOARDING_CHAPTER, ...LEGACY_CAMPAIGN_CHAPTERS];
+const CAMPAIGN_CHAPTERS = [ONBOARDING_CHAPTER, ...LEGACY_CAMPAIGN_CHAPTERS, SHARED_CROSSING_CHAPTER];
 const $ = (id) => document.getElementById(id);
-const renderer = new Renderer($('battle'), $('minimap'));
+const ordinaryRenderer = new Renderer($('battle'), $('minimap'));
+let renderer = ordinaryRenderer, fogRenderer = null;
+const fogAudio = new ObservationAudio({ ownCommandSounds: false });
+let presentation = null, presentationGame = null;
+function refreshPresentation() {
+  presentationGame = game;
+  presentation = supportsFog(game.ruleset) ? observationFacade(observe(game, 0)) : game;
+  return presentation;
+}
+function battleView() { return presentationGame === game && presentation ? presentation : refreshPresentation(); }
+function battleFront() { const view = battleView(); return view.fog ? view.fog.frontX : view.state.frontline; }
+function resetBattlePresentation() {
+  renderer.vfx?.reset(); renderer.rootwardenMotion?.clear();
+  const zoom = renderer.zoom;
+  if (supportsFog(game.ruleset)) fogRenderer ||= new FogRenderer($('battle'), $('minimap'));
+  renderer = supportsFog(game.ruleset) ? fogRenderer : ordinaryRenderer;
+  renderer.zoom = zoom; renderer.reducedMotion = preferences.reducedMotion;
+  renderer.vfx?.setPreferences({ reducedMotion: preferences.reducedMotion, quality: preferences.quality });
+  renderer.vfx?.reset(); renderer.rootwardenMotion?.clear();
+  renderer.resize(); fogAudio.reset();
+  presentation = null; presentationGame = null;
+  ui.pointer = null; ui.selected = null;
+  refreshPresentation();
+}
+
+// Background interruption must survive closing a panel that had paused play.
+// Without an interruption, ordinary Help/Options close behavior is unchanged.
+function holdInterruptedDialogs() {
+  if (!started || game.state.winner !== null || objectiveOutcome) return;
+  if (!$('helpModal').classList.contains('hidden')) helpWasPaused = true;
+  if (!$('settingsModal').classList.contains('hidden')) {
+    settingsWasPaused = true;
+    $('settingsDone').textContent = 'Back to pause menu';
+  }
+}
 
 // Read-only field reference. Text is authored data; escape it before markup.
 function populateFieldGuide(context = null) {
@@ -513,7 +551,7 @@ function syncChoice() {
   $('buildPrompt').textContent = ui.build
     ? `PLACE ${(game.buildings || BUILDINGS)[ui.build].name.toUpperCase()} · ◆ ${(game.buildings || BUILDINGS)[ui.build].cost}`
     : ui.spell
-      ? 'ARROW VOLLEY · TAP ENEMY TROOPS'
+      ? supportsFog(game.ruleset) ? 'ARROW VOLLEY · AIM WITHIN SIGHT' : 'ARROW VOLLEY · TAP ENEMY TROOPS'
       : 'BUILD YOUR FRONTIER';
   $('buildHelp').textContent = ui.build
     ? airBuildingDescription(game, ui.build)
@@ -711,7 +749,7 @@ function coachControlVisible(element) {
   return true;
 }
 function updateSelection() {
-  const b = game.state.buildings.find(
+  const b = battleView().state.buildings.find(
     (x) => x.id === ui.selected && x.side === 0,
   );
   $('selectionPanel').classList.toggle('hidden', !b);
@@ -744,6 +782,7 @@ function updateSelection() {
   }
 }
 $('upgrade').onclick = () => {
+  if (!canInteract() || battleSession.status() !== 'current') return;
   const r = game.upgrade(ui.selected);
   if (r.ok) {
     sound('upgrade');
@@ -756,15 +795,17 @@ $('upgrade').onclick = () => {
           : 'Upgraded: stronger walls and attacks.',
     );
   } else toast(r.reason);
-  updateSelection();
+  refreshPresentation(); updateHUD();
 };
 $('sell').onclick = () => {
+  if (!canInteract() || battleSession.status() !== 'current') return;
   const r = game.sell(ui.selected);
   if (r.ok) {
     sound('click');
     toast(`Building salvaged for ${r.refund} gold.`);
     cancel();
   } else toast(r.reason);
+  refreshPresentation(); updateHUD();
 };
 let closeSelectionArmed = false;
 document.addEventListener(
@@ -911,7 +952,7 @@ $('home').onclick = () => {
   follow = false;
 };
 $('front').onclick = () => {
-  renderer.camera = game.state.frontline;
+  renderer.camera = battleFront();
   renderer.clampCamera();
   follow = !follow;
   $('front').style.borderColor = follow ? '#f0d18a' : '';
@@ -946,6 +987,7 @@ function renderMapSelection() {
     const active = button.dataset.map === selectedMap;
     button.classList.toggle('active', active);
     button.setAttribute('aria-pressed', String(active));
+    button.disabled = $('skirmishFog').checked && button.dataset.map !== 'classic';
   }
 }
 for (const map of Object.values(MAPS)) {
@@ -959,8 +1001,10 @@ for (const map of Object.values(MAPS)) {
     .join('');
   button.innerHTML = `<svg viewBox="0 0 320 90" aria-hidden="true"><rect width="320" height="90" rx="7" fill="#253e2c"/><rect x="${200 * sx}" y="18" width="${1120 * sx}" height="54" fill="#679d8555"/><rect x="${(map.width - 1320) * sx}" y="18" width="${1120 * sx}" height="54" fill="#c1816b55"/>${roads}<circle cx="${110 * sx}" cy="45" r="7" fill="#b7dbad"/><circle cx="${(map.width - 110) * sx}" cy="45" r="7" fill="#e5ac89"/></svg><b>${map.name}</b><small>${map.lanes.length} roads · ${map.buildLimit} sites</small>`;
   button.onclick = () => {
+    if ($('skirmishFog').checked && map.id !== 'classic') return;
     selectedMap = map.id;
     renderMapSelection();
+    updateSkirmishRules();
     sound('click');
   };
   $('mapChoices').append(button);
@@ -1000,6 +1044,12 @@ function start(
   restoredCampaign = null,
   { fresh = false, scenarioRevision = null } = {},
 ) {
+  // Reject unsupported setup before any ownership, profile or checkpoint work.
+  if (!restored && mode === 'skirmish' && $('skirmishFog').checked &&
+      !fogSetupAllowed(selectedMap, selectedRuleset, $('skirmishBridgeIncome').checked)) {
+    toast('Fog requires Classic, open endgame and bridge income off. Your selections and saved battle are unchanged.');
+    return;
+  }
   syncProfileSafety();
   if (recoveryHold || profileGate) {
     showRecoverySettings();
@@ -1058,7 +1108,8 @@ function start(
         : createProgressionCampaignMission(currentCampaign, campaignProgress))
       : currentChallenge
         ? createCurrentChallenge(currentChallenge)
-        : new Game({ difficulty, seed: Date.now() >>> 0, mapId: selectedMap, mapRevision: 1, rulesetId: skirmishRulesetId(selectedRuleset, $('skirmishBridgeIncome').checked), rulesetRevision: 1 }));
+        : new Game({ difficulty, seed: Date.now() >>> 0, mapId: selectedMap, mapRevision: 1, rulesetId: skirmishRulesetId(selectedRuleset, $('skirmishBridgeIncome').checked, $('skirmishFog').checked), rulesetRevision: 1 }));
+  resetBattlePresentation();
   populateBuildCards();
   populateFieldGuide(game);
   if (!currentChallenge && !currentCampaign) {
@@ -1108,7 +1159,7 @@ function start(
     ? 'CAMPAIGN'
     : currentChallenge
       ? 'FIELD TRIAL'
-      : 'SOLO SKIRMISH';
+      : supportsFog(game.ruleset) ? 'SKIRMISH · FOG' : 'SOLO SKIRMISH';
   $('opponentLabel').textContent = mission
     ? mission.name.toUpperCase()
     : currentChallenge
@@ -1124,10 +1175,11 @@ function start(
       ? CAMPAIGN_CHAPTERS.find((c) => c.id === mission.chapterId).theme
       : 'woodland',
   );
+  renderer.resize();
   $('speed').textContent = '1×';
   pauseControl();
   $('pause').onclick = toggleBattlePause;
-  renderer.camera = restored && !fresh ? game.state.frontline : 450;
+  renderer.camera = restored && !fresh ? battleFront() : 450;
   renderer.clampCamera();
   initAudio();
   sound('build');
@@ -1421,7 +1473,7 @@ function beginBattleReport(resumed) {
       identity: identityOf(game, scenarioForBattle(currentChallenge, currentCampaign, game)),
       mode: currentCampaign ? 'campaign' : currentChallenge ? 'challenge' : 'skirmish',
       id: currentCampaign || currentChallenge,
-      name: authored?.name || `${game.map.name} skirmish`,
+      name: authored?.name || `${game.map.name} skirmish${supportsFog(game.ruleset) ? ' · Fog · post-battle full information' : ''}`,
     });
   } catch { reportFault = true; }
 }
@@ -1731,7 +1783,7 @@ function updateResume() {
       : cid
         ? `TRIAL · ${CHALLENGES.find((c) => c.id === cid).name.toUpperCase()}`
         : valid.map.id === 'classic' ? 'BATTLE' : valid.map.name.toUpperCase();
-    const ruleLabel = !mid && !cid && valid.schemaVersion === 3 ? ` · ${valid.ruleset.endgame.name.toUpperCase()}${valid.state.bridgeControl ? ' · BRIDGES' : ''}${supportsCitadelOptions(valid.ruleset) ? ' · CITADEL CHOICES' : ''}` : '';
+    const ruleLabel = !mid && !cid && valid.schemaVersion === 3 ? ` · ${valid.ruleset.endgame.name.toUpperCase()}${valid.state.bridgeControl ? ' · BRIDGES' : ''}${supportsCitadelOptions(valid.ruleset) ? ' · CITADEL CHOICES' : ''}${supportsFog(valid.ruleset) ? ' · FOG' : ''}` : '';
     button.textContent = `RESUME ${name}${ruleLabel} · ${timeText(valid.state.time)}`;
     button.onclick = () => start(valid, cid, mid);
     if (valid.limitReason) button.textContent = `VIEW PAUSED ${name}${ruleLabel} · ${timeText(valid.state.time)}`;
@@ -1792,6 +1844,7 @@ function finish() {
         : won
           ? 'Your army broke the enemy citadel.'
           : 'Your citadel fell. Try a different army or defend another lane.';
+  if (supportsFog(game.ruleset)) $('resultCopy').textContent += ' Fog battle ended. The field and report now reveal full information.';
   finishProtectedObjectives();
   $('resultTime').textContent = timeText(game.state.time);
   $('resultKills').textContent = game.state.stats.kills[0];
@@ -2028,7 +2081,7 @@ function activateBattlePoint(w, { repeatBuild = false } = {}) {
       sound('error');
     }
   } else {
-    const b = game.state.buildings
+    const b = battleView().state.buildings
       .filter((b) => b.side === 0)
       .sort(
         (a, b) =>
@@ -2041,6 +2094,8 @@ function activateBattlePoint(w, { repeatBuild = false } = {}) {
       sound('click');
     }
   }
+  refreshPresentation();
+  if (supportsFog(game.ruleset)) updateHUD();
 }
 function resetBattleGesture() {
   const captured = pointer?.id;
@@ -2152,7 +2207,7 @@ window.addEventListener('keydown', (e) => {
   }
 });
 document.addEventListener('visibilitychange', () => {
-  if (document.hidden) audio.setScene('paused');
+  if (document.hidden) { holdInterruptedDialogs(); audio.setScene('paused'); }
   else { retryHistorySave(); retryPreferences(); }
   if (document.hidden && started && !paused && game.state.winner === null)
     pause(true);
@@ -2225,15 +2280,18 @@ new ResizeObserver(() => syncChoice()).observe($('buildCards'));
 let hudTimer = 0,
   lastProfileCheck = 0;
 function updateHUD() {
-  const s = game.state;
+  const view = battleView(), s = view.state;
   updateCitadelUI();
   const bridgeMode = !!s.bridgeControl;
+  const controlMode = supportsCampaignControl(game.ruleset);
+  const crossing = controlMode ? campaignControlStatus(game) : null;
   $('app').classList.toggle('bridge-income', bridgeMode);
+  $('objectiveProgress').removeAttribute('aria-label');
   const bridgeRate = bridgeMode ? bridgeIncome(game)[0] : 0;
   const bridgeLabel = bridgeMode ? `Bridges +${bridgeRate.toFixed(2)} /s` : '';
-  $('bridgeBattleStatus').classList.toggle('hidden', !bridgeMode);
-  if (bridgeMode) {
-    const status = bridgeSummary(game);
+  $('bridgeBattleStatus').classList.toggle('hidden', !bridgeMode && !controlMode);
+  if (bridgeMode || controlMode) {
+    const status = (controlMode ? controlProgressDescription(crossing) + ' ' : '') + bridgeSummary(game);
     if ($('bridgeBattleStatus').textContent !== status) $('bridgeBattleStatus').textContent = status;
     $('minimap').setAttribute('aria-describedby', 'bridgeBattleStatus');
   } else $('minimap').removeAttribute('aria-describedby');
@@ -2252,9 +2310,13 @@ function updateHUD() {
     [0, 'your'],
     [1, 'enemy'],
   ]) {
-    const hp = Math.ceil((s.bases[i].hp / s.bases[i].maxHp) * 100);
-    $(prefix + 'Hp').style.width = hp + '%';
-    $(prefix + 'HpText').textContent = hp + '%';
+    const known = Number.isFinite(s.bases[i].hp);
+    const hp = known ? Math.ceil((s.bases[i].hp / s.bases[i].maxHp) * 100) : null;
+    $(prefix + 'Hp').style.width = known ? hp + '%' : '';
+    $(prefix + 'Hp').classList.toggle('hp-unknown', !known);
+    $(prefix + 'Hp').setAttribute('aria-hidden', 'true');
+    $(prefix + 'HpText').textContent = known ? hp + '%' : '?';
+    $(prefix + 'HpText').setAttribute('aria-label', known ? `${prefix === 'your' ? 'Your' : 'Enemy'} citadel health ${hp} percent.` : 'Enemy citadel health unknown.');
   }
   $('phase').innerHTML =
     s.time > 420 && game.ruleset?.endgame?.forcedDecay !== false
@@ -2297,7 +2359,9 @@ function updateHUD() {
       currentCampaign && !outcome.completed && !outcome.failed
         ? outcome.objectives
             .map((o) =>
-              o.type === 'destroy'
+              o.type === 'control'
+                ? controlProgressLabel(crossing)
+                : o.type === 'destroy'
                 ? `${o.value}/${o.target} targets`
                 : o.type === 'protect'
                   ? `${o.value}/${o.target} protected`
@@ -2311,6 +2375,7 @@ function updateHUD() {
             )
             .join(' · ')
         : outcome.label;
+    if (controlMode) $('objectiveProgress').setAttribute('aria-label', controlProgressDescription(crossing));
     $('objectiveTime').textContent =
       `${timeText(Math.ceil(Math.max(0, authored.timeLimit - s.time)))} remaining`;
   }
@@ -2322,8 +2387,42 @@ function updateHUD() {
       ? `You ${bridgeStatus(game).filter(b => b.owner === 0).length} · Enemy ${bridgeStatus(game).filter(b => b.owner === 1).length}`
       : `${game.map.lanes.length} ${game.map.lanes.length === 1 ? 'road' : 'roads'}`;
   }
+  updateFogMemoryDetails(view);
+  if (view.fog) {
+    const description = observationHUD(view).description;
+    $('battle').setAttribute('aria-description', description);
+    $('minimap').setAttribute('aria-label', 'Known terrain minimap. ' + description);
+    $('front').title = 'Own front: follows allied ground troops and forward buildings, without scouting.';
+    $('front').setAttribute('aria-label', 'Follow your own front. Does not reveal enemies.');
+  } else {
+    $('battle').removeAttribute('aria-description');
+    $('minimap').setAttribute('aria-label', 'Map overview. Tap to move the camera.');
+    $('front').title = 'Follow frontline';
+    $('front').setAttribute('aria-label', 'Follow the frontline');
+  }
   updateSelection();
   updateCampaignDeck();
+}
+function updateFogMemoryDetails(view) {
+  const details = view.fog?.enabled ? observationHUD(view).memoryDetails : [];
+  const panel = $('pauseFogDetails'), list = $('pauseFogList'), shown = details.length > 0;
+  const hadFocus = panel.contains(document.activeElement);
+  panel.classList.toggle('hidden', !shown);
+  $('fogMemoryHint').classList.toggle('hidden', !shown);
+  $('mapDefaultNote').classList.toggle('hidden', shown);
+  if (shown) $('pause').setAttribute('aria-describedby', 'fogMemoryHint');
+  else $('pause').removeAttribute('aria-describedby');
+  const signature = JSON.stringify(details);
+  // Paused memories cannot advance. Keep mounted entries/focus stable across frames.
+  if (list.dataset.memories === signature) return;
+  list.dataset.memories = signature;
+  list.replaceChildren(...details.map(text => {
+    const item = document.createElement('li'); item.textContent = text;
+    item.setAttribute('tabindex', '0'); return item;
+  }));
+  $('pauseFogSummary').textContent = `Last-seen details (${details.length})`;
+  if (!shown) panel.open = false;
+  if (hadFocus) (shown ? $('pauseFogSummary') : paused ? $('resume') : $('pause')).focus();
 }
 let heardEffects = new WeakSet(),
   heardProjectiles = new WeakSet();
@@ -2340,6 +2439,14 @@ function updateAudio() {
             : 'defeat'
           : 'battle',
   );
+  if (supportsFog(game.ruleset)) {
+    const result = fogAudio.update(battleView(), { camera: renderer.camera, width: renderer.width, scale: renderer.scale, paused: !started || paused || coachingHold || document.hidden || !!ended });
+    if (started && !paused && !coachingHold && !ended && !document.hidden) {
+      audio.setIntensity(result.intensity);
+      for (const cue of result.sounds) sound(cue.name, {pan:cue.pan, volume:cue.volume});
+    }
+    return;
+  }
   if (!started || paused || coachingHold || ended) return;
   const s = game.state;
   audio.setIntensity(
@@ -2416,9 +2523,6 @@ function frame(now) {
       if (step?.code === 'save-safety-limit') holdBattleSafety(step.reason);
     }
     sampleBattleReport();
-    if (follow)
-      renderer.camera +=
-        (game.state.frontline - renderer.camera) * Math.min(1, dt * 3);
     saveTimer += dt;
     if (saveTimer > 5) {
       save();
@@ -2426,6 +2530,9 @@ function frame(now) {
     }
     finish();
   }
+  refreshPresentation();
+  if (follow && started && !paused && !coachingHold && game.state.winner === null && !objectiveOutcome)
+    renderer.camera += (battleFront() - renderer.camera) * Math.min(1, dt * 3);
   updateAudio();
   ui.paused =
     paused || coachingHold || !started || game.state.winner !== null || !!objectiveOutcome;
@@ -2442,10 +2549,10 @@ function frame(now) {
   ui.protectedTargets = missionTargets
     .filter((t) => t.kind === 'protect' && t.building)
     .map((t) => t.building.id);
-  renderer.draw(game, ui, dt);
+  renderer.draw(battleView(), ui, dt);
   if (started && !paused && !objectiveOutcome) drawCampaignGuidance(renderer, game, ui);
   hudTimer += dt;
-  if (hudTimer > 0.1) {
+  if (supportsFog(game.ruleset) || hudTimer > 0.1) {
     updateHUD();
     hudTimer = 0;
   }
@@ -2534,7 +2641,14 @@ function setMode(value) {
 }
 function updateSkirmishRules() {
   const bridgeMode = $('skirmishBridgeIncome').checked;
-  const rules = getRuleset(skirmishRulesetId(selectedRuleset, bridgeMode), 1);
+  const fog = $('skirmishFog').checked;
+  const compatible = fogSetupAllowed(selectedMap, selectedRuleset, bridgeMode);
+  $('skirmishFog').disabled = !fog && !compatible;
+  $('skirmishRules').disabled = fog;
+  $('skirmishBridgeIncome').disabled = fog;
+  $('skirmishFogDescription').textContent = 'Requires Classic, open endgame and bridge income off. Known terrain; only current enemy contacts are visible. Last-seen buildings may be stale. Aim Volley within sight. Decorative projectile trails are omitted.';
+  renderMapSelection();
+  const rules = getRuleset(skirmishRulesetId(selectedRuleset, bridgeMode, fog && compatible), 1);
   $('skirmishRules').value = selectedRuleset;
   $('skirmishRulesDescription').textContent = rules.endgame.forcedDecay
     ? 'Eight buildings, including Rootwardens and gryphons that seek nearby enemies one road over. Production and structure damage increase at 5:00; citadels lose health from 7:00.'
@@ -2542,6 +2656,7 @@ function updateSkirmishRules() {
   if (!started && mode === 'skirmish') populateFieldGuide(rules);
 }
 $('skirmishRules').onchange = () => {
+  if ($('skirmishFog').checked) { $('skirmishRules').value = selectedRuleset; return; }
   const value = $('skirmishRules').value;
   if (!['frontier-air-local-open', 'frontier-air-local-timed'].includes(value)) return;
   selectedRuleset = value;
@@ -2550,10 +2665,13 @@ $('skirmishRules').onchange = () => {
 $('skirmishBridgeIncome').checked = preferences.skirmishBridgeIncome;
 $('skirmishBridgeDescription').textContent = BRIDGE_RULES_TEXT;
 $('skirmishBridgeIncome').onchange = () => {
+  if ($('skirmishFog').checked) { $('skirmishBridgeIncome').checked = preferences.skirmishBridgeIncome; return; }
   preferences.skirmishBridgeIncome = $('skirmishBridgeIncome').checked;
   savePreferences();
   updateSkirmishRules();
 };
+$('skirmishFog').checked = false;
+$('skirmishFog').onchange = () => { updateSkirmishRules(); };
 updateSkirmishRules();
 for (const button of document.querySelectorAll('[data-mode]'))
   button.onclick = () => {
@@ -2746,12 +2864,13 @@ function updateCitadelUI() {
   $('citadelBattleStatus').classList.toggle('hidden', !enabled);
   updateCitadelSaveWarning();
   if (!enabled) return;
-  const own = citadelOptionStatus(game, 0), enemy = citadelOptionStatus(game, 1);
+  const own = citadelOptionStatus(game, 0);
+  const view = battleView();
   const text = citadelStatusText(game, 0, {paused});
   $('pauseCitadelStatus').textContent = text;
   $('citadelBattleStatus').textContent = text;
   $('citadelPlayerStatus').textContent = `${Math.ceil(game.state.bases[0].hp)} / ${game.state.bases[0].maxHp} HP. ${text}`;
-  $('citadelEnemyStatus').textContent = `${Math.ceil(game.state.bases[1].hp)} / ${game.state.bases[1].maxHp} HP. ${citadelStatusText(game, 1, {paused})}`;
+  $('citadelEnemyStatus').textContent = view.fog ? observedEnemyCitadelText(view) : `${Math.ceil(game.state.bases[1].hp)} / ${game.state.bases[1].maxHp} HP. ${citadelStatusText(game, 1, {paused})}`;
   $('citadelAIPolicy').textContent = game.ai ? CITADEL_AI_TEXT : 'This battle uses a fixed enemy formation. It does not buy citadel choices or make other new spending decisions. The same 190-gold cost and effects apply to either side; no side receives extra gold.';
   $('citadelReadiness').textContent = own.choice ? `${own.label} chosen. One choice per battle.`
     : !citadelDialogSafe() ? 'Purchasing is unavailable while this battle or its saved checkpoint is interrupted.'
@@ -2766,7 +2885,7 @@ function updateCitadelUI() {
   if (citadelNoticeGame !== game) { citadelNoticeGame = game; citadelNoticePhase = phase; }
   else if (!paused && phase !== citadelNoticePhase) {
     if (own.choice === 'regen' && ['healing','waiting','full','decay'].includes(phase))
-      toast(phase === 'healing' ? 'Citadel recovering · +3 HP/sec.' : phase === 'waiting' ? 'Regeneration interrupted · wait 8 seconds without damage.' : phase === 'full' ? 'Citadel fully repaired.' : 'Timed decay has stopped regeneration.');
+      toast(phase === 'healing' ? 'Citadel recovering · +3 HP/sec.' : phase === 'waiting' ? 'Regeneration interrupted · wait 8 seconds without damage.' : phase === 'full' ? 'Citadel at full health.' : 'Timed decay has stopped regeneration.');
     citadelNoticePhase = phase;
   }
 }
@@ -2794,6 +2913,7 @@ function purchaseCitadelOption(kind) {
   const message = kind === 'arrows' ? 'Extra Arrow chosen. A second enemy in range receives the extra shot.' : 'Regeneration chosen. Recovery can begin after 8 seconds without damage and never exceeds full health.';
   $('citadelPurchaseStatus').textContent = message;
   sound('upgrade');
+  refreshPresentation();
   citadelUnsavedGame = game;
   const persisted = save();
   updateCitadelUI();
@@ -2822,13 +2942,16 @@ function syncPauseMenu() {
   const trial = currentChallenge && getChallengeForGame(game, currentChallenge);
   const noun = mission ? 'mission' : trial ? 'field trial' : 'battle';
   $('pauseBattleName').textContent = mission?.name || trial?.name || game.map.name;
-  $('pauseContext').textContent = `${mission ? 'Campaign' : trial ? 'Field trial' : 'Skirmish'} · ${timeText(game.state.time)} · ${speed}× speed`;
+  $('pauseContext').textContent = `${mission ? 'Campaign' : trial ? 'Field trial' : supportsFog(game.ruleset) ? 'Skirmish · Fog' : 'Skirmish'} · ${timeText(game.state.time)} · ${speed}× speed`;
   updateCitadelUI();
   $('pauseObjective').textContent = mission?.objective || trial?.objective || 'Destroy the enemy citadel.';
-  $('pauseBridgeDetails').classList.toggle('hidden', !game.state.bridgeControl);
-  if (game.state.bridgeControl) {
-    $('pauseBridgeStatus').textContent = bridgeSummary(game);
-    $('pauseBridgeRules').textContent = BRIDGE_RULES_TEXT;
+  const controlMode = supportsCampaignControl(game.ruleset);
+  $('pauseBridgeDetails').classList.toggle('hidden', !game.state.bridgeControl && !controlMode);
+  if (game.state.bridgeControl || controlMode) {
+    $('pauseBridgeTitle').textContent = controlMode ? 'Supply crossings' : 'Bridge control · experimental';
+    $('pauseBridgeStatus').textContent = (controlMode ? controlProgressDescription(campaignControlStatus(game)) + ' ' : '') + bridgeSummary(game);
+    $('pauseBridgeRules').textContent = controlMode ? CAMPAIGN_CONTROL_RULES_TEXT : BRIDGE_RULES_TEXT;
+    $('pauseBridgeLegend').textContent = controlMode ? CONTROL_MAP_LEGEND : 'Map labels: Y = you, E = enemy, — = unowned, X = payout blocked. An arrow points to the side attempting a ground capture. Bridges are numbered from the top road.';
   }
   $('restartBattle').textContent = `Restart ${noun}…`;
   $('restartTitle').textContent = `Restart ${noun}?`;
@@ -3052,7 +3175,7 @@ function syncSettings() {
         : typeof row.mapId === 'string' && Object.hasOwn(MAPS, row.mapId)
           ? `Skirmish · ${MAPS[row.mapId].name}`
           : 'Skirmish';
-    p.textContent = `${row.draw ? 'DRAW' : row.won ? 'VICTORY' : 'DEFEAT'} · ${label} · ${timeText(Number.isFinite(row.time) ? row.time : 0)}`;
+    p.textContent = `${row.draw ? 'DRAW' : row.won ? 'VICTORY' : 'DEFEAT'} · ${label}${row.identity && supportsFog(getRuleset(row.identity.ruleset.id, row.identity.ruleset.revision)) ? ' · Fog' : ''} · ${timeText(Number.isFinite(row.time) ? row.time : 0)}`;
     $('battleHistory').append(p);
   }
 }
@@ -3249,6 +3372,7 @@ document.addEventListener('keyup', (event) => {
   guardInput(event, () => inputScope.keyUp(event));
 }, true);
 window.addEventListener('blur', () => {
+  holdInterruptedDialogs();
   cancelKeyboardCapture();
   inputScope.interrupt();
   resetBattleGesture();
@@ -3661,7 +3785,7 @@ $('backupFile').onchange = async () => {
     const battleName = admitted
       ? admitted.campaignId ? CAMPAIGN_MISSIONS.find(m => m.id === admitted.campaignId).name
         : admitted.challengeId ? CHALLENGES.find(c => c.id === admitted.challengeId).name
-          : `Skirmish · ${admitted.game.map.name}` : null;
+          : `Skirmish · ${admitted.game.map.name}${supportsFog(admitted.game.ruleset) ? ' · Fog' : ''}` : null;
     $('backupSummary').textContent =
       `${overview.cleared}/${overview.total} campaign missions · ${overview.stars}/${overview.maxStars} stars · ${Object.keys(parsed.data.trials).length}/${CHALLENGES.length} trial records. ${battle ? `Saved battle: ${battleName} at ${timeText(battle.game.state.time)}.` : 'No battle in this file. Your current saved battle will be removed.'}`;
     $('backupImportStatus').textContent = '';
@@ -4172,6 +4296,7 @@ for (const id of ['app', 'selectionPanel'])
 // before it leaves, and reconcile the existing entry on return without adding
 // another guard or assuming that the browser actually retained the document.
 window.addEventListener('pagehide', () => {
+  holdInterruptedDialogs();
   navigationAway = true;
   interruptMobileInput();
   if (started && game.state.winner === null && !objectiveOutcome) pause(true);

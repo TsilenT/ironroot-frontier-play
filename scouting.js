@@ -1,3 +1,4 @@
+import { supportsCampaignControl, bridgeZones } from './bridge-control.js';
 import { buildBounds, getMap } from './engine.js';
 
 import { getRuleset } from './rulesets.js';
@@ -123,12 +124,14 @@ export function getMissionScouting(mission, context = null) {
   const armies = [armyFor(left, 0, sourceMap, definitions), armyFor(right, 1, sourceMap, definitions)];
   const required = mission.requiredTargets;
   if (required !== undefined && (!Number.isInteger(required) || required < 1 || required > markedCount)) throw new RangeError('Scouting has an invalid required target count.');
+  const control = supportsCampaignControl(ruleset) ? ruleset.campaignControl : null;
   const objectives = {
     protectedCount, markedCount,
-    summary: required !== undefined ? `Destroy any ${required} of ${markedCount} named enemy positions; the others may remain standing.` : `${protectedCount} allied structure${protectedCount === 1 ? '' : 's'} to protect; ${markedCount} enemy destruction target${markedCount === 1 ? '' : 's'}.`,
+    ...(control ? {control:{seconds:control.seconds,bridges:control.requiredBridges,zones:bridgeZones(sourceMap)}} : {}),
+    summary: control ? `Secure any ${control.requiredBridges} of ${sourceMap.lanes.length} central crossings for ${control.seconds} cumulative seconds. Contested progress pauses without resetting. No bridge gold bonus. Destroying the enemy citadel also wins.` : required !== undefined ? `Destroy any ${required} of ${markedCount} named enemy positions; the others may remain standing.` : `${protectedCount} allied structure${protectedCount === 1 ? '' : 's'} to protect; ${markedCount} enemy destruction target${markedCount === 1 ? '' : 's'}.`,
   };
   return freeze({
-    missionName: mission.name || 'Mission', map, armies, objectives, legend: LEGEND,
+    missionName: mission.name || 'Mission', map, armies, objectives, legend: LEGEND + (control ? ' Outlined rectangles at the river mark the three capture zones.' : ''),
     summary: `${map.summary}. Your army starts on the left with ${left.length} building${left.length === 1 ? '' : 's'}; the enemy starts on the right with ${right.length}. ${objectives.summary}`,
   });
 }
@@ -139,6 +142,7 @@ function svgFor(report) {
   const description = `${report.summary} North is at the top. ${report.legend} Symbols show starting positions and are enlarged for readability. Building names, levels and roads are listed below the map.`;
   const territories = map.territories.map(bounds => `<rect x="${bounds.minX}" y="${bounds.minY}" width="${bounds.maxX - bounds.minX}" height="${bounds.maxY - bounds.minY}" rx="45" fill="${bounds.side === 0 ? '#9abc86' : '#d9856f'}" fill-opacity=".07"/>`).join('');
   const roads = map.lanes.map((y, lane) => `<g class="scouting-road" data-lane="${lane}"><path d="M 0 ${y} H ${map.width}" stroke="#666e5e" stroke-width="32"/><path d="M 0 ${y} H ${map.width}" stroke="#9fae9c" stroke-opacity=".65" stroke-width="4" stroke-dasharray="20 28"/></g>`).join('');
+  const crossings = (report.objectives.control?.zones || []).map(zone => `<rect class="scouting-crossing" x="${zone.x-zone.width/2}" y="${zone.y-zone.height/2}" width="${zone.width}" height="${zone.height}" fill="#e6c56f" fill-opacity=".2" stroke="#e6c56f" stroke-width="12"/>`).join('');
   const buildings = report.armies.flatMap(army => army.buildings.map(building => {
     const glyph = army.side === 0
       ? '<rect class="scouting-friendly" x="-29" y="-29" width="58" height="58" rx="5" fill="#9abc86" stroke="#eee9d9" stroke-width="7"/>'
@@ -152,7 +156,7 @@ function svgFor(report) {
   })).join('');
   // No IDs, event handlers, external resources, animation, or dynamic CSS.
   // The real world viewBox preserves both map width and vertical road spacing.
-  return `<svg class="scouting-map" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${map.width} ${map.height}" width="${map.width}" height="${map.height}" preserveAspectRatio="xMidYMid meet" role="img" aria-label="${escape(`${title}. ${description}`)}" focusable="false" style="display:block;width:100%;height:auto"><title>${escape(title)}</title><desc>${escape(description)}</desc><g aria-hidden="true"><rect width="${map.width}" height="${map.height}" rx="45" fill="#101916"/>${territories}${roads}<path d="M ${map.width / 2} 140 V ${map.height - 140}" stroke="#9fae9c" stroke-opacity=".45" stroke-width="5" stroke-dasharray="16 20"/>${buildings}</g></svg>`;
+  return `<svg class="scouting-map" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${map.width} ${map.height}" width="${map.width}" height="${map.height}" preserveAspectRatio="xMidYMid meet" role="img" aria-label="${escape(`${title}. ${description}`)}" focusable="false" style="display:block;width:100%;height:auto"><title>${escape(title)}</title><desc>${escape(description)}</desc><g aria-hidden="true"><rect width="${map.width}" height="${map.height}" rx="45" fill="#101916"/>${territories}${roads}<path d="M ${map.width / 2} 140 V ${map.height - 140}" stroke="#9fae9c" stroke-opacity=".45" stroke-width="5" stroke-dasharray="16 20"/>${crossings}${buildings}</g></svg>`;
 }
 
 /** Standalone safe SVG. Accepts a mission, not an unchecked report or HTML. */

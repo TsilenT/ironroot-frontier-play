@@ -1,5 +1,5 @@
 /** Optimistic cross-tab import barrier. LocalStorage is not an atomic transaction. */
-export const CURRENT_PROFILE_PROTOCOL_VERSION = 11;
+export const CURRENT_PROFILE_PROTOCOL_VERSION = 13;
 export const PROFILE_MARKER_KEY = 'ironroot.profile.v1';
 const FORMAT = 'ironroot-profile';
 const PHASES = ['ready', 'restoring', 'failed'];
@@ -29,12 +29,12 @@ function encoded(epoch, phase, version) { return JSON.stringify({ format: FORMAT
 
 /**
  * getBackend must expose throwing getItem/setItem/removeItem methods, never swallow read errors.
- * Protocol 2 fences expanded campaigns; protocol 3 fences explicit battle identities; protocol 4 fences earned campaign rosters; protocol 5 fences flight orders and campaign revision 3; protocol 6 fences automatic adjacent-road flyers and campaign revision 4; protocol 7 fences keyboard preferences from clients that reconstruct only the older fields; protocol 8 fences the expanded field-trial catalog from clients that discard unknown records; protocol 9 fences the optional Skirmish bridge preference and result identities from older writers; protocol 10 fences citadel campaign, field-trial and Skirmish result identities from older writers; protocol 11 fences immediate citadel purchases from writers that require the old 90-second wait.
+ * Protocol 2 fences expanded campaigns; protocol 3 fences explicit battle identities; protocol 4 fences earned campaign rosters; protocol 5 fences flight orders and campaign revision 3; protocol 6 fences automatic adjacent-road flyers and campaign revision 4; protocol 7 fences keyboard preferences from clients that reconstruct only the older fields; protocol 8 fences the expanded field-trial catalog from clients that discard unknown records; protocol 9 fences the optional Skirmish bridge preference and result identities from older writers; protocol 10 fences citadel campaign, field-trial and Skirmish result identities from older writers; protocol 11 fences immediate citadel purchases from writers that require the old 90-second wait; protocol 12 fences supported fog Skirmish identities and knowledge from older profile writers; protocol 13 fences Shared Crossing campaign progress, result identities and control checkpoints from clients that discard unknown missions.
  * Only construction upgrades a ready marker; a failed or uncertain upgrade requires reload.
  */
 export function createProfileSession(getBackend, { newEpoch = nextEpoch, requiredProtocolVersion = 1 } = {}) {
   if (typeof getBackend !== 'function' || typeof newEpoch !== 'function') throw new TypeError('A storage getter and epoch factory are required.');
-  if (![1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11].includes(requiredProtocolVersion)) throw new TypeError('The required profile protocol must be version 1, 2, 3, 4, 5, 6, 7, 8, 9, 10 or 11.');
+  if (![1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13].includes(requiredProtocolVersion)) throw new TypeError('The required profile protocol must be version 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12 or 13.');
   let boundRaw, boundKnown = false, initiallyUnavailable = false, transaction = null, upgradeAttempted = false, upgradeError = null;
   function backend() {
     let value;

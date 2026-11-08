@@ -1,6 +1,6 @@
 /** One pure admission boundary for Resume, backup and candidate saves. */
 import { Game, MAPS, getMap, getRuleset, LEGACY_RULESET_ID, validateEngineFields } from './engine.js';
-import { deepFreeze } from './rulesets.js';
+import { deepFreeze, FOG_SKIRMISH_RULESET_ID } from './rulesets.js';
 import * as campaign from './campaign.js';
 import { getChallenge, challengeScenarioForGame, evaluateChallenge } from './challenges.js';
 import { TRAINING_LESSONS } from './training.js';
@@ -62,13 +62,17 @@ function identityRef(ref,label){fields(ref,['id','revision']);if(typeof ref.id!=
 export function validateBattleIdentity(identity){
   fields(identity,['ruleset','map','scenario']);identityRef(identity.ruleset,'ruleset');identityRef(identity.map,'battlefield');
   let rules,map;try{rules=getRuleset(identity.ruleset.id,identity.ruleset.revision);map=getMap(identity.map.id,identity.map.revision);}catch{fail('This save needs a compatible ruleset or battlefield version.','unsupported-identity');}
+  if(rules.qaOnly)fail('This experimental ruleset is available only in the isolated QA shell, not profile saves or backups.','qa-only-ruleset');
   const scenario=resolveScenario(identity.scenario);
+  // Apply the supported fog scope here, not only in Game.restore: identity-only
+  // history rows and backups must obey the same Classic standard-Skirmish contract.
+  if(rules.id===FOG_SKIRMISH_RULESET_ID&&(rules.revision!==1||map.id!=='classic'||map.revision!==1||scenario.kind!=='skirmish'||scenario.id!=='standard'||scenario.revision!==1))fail('Fog is supported only for Classic standard Skirmish.','unsupported-identity');
   if(scenario.kind==='skirmish'){if(rules.campaignOnly||rules.authoredOnly)fail('This roster is only available in its authored scenario.');if(!own(MAPS,map.id))fail('This battlefield is only available in its authored scenario.');}
   else {if(map.id!==scenario.mapId||map.revision!==scenario.mapRevision)fail(`Authored missions require the ${getMap(scenario.mapId,scenario.mapRevision).name} battlefield.`);if(rules.revision!==scenario.rulesetRevision||(scenario.kind==='campaign'?!campaign.campaignRulesetAllowed(scenario.id,scenario.revision,rules.id):rules.id!==scenario.rulesetId))fail('Saved battle does not match its scenario rules.');}
   return deepFreeze({ruleset:{id:rules.id,revision:rules.revision},map:{id:map.id,revision:map.revision},scenario:{kind:scenario.kind,id:scenario.id,revision:scenario.revision}});
 }
 export function identityOf(game,scenario=scenarioForBattle()){
-  return validateBattleIdentity({ruleset:{id:game.ruleset.id,revision:game.ruleset.revision},map:{id:game.map.id,revision:game.map.revision},scenario:{kind:scenario.kind,id:scenario.id,revision:scenario.revision}});
+  return validateBattleIdentity({ruleset:{id:game.ruleset.id,revision:game.ruleset.revision},map:{id:game.map.id,revision:game.map.revision},scenario});
 }
 export function decodeBattle(value,{campaignProgress=campaign.createCampaignProgress()}={}){
   if(typeof value==='string'){battleByteLength(value);try{value=JSON.parse(value);}catch{fail('Saved battle is not valid JSON.');}}
@@ -98,9 +102,10 @@ export function decodeBattle(value,{campaignProgress=campaign.createCampaignProg
   return {game,scenario:identity.scenario,identity,challengeId:resolved.kind==='trial'?resolved.id:null,campaignId:resolved.kind==='campaign'?resolved.id:null};
 }
 export function encodeBattle(game,scenario=scenarioForBattle(),options={}){
+  // Validate the supplied object before selecting fields; never normalize away
+  // unknown scenario properties or invoke an unvalidated accessor.
+  identityOf(game,scenario);if(scenario.kind==='lesson')fail('Practice lessons are not saved.');
   const data=game.serialize(),ref={kind:scenario.kind,id:scenario.id,revision:scenario.revision};
   const value=data.version===3?{format:'ironroot-save',version:3,scenario:ref,game:data}:{format:'ironroot-save',version:2,challengeId:ref.kind==='trial'?ref.id:null,campaignId:ref.kind==='campaign'?ref.id:null,game:data};
-  // Validate scenario first even when an old envelope could not represent it.
-  identityOf(game,ref);if(ref.kind==='lesson')fail('Practice lessons are not saved.');
   decodeBattle(value,options);return value;
 }

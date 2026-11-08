@@ -1,5 +1,6 @@
 // Briefing copy only. Mission identity, unlocks and victory rules stay in campaign.js.
 const GOALS = {
+  'shared-crossing': 'Keep any two bridges clear long enough for the supply column to cross, or destroy the enemy citadel.',
   'roadside-watch': 'Build your first army and clear the marked raider barracks from the road.',
   'shield-at-the-fork': 'Push down both roads and destroy the three marked raider buildings.',
   'open-three-roads': 'Choose a force for each road and destroy all five marked enemy buildings.',
@@ -30,10 +31,12 @@ export function missionBriefing(mission) {
   const health = mission.objectives.find(o => o.type === 'health');
   const protectedCount = mission.objectives.filter(o => o.type === 'protect')
     .reduce((sum, objective) => sum + objective.targets.length, 0);
+  const control = mission.objectives.find(o => o.type === 'control');
   const facts = [];
   if (income) facts.push(`${income.amount} gold/sec at ${clock(mission.timeLimit)}`);
   else if (hold?.seconds === mission.timeLimit) facts.push(`Hold for ${clock(hold.seconds)}`);
   else facts.push(`${clock(mission.timeLimit)} time limit`);
+  if (control) facts.push(`Hold any ${control.bridges} bridges for ${control.seconds} seconds in total`, 'Contested progress pauses; secured time is kept', 'No bridge gold bonus');
   if (hold && hold.seconds !== mission.timeLimit) facts.push(`Hold for ${clock(hold.seconds)}`);
   if (health) facts.push(`Keep at least ${health.amount.toLocaleString('en-US')} citadel HP`);
   return {

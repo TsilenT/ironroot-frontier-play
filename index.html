@@ -103,9 +103,10 @@
           </button>
         </div>
         <div class="map-note" id="mapNote">
-          <span class="key">DRAG</span> to explore
+          <span id="mapDefaultNote"><span class="key">DRAG</span> to explore
           <span class="note-dot">·</span> <span class="key">TAP</span> a
-          building to manage it
+          building to manage it</span>
+          <span id="fogMemoryHint" class="hidden">Dashed markers: last seen · Details in Pause</span>
         </div>
         <div id="toast" class="toast" role="status"></div>
         <div class="selection-panel hidden" id="selectionPanel">
@@ -202,11 +203,16 @@
         <div class="pause-briefing">
           <h3 id="pauseBattleName"></h3>
           <p id="pauseObjective"></p>
+          <details id="pauseFogDetails" class="bridge-details fog-memory-details hidden">
+            <summary id="pauseFogSummary">Last-seen details</summary>
+            <p>Last-seen details are old observations, not confirmed current state. Crowded labels are omitted from the field. Positions run left to right along the known map.</p>
+            <ul id="pauseFogList" aria-label="Last-seen enemy details"></ul>
+          </details>
           <details id="pauseBridgeDetails" class="bridge-details hidden">
-            <summary>Bridge control · experimental</summary>
+            <summary id="pauseBridgeTitle">Bridge control · experimental</summary>
             <p id="pauseBridgeStatus"></p>
             <p id="pauseBridgeRules"></p>
-            <p>Map labels: Y = you, E = enemy, — = unowned, X = payout blocked. An arrow points to the side attempting a ground capture. Bridges are numbered from the top road.</p>
+            <p id="pauseBridgeLegend">Map labels: Y = you, E = enemy, — = unowned, X = payout blocked. An arrow points to the side attempting a ground capture. Bridges are numbered from the top road.</p>
           </details>
         </div>
         <p id="pauseCitadelLegacy" class="rules-description hidden">This saved battle keeps earlier rules. Start a new battle from its briefing for citadel choices.</p>
@@ -291,6 +297,11 @@
             <span>Bridge control income <small>Experimental · off by default</small></span>
           </label>
           <p id="skirmishBridgeDescription" class="rules-description"></p>
+          <label class="skirmish-bridge-label" for="skirmishFog">
+            <input type="checkbox" id="skirmishFog" aria-describedby="skirmishFogDescription" />
+            <span>Fog of war <small>Experimental · off by default</small></span>
+          </label>
+          <p id="skirmishFogDescription" class="rules-description"></p>
           <p class="rules-description">Citadel choices are available through Pause → Citadel choices. Spend 190 gold once on Extra Arrow or Regeneration, or keep the gold for your army.</p>
           <p class="rules-description">Saved battles keep their original rules.</p>
           <details class="map-picker" id="mapPicker">
@@ -392,7 +403,7 @@
         </button>
         <p class="save-status hidden" id="saveStatus" role="status"></p>
         <button id="exportUnreadableBattle" class="text-button hidden">Download original save</button>
-        <p class="welcome-foot">Campaign · Skirmish · Field trials · v0.20.3</p>
+        <p class="welcome-foot">Campaign · Skirmish · Field trials · v0.22.0</p>
         <div class="welcome-links">
           <a class="text-button training-link" id="welcomeTraining" href="./training.html" aria-label="Optional guided practice. Learn without changing your saved battle">Guided practice (optional) →</a>
           <button class="text-button" id="welcomeFullscreen" type="button" data-fullscreen aria-pressed="false" aria-describedby="welcomeFullscreenStatus">Enter fullscreen</button>
@@ -462,8 +473,8 @@
         </div>
         <div class="guide-tip">
           <b>A war of attrition.</b> Towers can be worn down by continuous
-          waves. After 5 minutes, production accelerates. After 7, both citadels
-          begin to crumble.
+          waves. After 5 minutes, production accelerates. Only in timed endgame,
+          both citadels begin to crumble after 7 minutes. Open endgame has no timed citadel decay.
         </div>
         <p class="controls">
           <b>Mouse:</b> Left-click to place once or select · Shift-click to keep building · Drag or middle mouse drag to pan · Right-click to cancel placement<br />
@@ -491,7 +502,7 @@
               roads and 24 sites per side. Long March adds a longer neutral
               crossing. Twin Span has two roads and 16 sites per side. Troop
               statistics and income rules stay the same. Chapters 1–4 and field trials use Classic. Chapter 5 also uses
-              Long March and Twin Span.
+              Long March and Twin Span. Shared Crossing in Chapter 6 uses Classic with cumulative bridge control and no bridge gold bonus.
             </p>
             <section id="flightGuide" class="flight-guide hidden"><h3 id="flightGuideTitle"></h3><p id="flightGuideText"></p></section>
           <p id="codexScope" class="codex-note"></p>

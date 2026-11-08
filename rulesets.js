@@ -1,5 +1,9 @@
-import { BRIDGE_CONTROL } from './bridge-control.js';
+import { BRIDGE_CONTROL, CAMPAIGN_CONTROL } from './bridge-control.js';
 import { CITADEL_OPTIONS } from './citadel-options.js';
+export const SHARED_CROSSING_RULESET_ID='frontier-campaign-shared-crossing';
+export const FOG_RULESET_ID='frontier-fog-experimental-open';
+export const FOG_SKIRMISH_RULESET_ID='frontier-fog-skirmish-open';
+export const FOG=Object.freeze({policy:'known-terrain-fog-v1',ordinaryRadius:320,flyerRadius:420,baseRadius:360,maxMemories:64,maxEffectsPerSide:128});
 /** Immutable whole-rule identities. Never mutate a bound game's definitions. */
 export function deepFreeze(value){if(value&&typeof value==='object'&&!Object.isFrozen(value)){Object.values(value).forEach(deepFreeze);Object.freeze(value);}return value;}
 export const SPELL = deepFreeze({cost:75,cooldown:25,radius:170,damage:92});
@@ -70,6 +74,9 @@ const authoredAirEntry=id=>deepFreeze({
   movement:{policy:'autonomous-air-local-v1',autonomousAir:{perception:300,retention:420,adjacentOnly:true}}
 });
 export const RULESETS=deepFreeze({
+  [SHARED_CROSSING_RULESET_ID]:deepFreeze({...autonomousAirEntry(SHARED_CROSSING_RULESET_ID,'Campaign · Shared Crossing',false,true),citadel:CITADEL_OPTIONS,campaignControl:CAMPAIGN_CONTROL}),
+  [FOG_RULESET_ID]:deepFreeze({...citadelEntry(FOG_RULESET_ID,false),name:'Fog of war (experimental) · Open-ended',experimental:true,qaOnly:true,fog:FOG}),
+  [FOG_SKIRMISH_RULESET_ID]:deepFreeze({...citadelEntry(FOG_SKIRMISH_RULESET_ID,false),name:'Fog of war (experimental) · Open-ended',experimental:true,fog:FOG}),
   [CITADEL_CAMPAIGN_RULESET_IDS[0]]:deepFreeze({...campaignEntry(CITADEL_CAMPAIGN_RULESET_IDS[0],'Campaign · First company + citadel choices',watchBuildings),citadel:CITADEL_OPTIONS}),
   [CITADEL_CAMPAIGN_RULESET_IDS[1]]:deepFreeze({...campaignEntry(CITADEL_CAMPAIGN_RULESET_IDS[1],'Campaign · Warden company + citadel choices',forkBuildings),citadel:CITADEL_OPTIONS}),
   [CITADEL_CAMPAIGN_RULESET_IDS[2]]:deepFreeze({...autonomousAirEntry(CITADEL_CAMPAIGN_RULESET_IDS[2],'Campaign · Automatic flyers + citadel choices',false,true),citadel:CITADEL_OPTIONS}),

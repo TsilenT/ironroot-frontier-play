@@ -1,5 +1,6 @@
 import {Game, BUILDINGS, MAPS, getRuleset} from './engine.js';
-import {CAMPAIGN_RULESET_IDS, CITADEL_CAMPAIGN_RULESET_IDS, AUTHORED_AIR_RULESET_ID, AUTHORED_CITADEL_RULESET_ID, deepFreeze} from './rulesets.js';
+import {CAMPAIGN_RULESET_IDS, CITADEL_CAMPAIGN_RULESET_IDS, AUTHORED_AIR_RULESET_ID, AUTHORED_CITADEL_RULESET_ID, SHARED_CROSSING_RULESET_ID, deepFreeze} from './rulesets.js';
+import {campaignControlStatus, CAMPAIGN_CONTROL_RULES_TEXT} from './bridge-control.js';
 import {ONBOARDING_CHAPTER, ONBOARDING_MISSIONS, isOnboardingMission} from './campaign-onboarding.js';
 export {ONBOARDING_CHAPTER, ONBOARDING_MISSIONS, isOnboardingMission} from './campaign-onboarding.js';
 import {INTRO_CHAPTER, INTRO_MISSIONS, introMedalMet, isIntroMission} from './intro-campaign.js';
@@ -227,6 +228,24 @@ export const CAMPAIGN_MISSIONS = [
 
 ];
 
+/** New identities are additive, never historical mission/revision rewrites. */
+export const SHARED_CROSSING_CHAPTER=deepFreeze({id:'river-compact',number:6,name:'The River Compact',subtitle:'Keep the supply routes open',theme:'woodland',description:'The river charter has allies, but the convoys still need safe crossings. Rowan must turn the agreement into a working supply route while the remaining toll companies try to break it.',epilogue:'The first shared convoy crosses under the compact’s colors. The villages have a route they can keep open together.'});
+export const SHARED_CROSSING_MISSIONS=[{
+  id:'shared-crossing',chapterId:'river-compact',number:17,name:'Shared Crossing',subtitle:'Chapter 6 preview · Secure the convoy route',
+  scenarioRevision:1,mapId:'classic',mapRevision:1,rulesetId:SHARED_CROSSING_RULESET_ID,rulesetRevision:1,prototype:true,
+  description:'The first compact convoy can use any two river crossings. Rowan must fund their escort while three toll companies try to deny passage.',
+  dialogue:{speaker:'Captain Rowan',text:'Choose two crossings for the convoy. If one is contested, we keep the time already secured while you open the route again.'},
+  victoryText:'The convoy crosses the river. The compact’s first shared supply route is open.',
+  objective:'Control any two bridges, uncontested, for 60 cumulative seconds within 4:30. Losing control pauses the total without resetting it. Destroying the enemy citadel also wins; your citadel must survive.',
+  hint:'Choose any pair of roads and pay for ground troops plus support on both. Archers counter the southern flyers; wizards and siege can break the other ground formations. The third road is optional. Bridges earn no gold.',
+  difficulty:'normal',seed:6101,timeLimit:270,startingGold:1100,startingHealth:6000,enemyGold:0,ai:false,prerequisites:['common-ground'],
+  playerBuildings:[['mint',410,1]],
+  enemyBuildings:[['barracks',2230,0,2],['archery',2510,0],['barracks',2230,1,2],['sanctum',2510,1],['barracks',2230,2,2],['aerie',2510,2]],
+  objectives:[{id:'supply-route',type:'control',label:'Secure any two bridges for 60 cumulative seconds',seconds:60,bridges:2}],
+  medals:[swift(180),intact(4500)],
+  briefing:[CAMPAIGN_CONTROL_RULES_TEXT,'Your starting mine represents 190 gold of investment; the enemy’s fixed force represents 1,369 gold of buildings and upgrades. You must fund the troops for your chosen two roads.'],
+}];
+
 /** New chapter briefings derive force counts/levels from the actual paid setup. */
 function describeDeployment(placements,map) {
   const names=map.lanes.length===2?['North','South']:['North','Middle','South'];
@@ -242,11 +261,11 @@ const firstAuthoredIds=Object.fromEntries(Object.keys(MAPS).map(mapId=>[mapId,ne
 // Legacy catalogs retain their order, totals and completion semantics.
 export const ALL_CAMPAIGN_MISSIONS=[...CAMPAIGN_MISSIONS,...INTRO_MISSIONS];
 export const ALL_CAMPAIGN_CHAPTERS=[INTRO_CHAPTER,...CAMPAIGN_CHAPTERS];
-export const CAMPAIGN_PROGRESS_MISSIONS=[...ALL_CAMPAIGN_MISSIONS,...ONBOARDING_MISSIONS];
+export const CAMPAIGN_PROGRESS_MISSIONS=[...ALL_CAMPAIGN_MISSIONS,...ONBOARDING_MISSIONS,...SHARED_CROSSING_MISSIONS];
 for(const mission of CAMPAIGN_PROGRESS_MISSIONS) {
   mission.mapId=mission.mapId||'classic';
   mission.ai=mission.ai===true;
-  if(mission.chapterId==='frontier') {
+  if(mission.chapterId==='frontier'||mission.chapterId==='river-compact') {
     const map=MAPS[mission.mapId];
     mission.deployment={player:describeDeployment(mission.playerBuildings,map),enemy:describeDeployment(mission.enemyBuildings,map)};
     mission.briefing=[
@@ -263,6 +282,8 @@ for(const mission of CAMPAIGN_PROGRESS_MISSIONS) {
   mission.protectedTargets=mission.objectives.flatMap(o=>o.type==='protect'?o.targets:[]);
   if(!mission.optional&&!isOnboardingMission(mission.id))mission.reward=`Unlocks ${CAMPAIGN_MISSIONS.filter(m=>m.prerequisites.includes(mission.id)).map(m=>m.name).join(' / ')||'the campaign epilogue'}`;
 }
+
+deepFreeze(SHARED_CROSSING_MISSIONS);
 
 // Published revision 1/2/3 descriptors stay exact. Current starts select a
 // separate automatic-air revision without changing old saves or replay records.
@@ -329,7 +350,7 @@ export function getCampaignMission(id,revision=1) {
 /** Current deliberate starts/previews only. Existing attempts use their rules. */
 export function getCurrentCampaignRevision(id,progress) {
   getCampaignMission(id,1);
-  return CITADEL_CAMPAIGN_REVISION;
+  return id==='shared-crossing'?1:CITADEL_CAMPAIGN_REVISION;
 }
 function onboardingLaunchStage(id,progress) {
   return Math.max(ONBOARDING_MISSIONS.findIndex(m=>m.id===id)+1,getCampaignRoster(progress).stage);
@@ -342,7 +363,9 @@ export function getCampaignRevisionForRuleset(id,rulesetId,rulesetRevision=1) {
   let rules;
   try{rules=getRuleset(rulesetId,rulesetRevision);}catch{throw new RangeError('Unknown campaign ruleset identity: '+String(rulesetId));}
   let revision;
-  if(isOnboardingMission(id)) {
+  if(id==='shared-crossing'){
+    if(rules.id===SHARED_CROSSING_RULESET_ID)revision=1;
+  } else if(isOnboardingMission(id)) {
     const minimum=ONBOARDING_MISSIONS.findIndex(m=>m.id===id),stage=CAMPAIGN_RULESET_IDS.indexOf(rules.id);
     if(CITADEL_CAMPAIGN_RULESET_IDS.indexOf(rules.id)>=minimum)revision=CITADEL_CAMPAIGN_REVISION;
     else if(rules.id===AUTONOMOUS_AIR_CAMPAIGN_RULESET_ID)revision=AUTONOMOUS_AIR_CAMPAIGN_REVISION;
@@ -441,6 +464,10 @@ export function currentIncome(game,side=0) {
 }
 function metric(game,objective,atDeadline,targets) {
   const s=game.state;
+  if(objective.type==='control'){
+    const status=campaignControlStatus(game),value=status.seconds;
+    return {met:status.complete,progress:value/objective.seconds,value,target:objective.seconds,count:status.count,required:status.required,advancing:status.advancing,text:`${value.toFixed(1)}/${objective.seconds}s secured · ${status.count}/${status.required} bridges clear${status.complete?'':status.advancing?' · Advancing':' · Progress paused'}`};
+  }
   if(objective.type==='destroy') {
     const own=targets.filter(t=>t.kind==='destroy'&&objective.targets.some(x=>x.type===t.type&&x.x===t.x&&x.lane===t.lane));
     const count=own.filter(t=>!t.building).length;
@@ -470,7 +497,7 @@ export function evaluateCampaignMission(game,id,revision) {
   const defeated=s.winner===1||s.winner==='draw'||s.bases[0].hp<=0;
   const broken=objectives.find(o=>o.failed);
   const coreVictory=s.winner===0||s.bases[1].hp<=0;
-  const completed=!defeated&&!broken&&(coreVictory||objectives.every(o=>o.met));
+  const completed=!defeated&&!broken&&(mission.mode!=='control'||s.time<=mission.timeLimit+1e-7)&&(coreVictory||objectives.every(o=>o.met));
   const failed=defeated||!!broken||(!completed&&atDeadline);
   const advancing=objectives.filter(o=>!['protect','health'].includes(o.type));
   let progress=advancing.reduce((n,o)=>n+o.progress,0)/advancing.length;
@@ -528,6 +555,7 @@ export function isMissionUnlocked(progress,id,revision=1) {
 export const CAMPAIGN_RULESET_STAGES=Object.freeze({
   'frontier-campaign-watch':1,'frontier-campaign-fork':2,'frontier-campaign-open':3,'frontier-campaign-flight':3,[AUTONOMOUS_AIR_CAMPAIGN_RULESET_ID]:3,
   ...Object.fromEntries(CITADEL_CAMPAIGN_RULESET_IDS.map((id,index)=>[id,index+1])),
+  [SHARED_CROSSING_RULESET_ID]:3,
 });
 export function canUseCampaignRuleset(progress,id,revision,rulesetId) {
   if(!campaignRulesetAllowed(id,revision,rulesetId))return false;
@@ -540,6 +568,8 @@ export function getCampaignLaunchMission(id,progress) {
   const opening=isOnboardingMission(id),stage=opening?onboardingLaunchStage(id,progress):null;
   const presentation=opening&&stage===3?AUTONOMOUS_AIR_CAMPAIGN_MISSIONS.find(m=>m.id===id):mission;
   return {...mission,briefing:presentation.briefing,hint:presentation.hint,scenarioRevision:revision,
+    // Current navigation copy only; published scenario descriptors remain immutable.
+    ...(id==='common-ground'?{reward:'Unlocks Shared Crossing'}:id==='shared-crossing'?{reward:'Completes the Chapter 6 preview'}:{}),
     ...(opening?{rulesetId:CITADEL_CAMPAIGN_RULESET_IDS[stage-1]}:{})};
 }
 export function createProgressionCampaignMission(id,progress) {
@@ -549,12 +579,12 @@ export function createProgressionCampaignMission(id,progress) {
 }
 export function getProgressionCampaignOverview(progress) {
   const clean=normalizeCampaignProgress(progress),roster=getCampaignRoster(clean);
-  const missions=[...ONBOARDING_MISSIONS,...PROGRESSION_CAMPAIGN_MISSIONS].map(m=>{
+  const missions=[...ONBOARDING_MISSIONS,...PROGRESSION_CAMPAIGN_MISSIONS,...SHARED_CROSSING_MISSIONS].map(m=>{
     const launch=getCampaignLaunchMission(m.id,clean);
     return {...launch,record:clean.missions[m.id]||null,
       unlocked:isMissionUnlocked(clean,m.id,launch.scenarioRevision),completed:!!clean.missions[m.id]};
   });
-  const chapters=[ONBOARDING_CHAPTER,...CAMPAIGN_CHAPTERS].map(c=>{const own=missions.filter(m=>m.chapterId===c.id);return {...c,completed:own.every(m=>m.completed),unlocked:own.some(m=>m.unlocked),cleared:own.filter(m=>m.completed).length,total:own.length,stars:own.reduce((n,m)=>n+(m.record?.stars||0),0),maxStars:own.length*3};});
+  const chapters=[ONBOARDING_CHAPTER,...CAMPAIGN_CHAPTERS,SHARED_CROSSING_CHAPTER].map(c=>{const own=missions.filter(m=>m.chapterId===c.id);return {...c,completed:own.every(m=>m.completed),unlocked:own.some(m=>m.unlocked),cleared:own.filter(m=>m.completed).length,total:own.length,stars:own.reduce((n,m)=>n+(m.record?.stars||0),0),maxStars:own.length*3};});
   const next=missions.find(m=>m.unlocked&&!m.completed&&(!roster.returning||!isOnboardingMission(m.id)));
   const cleared=missions.filter(m=>m.completed).length,stars=missions.reduce((n,m)=>n+(m.record?.stars||0),0);
   const historicalIntroduction=getCampaignOverview(clean).introduction;
