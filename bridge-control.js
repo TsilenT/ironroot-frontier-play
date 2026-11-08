@@ -2,6 +2,8 @@
 export const BRIDGE_CONTROL = Object.freeze({policy:'persistent-bridge-v1',width:210,height:130,captureSeconds:2,totalIncome:0.5});
 export const BRIDGE_RULES_TEXT = 'Experimental bridge income: 0.5 gold/s across the whole map, divided equally between roads. Bridges start unowned. Ground troops capture after 2 continuous uncontested seconds. Any living opposing troop, including a flyer, interrupts capture and stops payment. Flyers deny but cannot capture. Ownership remains when empty, with no timeout. Enemies need the same 2 seconds to take it; if they withdraw early, the previous owner earns again. Both sides follow the same rules. No overtime bonus.';
 export const CAMPAIGN_CONTROL = Object.freeze({policy:'cumulative-route-v1',requiredBridges:2,seconds:60,timeLimit:270});
+// Compound campaign goals are evaluated by the campaign wrapper, not the engine.
+export const RIVER_BETWEEN_CONTROL = Object.freeze({...CAMPAIGN_CONTROL,timeLimit:600,endOnGoal:false});
 export const CAMPAIGN_CONTROL_RULES_TEXT = 'Secure any two of the three bridges for 60 cumulative simulated seconds. Ground troops capture after 2 continuous uncontested seconds. Opposing troops, including flyers, interrupt capture and deny control time. Flyers cannot capture. Empty bridges retain their owner until captured. Both sides capture the same way, but only your supply route has a control victory; the enemy denies it. Falling below two clear bridges pauses your total without resetting it. Bridges grant no income or capture bounty. Destroying the enemy citadel also wins; losing yours fails. Time limit: 4:30.';
 export const supportsCampaignControl = ruleset => ruleset?.campaignControl?.policy === CAMPAIGN_CONTROL.policy;
 export const supportsBridgeControl = ruleset => ruleset?.economy?.policy === BRIDGE_CONTROL.policy;
@@ -78,7 +80,7 @@ export const createCampaignControl = map => ({bridges:map.lanes.map(()=>({owner:
  * Empty ownership persists. Only player route time accumulates; AI denies this goal.
  */
 export function advanceCampaignControl(control,map,units,dt,unitTypes,rule=CAMPAIGN_CONTROL){
-  if(!(dt>0)||!Number.isFinite(dt)||control.heldSeconds>=rule.seconds)return 0;
+  if(!(dt>0)||!Number.isFinite(dt)||(control.heldSeconds>=rule.seconds&&rule.endOnGoal!==false))return 0;
   const eligible=[];
   for(const zone of bridgeZones(map)){
     const b=control.bridges[zone.lane],{present,ground}=presence(zone,units,unitTypes);
@@ -108,10 +110,10 @@ export function campaignControlStatus(game){
   return {seconds,target:rule.seconds,count,required:rule.requiredBridges,complete,
     advancing:!complete&&game.state.winner===null&&game.state.bases.every(b=>b.hp>0)&&game.state.time+1e-7<rule.timeLimit&&count>=rule.requiredBridges};
 }
-/** A completed mission is terminal even though a control victory is not a core kill. */
+/** Default control goals are terminal; compound missions explicitly opt out. */
 export function campaignControlEnded(game){
   if(!supportsCampaignControl(game.ruleset))return false;
-  return game.state.campaignControl.heldSeconds>=game.ruleset.campaignControl.seconds||game.state.time+1e-7>=game.ruleset.campaignControl.timeLimit||game.state.bases.some(b=>b.hp<=0);
+  return (game.ruleset.campaignControl.endOnGoal!==false&&game.state.campaignControl.heldSeconds>=game.ruleset.campaignControl.seconds)||game.state.time+1e-7>=game.ruleset.campaignControl.timeLimit||game.state.bases.some(b=>b.hp<=0);
 }
 export function validateCampaignControl(control,map,time,fail,rule=CAMPAIGN_CONTROL){
   if(!control||typeof control!=='object'||Array.isArray(control)||Object.keys(control).length!==2||!Object.hasOwn(control,'bridges')||!Object.hasOwn(control,'heldSeconds'))fail('invalid campaign control shape');

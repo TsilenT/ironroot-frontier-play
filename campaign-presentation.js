@@ -1,5 +1,6 @@
 // Briefing copy only. Mission identity, unlocks and victory rules stay in campaign.js.
 const GOALS = {
+  'a-river-between-us': 'Destroy the original North Command Post and secure any two crossings for 60 seconds in total, in either order. Or destroy the enemy citadel before 10:00.',
   'lanterns-on-the-water': 'Scout the roads and destroy both charted customs houses, or break the enemy citadel before 10:00.',
   'one-signal-is-enough': 'Keep either original signal standing while the column evacuates, or destroy the enemy citadel with a signal still alive.',
   'shared-crossing': 'Keep any two bridges clear long enough for the supply column to cross, or destroy the enemy citadel.',
@@ -81,6 +82,7 @@ export function missionBriefing(mission) {
   else if (hold?.seconds === mission.timeLimit) facts.push(`Hold for ${clock(hold.seconds)}`);
   else facts.push(`${clock(mission.timeLimit)} time limit`);
   if (control) facts.push(`Hold any ${control.bridges} bridges for ${control.seconds} seconds in total`, 'Contested progress pauses; secured time is kept', 'No bridge gold bonus');
+  if (mission.id === 'a-river-between-us') facts.push('Both goals required; either order', 'North Command Post: original north-road watchtower', 'Your citadel must survive; replacements do not count');
   if (hold && hold.seconds !== mission.timeLimit) facts.push(`Hold for ${clock(hold.seconds)}`);
   if (health) facts.push(`Keep at least ${health.amount.toLocaleString('en-US')} citadel HP`);
   if (signals) facts.push(`Keep at least 1 of 2 signals until ${clock(signals.seconds)}`);

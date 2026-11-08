@@ -1219,6 +1219,11 @@ function start(
   globalThis.queueMicrotask?.(syncMenuHistory);
 }
 // Named optional trial positions share the existing stable focus controls and mobile dock.
+function riverControlContext() {
+  if (currentCampaign !== 'a-river-between-us') return null;
+  const target = getCampaignTargets(game, currentCampaign).find(target => target.kind === 'destroy');
+  return { name: target.name || 'North Command Post', destroyed: !target.building };
+}
 function chartedMission() {
   if (!currentCampaign) return null;
   const scenario = campaignScenarioForGame(game, currentCampaign);
@@ -2350,7 +2355,7 @@ function updateHUD() {
   const bridgeLabel = bridgeMode ? `Bridges +${bridgeRate.toFixed(2)} /s` : '';
   $('bridgeBattleStatus').classList.toggle('hidden', !bridgeMode && !controlMode);
   if (bridgeMode || controlMode) {
-    const status = (controlMode ? controlProgressDescription(crossing) + ' ' : '') + bridgeSummary(game);
+    const status = (controlMode ? controlProgressDescription(crossing, riverControlContext()) + ' ' : '') + bridgeSummary(game);
     if ($('bridgeBattleStatus').textContent !== status) $('bridgeBattleStatus').textContent = status;
     $('minimap').setAttribute('aria-describedby', 'bridgeBattleStatus');
   } else $('minimap').removeAttribute('aria-describedby');
@@ -2434,7 +2439,9 @@ function updateHUD() {
             )
             .join(' · ')
         : outcome.label;
-    if (controlMode) $('objectiveProgress').setAttribute('aria-label', controlProgressDescription(crossing));
+    if (riverControlContext() && !outcome.completed && !outcome.failed)
+      $('objectiveProgress').textContent = controlProgressLabel(crossing, riverControlContext());
+    if (controlMode) $('objectiveProgress').setAttribute('aria-label', controlProgressDescription(crossing, riverControlContext()));
     $('objectiveTime').textContent =
       `${timeText(Math.ceil(Math.max(0, authored.timeLimit - s.time)))} remaining`;
     const signals = currentSignalProtection();
@@ -3015,8 +3022,10 @@ function syncPauseMenu() {
   $('pauseBridgeDetails').classList.toggle('hidden', !game.state.bridgeControl && !controlMode);
   if (game.state.bridgeControl || controlMode) {
     $('pauseBridgeTitle').textContent = controlMode ? 'Supply crossings' : 'Bridge control · experimental';
-    $('pauseBridgeStatus').textContent = (controlMode ? controlProgressDescription(campaignControlStatus(game)) + ' ' : '') + bridgeSummary(game);
-    $('pauseBridgeRules').textContent = controlMode ? CAMPAIGN_CONTROL_RULES_TEXT : BRIDGE_RULES_TEXT;
+    $('pauseBridgeStatus').textContent = (controlMode ? controlProgressDescription(campaignControlStatus(game), riverControlContext()) + ' ' : '') + bridgeSummary(game);
+    $('pauseBridgeRules').textContent = riverControlContext()
+      ? mission.objective + ' Ground troops capture after two continuous uncontested seconds. Opposing troops, including flyers, interrupt capture and deny control time. Flyers cannot capture. Empty bridges retain ownership. Either side can capture. Falling below two clear bridges pauses your total without resetting it. Once 60 seconds are secured, that goal stays complete while fighting and bridge ownership continue. Replacements do not undo destruction of the original post. Bridges grant no income or capture bounty.'
+      : controlMode ? CAMPAIGN_CONTROL_RULES_TEXT : BRIDGE_RULES_TEXT;
     $('pauseBridgeLegend').textContent = controlMode ? CONTROL_MAP_LEGEND : 'Map labels: Y = you, E = enemy, — = unowned, X = payout blocked. An arrow points to the side attempting a ground capture. Bridges are numbered from the top road.';
   }
   $('restartBattle').textContent = `Restart ${noun}…`;
