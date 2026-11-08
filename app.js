@@ -525,6 +525,14 @@ function syncChoice() {
   updateCompactBuildControl();
 }
 function updateCampaignDeck() {
+  const cooldown = game.state.spellCooldown[0];
+  $('rally').disabled = firstBuildHold;
+  $('rallyCost').innerHTML = firstBuildHold
+    ? 'Build a barracks <em>to unlock</em>'
+    : cooldown > 0
+      ? `${Math.ceil(cooldown)}s <em>Recharging</em>`
+      : `◆ ${SPELL.cost} <em>${SPELL.cooldown}s cooldown</em>`;
+  $('rally').style.opacity = firstBuildHold || cooldown > 0 ? '.55' : '1';
   const choices = campaignBuildChoices(currentCampaign, { expanded: expandedBuilds, resumed: resumedBattle, buildings: game.buildings || BUILDINGS });
   const canSimplify = started && !resumedBattle && campaignBuildChoices(currentCampaign, { buildings: game.buildings || BUILDINGS }).length < Object.keys(game.buildings || BUILDINGS).length;
   $('allBuildings').classList.toggle('hidden', !canSimplify);
@@ -776,6 +784,10 @@ $('closeSelection').onclick = (e) => {
 $('cancelBuild').onclick = cancel;
 $('rally').onclick = () => {
   if (!canInteract()) return;
+  if (firstBuildHold) {
+    toast('Build a barracks first to begin.');
+    return;
+  }
   if (game.state.spellCooldown[0] > 0) {
     toast(
       `Arrow volley ready in ${Math.ceil(game.state.spellCooldown[0])} seconds.`,
@@ -2264,11 +2276,6 @@ function updateHUD() {
         s.gold[0] < (game.buildings || BUILDINGS)[b.dataset.type].cost,
       ),
     );
-  $('rallyCost').innerHTML =
-    s.spellCooldown[0] > 0
-      ? `${Math.ceil(s.spellCooldown[0])}s <em>Recharging</em>`
-      : `◆ ${SPELL.cost} <em>${SPELL.cooldown}s cooldown</em>`;
-  $('rally').style.opacity = s.spellCooldown[0] > 0 ? '.55' : '1';
   $('objectiveHUD').classList.toggle(
     'hidden',
     !currentChallenge && !currentCampaign && !$('app').classList.contains('protected-mobile'),
