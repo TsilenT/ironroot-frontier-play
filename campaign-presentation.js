@@ -1,4 +1,5 @@
-// Briefing copy only. Mission identity, unlocks and victory rules stay in campaign.js.
+// Current presentation only. Mission identity, unlocks and victory rules stay in campaign.js.
+export const CURRENT_RIVER_COMPACT_EPILOGUE = 'From the lantern-lit banks to the borrowed yard, the river towns now share the watch over crossings and signal fires, so the next convoy need not depend on Rowan’s company to reach the far bank.';
 const GOALS = {
   'a-river-between-us': 'Destroy the original North Command Post and secure any two crossings for 60 seconds in total, in either order. Or destroy the enemy citadel before 10:00.',
   'lanterns-on-the-water': 'Scout the roads and destroy both charted customs houses, or break the enemy citadel before 10:00.',

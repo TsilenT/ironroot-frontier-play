@@ -1862,6 +1862,13 @@ function finish() {
       CAMPAIGN_MISSIONS.find((m) => m.id === currentCampaign),
     trial =
       currentChallenge && getChallengeForGame(game, currentChallenge);
+  // Use the evaluator's completed result and actual citadel outcome, not the
+  // authored victory prose or current bridge ownership. Banked time stays met.
+  const victoryText = won && mission?.id === 'a-river-between-us'
+    ? game.state.winner === 0 || game.state.bases[1].hp <= 0
+      ? 'With the enemy citadel fallen, the River Compact has broken the toll commander’s hold on the river.'
+      : 'With the original North Command Post destroyed and 60 seconds of secure passage banked across two crossings, the River Compact can keep its own roads supplied.'
+    : mission?.victoryText;
   $('resultEyebrow').textContent = mission
     ? won
       ? 'MISSION WON'
@@ -1894,7 +1901,7 @@ function finish() {
   $('resultSigil').textContent = won ? '⚑' : '♜';
   $('resultCopy').textContent = mission
     ? won
-      ? mission.victoryText
+      ? victoryText
       : `${mission.name}: ${objectiveOutcome.label}`
     : trial
       ? `${trial.name}: ${objectiveOutcome.label}`
@@ -2775,6 +2782,8 @@ function renderCampaign() {
     restart = selectedBriefingRestart(),
     mission = restart?.campaign ? { ...selected,
       ...getCampaignMission(restart.campaign, campaignScenarioForGame(restart.game, restart.campaign).revision),
+      // Keep current route copy while the restarted battle keeps its exact rules.
+      reward: selected.reward, subtitle: selected.subtitle,
       scenarioRevision: campaignScenarioForGame(restart.game, restart.campaign).revision,
       rulesetId: restart.game.ruleset.id, rulesetRevision: restart.game.ruleset.revision,
       unlocked: isMissionUnlocked(campaignProgress, restart.campaign, campaignScenarioForGame(restart.game, restart.campaign).revision),
