@@ -2890,7 +2890,7 @@ function renderCampaign() {
       ' to unlock.';
   $('campaignUnlock').classList.toggle('locked', !unlocked);
   if (mode === 'campaign') {
-    if (!started) populateFieldGuide(roster);
+    if (!started) populateFieldGuide({ ruleset: roster, map: getMap(mission.mapId, mission.mapRevision ?? 1) });
     $('start').classList.toggle('hidden', campaignPage !== 'mission');
     $('start').disabled = !unlocked;
     $('start').innerHTML =

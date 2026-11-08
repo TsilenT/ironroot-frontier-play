@@ -1,6 +1,6 @@
 /** One pure admission boundary for Resume, backup and candidate saves. */
 import { Game, MAPS, getMap, getRuleset, LEGACY_RULESET_ID, validateEngineFields } from './engine.js';
-import { deepFreeze, FOG_SKIRMISH_RULESET_ID, LANTERNS_RULESET_ID } from './rulesets.js';
+import { deepFreeze, FOG_SKIRMISH_RULESET_ID, LANTERNS_RULESET_ID, BORROWED_GROUND_RULESET_ID } from './rulesets.js';
 import * as campaign from './campaign.js';
 import { getChallenge, challengeScenarioForGame, evaluateChallenge } from './challenges.js';
 import { TRAINING_LESSONS } from './training.js';
@@ -64,6 +64,11 @@ export function validateBattleIdentity(identity){
   let rules,map;try{rules=getRuleset(identity.ruleset.id,identity.ruleset.revision);map=getMap(identity.map.id,identity.map.revision);}catch{fail('This save needs a compatible ruleset or battlefield version.','unsupported-identity');}
   if(rules.qaOnly)fail('This experimental ruleset is available only in the isolated QA shell, not profile saves or backups.','qa-only-ruleset');
   const scenario=resolveScenario(identity.scenario);
+  // The campaign yard and its rules cannot be relabelled as another scenario,
+  // including identity-only history rows that never instantiate a Game.
+  if((map.id==='borrowed-yard'||rules.id===BORROWED_GROUND_RULESET_ID||scenario.id==='borrowed-ground')&&
+    (map.id!=='borrowed-yard'||map.revision!==1||rules.id!==BORROWED_GROUND_RULESET_ID||rules.revision!==1||scenario.kind!=='campaign'||scenario.id!=='borrowed-ground'||scenario.revision!==1))
+    fail('Borrowed Ground requires its exact campaign, Borrowed Yard and ruleset identities.','unsupported-identity');
   // Apply the supported fog scope here, not only in Game.restore: identity-only
   // history rows and backups must obey the same Classic standard-Skirmish contract.
   if(rules.id===FOG_SKIRMISH_RULESET_ID&&(rules.revision!==1||map.id!=='classic'||map.revision!==1||scenario.kind!=='skirmish'||scenario.id!=='standard'||scenario.revision!==1))fail('Fog is supported only for Classic standard Skirmish.','unsupported-identity');

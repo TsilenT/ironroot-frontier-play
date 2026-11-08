@@ -1,4 +1,4 @@
-import { BUILDINGS, UNITS, SPELL, getRuleset, LEGACY_RULESET_ID, LANTERNS_RULESET_ID } from './rulesets.js';
+import { BUILDINGS, UNITS, SPELL, getRuleset, LEGACY_RULESET_ID, LANTERNS_RULESET_ID, BORROWED_GROUND_RULESET_ID } from './rulesets.js';
 import { supportsFlightOrders, flightGateHome, flightGateX } from './flight-orders.js';
 import { supportsAutonomousAir, autonomousAirTarget, retainedAirTarget, releaseAirTarget } from './autonomous-air.js';
 import { supportsBridgeControl, createBridgeControl, advanceBridgeControl, bridgeIncome, validateBridgeControl, supportsCampaignControl, createCampaignControl, advanceCampaignControl, campaignControlEnded, validateCampaignControl } from './bridge-control.js';
@@ -7,7 +7,7 @@ import { supportsFog, createFog, refreshFog, observe, isPointVisible, eventAudie
 export { FOG_RULESET_ID, FOG_SKIRMISH_RULESET_ID, LANTERNS_RULESET_ID } from './fog.js';
 export { supportsAutonomousAir } from './autonomous-air.js';
 export { supportsFlightOrders, flightGateHome, flightGateX } from './flight-orders.js';
-export { BUILDINGS, UNITS, SPELL, RULESETS, getRuleset, LEGACY_RULESET_ID, DEFAULT_SKIRMISH_RULESET_ID } from './rulesets.js';
+export { BUILDINGS, UNITS, SPELL, RULESETS, getRuleset, LEGACY_RULESET_ID, DEFAULT_SKIRMISH_RULESET_ID, BORROWED_GROUND_RULESET_ID } from './rulesets.js';
 /** Deterministic, DOM-free simulation. All coordinates are world pixels. */
 export const WORLD = {width:3200,height:900};
 export const LANES = [260,450,640];
@@ -23,7 +23,11 @@ export const INTRO_MAPS=Object.freeze({
   'intro-one-road':mapDescriptor('intro-one-road','First Watch',3200,[450],0),
   'intro-two-road':mapDescriptor('intro-two-road','Forked Road',3200,[340,560],0)
 });
-const ALL_MAPS=Object.freeze({...MAPS,...INTRO_MAPS});
+// Authored maps are admitted by exact identity, never added to Skirmish's MAPS.
+export const CAMPAIGN_MAPS=Object.freeze({
+  'borrowed-yard':Object.freeze({...mapDescriptor('borrowed-yard','Borrowed Yard',3200,[260,450,640],1),buildLimit:12,siteColumns:Object.freeze([410,690,970,1250])})
+});
+const ALL_MAPS=Object.freeze({...MAPS,...INTRO_MAPS,...CAMPAIGN_MAPS});
 export function getMap(mapId='classic',revision=1){if(typeof mapId!=='string'||!Object.hasOwn(ALL_MAPS,mapId))throw new Error('Unknown battlefield: '+String(mapId));const map=ALL_MAPS[mapId];if(revision!==map.revision)throw new Error('Unsupported battlefield revision');return map;}
 export const homeX=(map,side,x)=>side===0?x:map.width-x;
 export const worldX=(map,side,distance)=>side===0?distance:map.width-distance;
@@ -42,6 +46,7 @@ export class Game {
       schemaVersion:{value:rulesetId!==undefined||!Object.hasOwn(MAPS,mapId)?3:mapId==='classic'?1:2}
     });
     const map=this.map;
+    if((map.id==='borrowed-yard')!==(ruleset.id===BORROWED_GROUND_RULESET_ID))throw new Error('Borrowed Yard requires the Borrowed Ground campaign ruleset.');
     if(supportsFog(ruleset)&&(map.id!=='classic'||map.revision!==1||ruleset.endgame.forcedDecay||ruleset.economy.policy!=='legacy'||(ruleset.campaignOnly&&ruleset.id!==LANTERNS_RULESET_ID)||ruleset.authoredOnly))throw new Error('Experimental fog requires Classic open-ended Skirmish or Lanterns on the Water');
     if(supportsCampaignControl(ruleset)&&(map.id!=='classic'||map.revision!==1))throw new Error('Campaign control requires Classic');
     if(supportsBridgeControl(ruleset)&&!Object.hasOwn(MAPS,map.id))throw new Error('Bridge income requires a Skirmish battlefield');
@@ -318,6 +323,7 @@ function validateSave(data){
     try{ruleset=getRuleset(data.rulesetId,data.rulesetRevision);map=getMap(data.mapId,data.mapRevision);}catch{fail('unknown or unsupported ruleset/battlefield identity');}
     strictStateFields(data.state,fail,ruleset);
   }
+  if((map.id==='borrowed-yard')!==(ruleset.id===BORROWED_GROUND_RULESET_ID))fail('Borrowed Yard requires the Borrowed Ground campaign ruleset');
   const limits=ruleset.limits;
   if(!['easy','normal','hard'].includes(data.difficulty))fail('unknown difficulty');
   if(typeof data.ai!=='boolean')fail('ai must be boolean');

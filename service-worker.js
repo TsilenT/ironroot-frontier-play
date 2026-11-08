@@ -1,5 +1,5 @@
 // Atomic, versioned offline shell. Bump VERSION with every public build.
-const VERSION = 'ironroot-v0.24.1';
+const VERSION = 'ironroot-v0.25.0';
 const FILES = [
   './fog.js',
   './fog-view.js',
