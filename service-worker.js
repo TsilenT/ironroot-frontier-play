@@ -1,5 +1,5 @@
 // Atomic, versioned offline shell. Bump VERSION with every public build.
-const VERSION = 'ironroot-v0.33.0';
+const VERSION = 'ironroot-v0.34.0';
 const FILES = [
   './hammer-policy.js',
   './fog.js',

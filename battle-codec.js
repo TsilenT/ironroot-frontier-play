@@ -79,6 +79,9 @@ export function validateBattleIdentity(identity){
   if((rules.id==='frontier-campaign-road-we-know'||scenario.id==='the-road-we-know')&&
     (rules.id!=='frontier-campaign-road-we-know'||rules.revision!==1||map.id!=='twin-span'||map.revision!==1||scenario.kind!=='campaign'||scenario.id!=='the-road-we-know'||scenario.revision!==1))
     fail('The Road We Know requires its exact campaign, Twin Span and ruleset identities.','unsupported-identity');
+  if((rules.id==='frontier-campaign-shared-watch'||scenario.id==='the-shared-watch')&&
+    (rules.id!=='frontier-campaign-shared-watch'||rules.revision!==1||map.id!=='classic'||map.revision!==1||scenario.kind!=='campaign'||scenario.id!=='the-shared-watch'||scenario.revision!==1))
+    fail('The Shared Watch requires its exact campaign, ruleset and Classic identity.','campaign-identity');
   if((rules.id==='frontier-campaign-long-screen'||scenario.id==='the-long-screen')&&
     (rules.id!=='frontier-campaign-long-screen'||rules.revision!==1||map.id!=='classic'||map.revision!==1||scenario.kind!=='campaign'||scenario.id!=='the-long-screen'||scenario.revision!==1))
     fail('The Long Screen requires its exact campaign, ruleset and Classic identity.','campaign-identity');
