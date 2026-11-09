@@ -1,3 +1,4 @@
+import {supportsHammer,createHammerState,runHammerAI,validateHammerState} from './hammer-policy.js';
 import { BUILDINGS, UNITS, SPELL, getRuleset, LEGACY_RULESET_ID, LANTERNS_RULESET_ID, CAMPAIGN_FOG_RULESET_IDS, BORROWED_GROUND_RULESET_ID } from './rulesets.js';
 import { supportsFlightOrders, flightGateHome, flightGateX } from './flight-orders.js';
 import { supportsAutonomousAir, autonomousAirTarget, retainedAirTarget, releaseAirTarget } from './autonomous-air.js';
@@ -51,9 +52,11 @@ export class Game {
     if(supportsCampaignControl(ruleset)&&(map.id!=='classic'||map.revision!==1))throw new Error('Campaign control requires Classic');
     if(supportsBridgeControl(ruleset)&&!Object.hasOwn(MAPS,map.id))throw new Error('Bridge income requires a Skirmish battlefield');
     if(supportsCitadelOptions(ruleset)&&ruleset.skirmishOnly&&!Object.hasOwn(MAPS,map.id))throw new Error('Citadel choices require a Skirmish battlefield');
+    if(supportsHammer(ruleset)&&(map.id!=='classic'||map.revision!==1))throw new Error('Hammer prototype requires Classic.');
     this.difficulty=['easy','normal','hard'].includes(difficulty)?difficulty:'normal';
     this.seed=seed>>>0; this.ai=ai;this.nextId=1;this.aiTimer=this.difficulty==='easy'?7:0;this.accumulator=0;this.tick=0;this.damageQueue=null;
     this.state={time:0,gold:[420,420],income:[5,5],bases:[{id:'base0',type:'base',side:0,hp:6000,maxHp:6000,cooldown:0,x:110,y:450},{id:'base1',type:'base',side:1,hp:6000,maxHp:6000,cooldown:0,x:map.width-110,y:450}],buildings:[],units:[],projectiles:[],effects:[],frontline:map.width/2,winner:null,spellCooldown:[0,0],overtime:false,stats:{kills:[0,0],built:[0,0],damage:[0,0]}};
+    if(supportsHammer(ruleset))this.state.hammerCommitment=createHammerState();
     if(supportsBridgeControl(ruleset))this.state.bridgeControl=createBridgeControl(map);
     if(supportsCampaignControl(ruleset))this.state.campaignControl=createCampaignControl(map);
     if(supportsCitadelOptions(ruleset))this.state.citadelOptions=createCitadelOptions();
@@ -215,6 +218,7 @@ export class Game {
   }
   _ai(side=1){
     if(![0,1].includes(side)||this.state.winner!==null||this.limitReason)return;
+    if(supportsHammer(this.ruleset))return runHammerAI(this,side);
     const observation=supportsFog(this.ruleset)?observe(this,side):null;
     const strategyEnemies=observation?[...observation.state.buildings.filter(b=>b.side!==side),...observation.fog.memories]:null;
     if(supportsCitadelOptions(this.ruleset)){
@@ -324,6 +328,7 @@ function validateSave(data){
     strictStateFields(data.state,fail,ruleset);
   }
   if((map.id==='borrowed-yard')!==(ruleset.id===BORROWED_GROUND_RULESET_ID))fail('Borrowed Yard requires the Borrowed Ground campaign ruleset');
+  if(supportsHammer(ruleset)&&(map.id!=='classic'||map.revision!==1))fail('Hammer prototype requires Classic');
   const limits=ruleset.limits;
   if(!['easy','normal','hard'].includes(data.difficulty))fail('unknown difficulty');
   if(typeof data.ai!=='boolean')fail('ai must be boolean');
@@ -349,6 +354,15 @@ function validateSave(data){
     if(ruleset.skirmishOnly&&!Object.hasOwn(MAPS,map.id))fail('citadel choices require a Skirmish battlefield');
     validateCitadelOptions(s.citadelOptions,s.time,data.tick,fail);
   }else if(Object.hasOwn(s,'citadelOptions'))fail('citadel choices are outside this ruleset');
+  if(supportsHammer(ruleset)){
+    // New tick-based commitment timers need a consistent clock. Published legacy
+    // identities retain their historical off-grid admission. Bound roundoff well
+    // below one fixed tick while allowing ordinary drift through the time limit.
+    const clockTolerance=Math.min(.001,1e-7+s.time*1e-9);
+    if(Math.abs(s.time-data.tick*.05)>clockTolerance)fail('Hammer time does not match its fixed tick');
+    validateHammerState(s.hammerCommitment,map,data.tick,fail);
+  }
+  else if(Object.hasOwn(s,'hammerCommitment'))fail('Hammer commitment is outside this ruleset');
   if(supportsFog(ruleset))validateFog(s.fog,{map,ruleset,state:s,nextId:data.nextId},fail);
   else if(Object.hasOwn(s,'fog'))fail('fog knowledge is outside this ruleset');
   if(![null,0,1,'draw'].includes(s.winner))fail('unknown winner');if(typeof s.overtime!=='boolean')fail('overtime must be boolean');num(s.frontline,110,map.width-110,'frontline');
@@ -411,7 +425,7 @@ export function validateEngineFields(data){
 }
 function strictFields(value,required,optional,fail){if(!value||typeof value!=='object'||Array.isArray(value)||Object.keys(value).some(k=>!required.includes(k)&&!optional.includes(k))||required.some(k=>!Object.hasOwn(value,k)))fail('unknown field or missing required field');}
 function strictStateFields(s,fail,ruleset){
-  strictFields(s,['time','gold','income','bases','buildings','units','projectiles','effects','frontline','winner','spellCooldown','overtime','stats',...(supportsBridgeControl(ruleset)?['bridgeControl']:[]),...(supportsCampaignControl(ruleset)?['campaignControl']:[]),...(supportsCitadelOptions(ruleset)?['citadelOptions']:[]),...(supportsFog(ruleset)?['fog']:[])],[],fail);
+  strictFields(s,['time','gold','income','bases','buildings','units','projectiles','effects','frontline','winner','spellCooldown','overtime','stats',...(supportsBridgeControl(ruleset)?['bridgeControl']:[]),...(supportsCampaignControl(ruleset)?['campaignControl']:[]),...(supportsCitadelOptions(ruleset)?['citadelOptions']:[]),...(supportsFog(ruleset)?['fog']:[]),...(supportsHammer(ruleset)?['hammerCommitment']:[])],[],fail);
   strictFields(s.stats,['kills','built','damage'],[],fail);
   const entity=['id','type','side','hp','maxHp','cooldown','x','y'],flight=supportsFlightOrders(ruleset),autoAir=supportsAutonomousAir(ruleset);
   for(const [name,required,optional] of [

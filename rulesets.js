@@ -1,5 +1,7 @@
+import {HAMMER_RULESET_ID,HAMMER_CAMPAIGN_RULESET_ID,HAMMER_AI} from './hammer-policy.js';
 import { BRIDGE_CONTROL, CAMPAIGN_CONTROL, RIVER_BETWEEN_CONTROL } from './bridge-control.js';
 import { CITADEL_OPTIONS } from './citadel-options.js';
+export {HAMMER_CAMPAIGN_RULESET_ID} from './hammer-policy.js';
 export const SALT_STORES_RULESET_ID='frontier-campaign-salt-stores';
 export const ARCHERS_QUAY_RULESET_ID='frontier-campaign-archers-quay';
 export const REED_BEDS_RULESET_ID='frontier-campaign-reed-beds';
@@ -84,6 +86,8 @@ const authoredAirEntry=id=>deepFreeze({
   movement:{policy:'autonomous-air-local-v1',autonomousAir:{perception:300,retention:420,adjacentOnly:true}}
 });
 export const RULESETS=deepFreeze({
+  [HAMMER_CAMPAIGN_RULESET_ID]:deepFreeze({...autonomousAirEntry(HAMMER_CAMPAIGN_RULESET_ID,'Campaign · The Hammer Turns',false,true),citadel:CITADEL_OPTIONS,ai:HAMMER_AI}),
+  [HAMMER_RULESET_ID]:deepFreeze({...autonomousAirEntry(HAMMER_RULESET_ID,'QA only · The Hammer Turns',false,true),citadel:CITADEL_OPTIONS,qaOnly:true,ai:HAMMER_AI}),
   [SALT_STORES_RULESET_ID]:deepFreeze({...autonomousAirEntry(SALT_STORES_RULESET_ID,'Campaign · Salt in the Stores',false,true),citadel:CITADEL_OPTIONS}),
   [ARCHERS_QUAY_RULESET_ID]:deepFreeze({...autonomousAirEntry(ARCHERS_QUAY_RULESET_ID,'Campaign · The Archer’s Quay',false,true),citadel:CITADEL_OPTIONS}),
   [REED_BEDS_RULESET_ID]:deepFreeze({...autonomousAirEntry(REED_BEDS_RULESET_ID,'Campaign · Through the Reed Beds',false,true),citadel:CITADEL_OPTIONS}),

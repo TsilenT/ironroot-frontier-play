@@ -1,7 +1,9 @@
 // Current presentation only. Mission identity, unlocks and victory rules stay in campaign.js.
 export const CURRENT_RIVER_COMPACT_EPILOGUE = 'From the lantern-lit banks to the borrowed yard, the river towns now share the watch over crossings and signal fires, so the next convoy need not depend on Rowan’s company to reach the far bank.';
 export const CURRENT_UNLIT_ROADS_EPILOGUE = 'The watchfires answer across all three roads again. With a passage open through the reed beds, Rowan’s company leaves the uplands for the coast.';
+export const CURRENT_SIEGE_COAST_EPILOGUE = 'The quay, stores and siege works give Rowan’s company a foothold along the shore. More of the Siege Coast still lies ahead.';
 const GOALS = {
+  'the-hammer-turns': 'Destroy the enemy citadel before 10:00 while yours survives. Meet the paid siege commitment or support another road; no route is required.',
   'salt-in-the-stores': 'Destroy the enemy citadel before 10:00 while yours survives. Mine raids are optional; surviving factories keep spawning.',
   'the-archers-quay': 'Destroy the coastal enemy citadel before 10:00. Your citadel must survive; no workshop or route is required.',
   'through-the-reed-beds': 'Destroy any 2 of the 3 original named positions, or break the enemy citadel before 10:00. Your citadel must survive.',
@@ -91,6 +93,7 @@ export function missionBriefing(mission) {
   if (control) facts.push(`Hold any ${control.bridges} bridges for ${control.seconds} seconds in total`, 'Contested progress pauses; secured time is kept', 'No bridge gold bonus');
   if (mission.id === 'a-river-between-us') facts.push('Both goals required; either order', 'North Command Post: original north-road watchtower', 'Your citadel must survive; replacements do not count');
   if (mission.id === 'false-quiet') facts.push('Two possible enemy layouts; scout to identify this attempt', 'Restart and Resume preserve the layout', 'Your citadel must survive; replacements do not count');
+  if (mission.id === 'the-hammer-turns') facts.push('New paid foundries show the siege commitment', 'All roads visible; no compulsory target or army', 'Emergency defense uses the same treasury', 'Your citadel must survive; 1 HP is enough');
   if (mission.id === 'salt-in-the-stores') facts.push('Three real enemy mines fund later paid works', 'Mine raids optional; direct siege allowed', 'Existing factories keep spawning after mine losses', 'Your citadel must survive; 1 HP is enough');
   if (mission.id === 'the-archers-quay') facts.push('Fully visible central archery production and outer foundries', 'Core only; no required buildings or route', 'Your citadel must survive; 1 HP is enough');
   if (mission.id === 'through-the-reed-beds') facts.push('Any 2 of 3 original positions; the third may stand', 'Enemy citadel is an alternative; 1 HP on yours is enough', 'Replacements do not restore original targets; all roads visible');
