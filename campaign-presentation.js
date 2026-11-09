@@ -1,6 +1,7 @@
 // Current presentation only. Mission identity, unlocks and victory rules stay in campaign.js.
 export const CURRENT_RIVER_COMPACT_EPILOGUE = 'From the lantern-lit banks to the borrowed yard, the river towns now share the watch over crossings and signal fires, so the next convoy need not depend on Rowan’s company to reach the far bank.';
 const GOALS = {
+  'the-road-we-know': 'Choose either visible road and destroy the enemy citadel before 10:00. Keep your own citadel standing.',
   'false-quiet': 'Scout or commit directly: destroy the original Middle Road Fort, or break the enemy citadel before 10:00.',
   'a-river-between-us': 'Destroy the original North Command Post and secure any two crossings for 60 seconds in total, in either order. Or destroy the enemy citadel before 10:00.',
   'lanterns-on-the-water': 'Scout the roads and destroy both charted customs houses, or break the enemy citadel before 10:00.',

@@ -76,6 +76,9 @@ export function validateBattleIdentity(identity){
   if((FALSE_QUIET_RULESET_IDS.includes(rules.id)||scenario.id==='false-quiet')&&
     (!FALSE_QUIET_RULESET_IDS.includes(rules.id)||rules.revision!==1||map.id!=='classic'||map.revision!==1||scenario.kind!=='campaign'||scenario.id!=='false-quiet'||scenario.revision!==1))
     fail('False Quiet requires an exact campaign layout, Classic and ruleset identity.','unsupported-identity');
+  if((rules.id==='frontier-campaign-road-we-know'||scenario.id==='the-road-we-know')&&
+    (rules.id!=='frontier-campaign-road-we-know'||rules.revision!==1||map.id!=='twin-span'||map.revision!==1||scenario.kind!=='campaign'||scenario.id!=='the-road-we-know'||scenario.revision!==1))
+    fail('The Road We Know requires its exact campaign, Twin Span and ruleset identities.','unsupported-identity');
   // Apply the supported fog scope here, not only in Game.restore: identity-only
   // history rows and backups must obey the same Classic standard-Skirmish contract.
   if(rules.id===FOG_SKIRMISH_RULESET_ID&&(rules.revision!==1||map.id!=='classic'||map.revision!==1||scenario.kind!=='skirmish'||scenario.id!=='standard'||scenario.revision!==1))fail('Fog is supported only for Classic standard Skirmish.','unsupported-identity');
