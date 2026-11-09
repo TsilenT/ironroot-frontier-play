@@ -68,6 +68,14 @@
           <span id="objectiveIdentity" class="objective-identity hidden"></span>
           <b id="objectiveProgress"></b><span id="objectiveTime"></span>
           <div id="protectedTargets" class="protected-targets hidden" role="group" aria-label="Protected original structures; activate to focus camera"></div>
+          <div id="minorReserveHUD" class="minor-reserve-hud hidden" role="group" aria-label="Optional north reserve">
+            <button id="focusMinorReserve" class="protected-target minor-reserve-card" type="button" aria-describedby="minorReserveDescription">
+              <span id="minorReserveTitle" class="protected-name"></span>
+              <span id="minorReserveDetail" class="protected-health"></span>
+              <span id="minorReserveLocation" class="protected-focus-hint">Focus north</span>
+            </button>
+            <span id="minorReserveDescription" class="sr-only"></span>
+          </div>
           <button id="compactBuild" class="compact-build" type="button" aria-controls="commandDeck" aria-expanded="false" aria-label="Open building controls">Build</button>
         </div>
         <div id="protectedAlert" class="sr-only" role="status" aria-live="polite" aria-atomic="true"></div>
@@ -403,7 +411,7 @@
         </button>
         <p class="save-status hidden" id="saveStatus" role="status"></p>
         <button id="exportUnreadableBattle" class="text-button hidden">Download original save</button>
-        <p class="welcome-foot">Campaign · Skirmish · Field trials · v0.34.0</p>
+        <p class="welcome-foot">Campaign · Skirmish · Field trials · v0.35.0</p>
         <div class="welcome-links">
           <a class="text-button training-link" id="welcomeTraining" href="./training.html" aria-label="Optional guided practice. Learn without changing your saved battle">Guided practice (optional) →</a>
           <button class="text-button" id="welcomeFullscreen" type="button" data-fullscreen aria-pressed="false" aria-describedby="welcomeFullscreenStatus">Enter fullscreen</button>

@@ -1,3 +1,4 @@
+import {supportsMinorReserve,createMinorReserve,advanceMinorReserve,validateMinorReserve,minorReserveEnded,minorReserveUnbound} from './minor-reserve.js';
 import {supportsHammer,createHammerState,runHammerAI,validateHammerState} from './hammer-policy.js';
 import { BUILDINGS, UNITS, SPELL, getRuleset, LEGACY_RULESET_ID, LANTERNS_RULESET_ID, CAMPAIGN_FOG_RULESET_IDS, BORROWED_GROUND_RULESET_ID } from './rulesets.js';
 import { supportsFlightOrders, flightGateHome, flightGateX } from './flight-orders.js';
@@ -47,6 +48,7 @@ export class Game {
       schemaVersion:{value:rulesetId!==undefined||!Object.hasOwn(MAPS,mapId)?3:mapId==='classic'?1:2}
     });
     const map=this.map;
+    if(supportsMinorReserve(ruleset)&&(map.id!=='classic'||map.revision!==1))throw Error('Wake the Reserve requires Classic.');
     if((map.id==='borrowed-yard')!==(ruleset.id===BORROWED_GROUND_RULESET_ID))throw new Error('Borrowed Yard requires the Borrowed Ground campaign ruleset.');
     if(supportsFog(ruleset)&&(map.id!=='classic'||map.revision!==1||ruleset.endgame.forcedDecay||ruleset.economy.policy!=='legacy'||(ruleset.campaignOnly&&!CAMPAIGN_FOG_RULESET_IDS.includes(ruleset.id))||ruleset.authoredOnly))throw new Error('Experimental fog requires Classic open-ended Skirmish or an explicitly supported campaign mission');
     if(supportsCampaignControl(ruleset)&&(map.id!=='classic'||map.revision!==1))throw new Error('Campaign control requires Classic');
@@ -56,6 +58,7 @@ export class Game {
     this.difficulty=['easy','normal','hard'].includes(difficulty)?difficulty:'normal';
     this.seed=seed>>>0; this.ai=ai;this.nextId=1;this.aiTimer=this.difficulty==='easy'?7:0;this.accumulator=0;this.tick=0;this.damageQueue=null;
     this.state={time:0,gold:[420,420],income:[5,5],bases:[{id:'base0',type:'base',side:0,hp:6000,maxHp:6000,cooldown:0,x:110,y:450},{id:'base1',type:'base',side:1,hp:6000,maxHp:6000,cooldown:0,x:map.width-110,y:450}],buildings:[],units:[],projectiles:[],effects:[],frontline:map.width/2,winner:null,spellCooldown:[0,0],overtime:false,stats:{kills:[0,0],built:[0,0],damage:[0,0]}};
+    if(supportsMinorReserve(ruleset))this.state.minorReserve=createMinorReserve();
     if(supportsHammer(ruleset))this.state.hammerCommitment=createHammerState();
     if(supportsBridgeControl(ruleset))this.state.bridgeControl=createBridgeControl(map);
     if(supportsCampaignControl(ruleset))this.state.campaignControl=createCampaignControl(map);
@@ -72,8 +75,8 @@ export class Game {
     for(const key of ['difficulty','seed','ai','nextId','aiTimer','accumulator','tick','state'])game[key]=clean[key];
     return game;
   }
-  canBuyCitadelOption(kind,side=0){return canBuyCitadelOption(this,kind,side);}
-  buyCitadelOption(kind,side=0){const result=buyCitadelOption(this,kind,side);if(result.ok&&supportsFog(this.ruleset))refreshFog(this);return result;}
+  canBuyCitadelOption(kind,side=0){if(minorReserveEnded(this))return {ok:false,reason:'The battle has ended.'};return canBuyCitadelOption(this,kind,side);}
+  buyCitadelOption(kind,side=0){if(minorReserveEnded(this))return {ok:false,reason:'The battle has ended.'};const result=buyCitadelOption(this,kind,side);if(result.ok&&supportsFog(this.ruleset))refreshFog(this);return result;}
   upgradeCost(b){return Math.round(this.buildings[b.type].cost*(0.7+0.35*(b.level-1)));}
   get limitReason(){return this._limitFor(0);}
   _limitFor(dt){
@@ -88,6 +91,7 @@ export class Game {
   }
   random(){this.seed=(Math.imul(this.seed,1664525)+1013904223)>>>0;return this.seed/4294967296;}
   canBuild(type,x,y,side=0){
+    if(minorReserveEnded(this))return {ok:false,reason:'The battle has ended.'};
     if(this.limitReason)return {ok:false,code:'save-safety-limit',reason:this.limitReason};
     if(typeof type!=='string'||!Object.hasOwn(this.buildings,type))return {ok:false,reason:'Unknown building.'};
     const s=this.state,d=this.buildings[type],bounds=buildBounds(this.map,side);
@@ -114,9 +118,9 @@ export class Game {
     b.flightPlan=toLane;
     return {ok:true,building:b,reason:'Flight plan set for future launches. Airborne gryphons keep their orders.'};
   }
-  upgrade(id,side=0){if(this.limitReason)return {ok:false,code:'save-safety-limit',reason:this.limitReason};const b=this.state.buildings.find(b=>b.id===id&&b.side===side&&b.hp>0);if(this.state.winner!==null||!b)return {ok:false,reason:'Select one of your buildings.'};if(b.level>=3)return {ok:false,reason:'Already at maximum level.'};const cost=this.upgradeCost(b);if(this.state.gold[side]<cost)return {ok:false,reason:`Need ${cost} gold.`};this.state.gold[side]-=cost;b.invested+=cost;b.level++;const hp=this.buildings[b.type].hp*(1+0.4*(b.level-1));b.hp+=hp-b.maxHp;b.maxHp=hp;this._effect(b.x,b.y,'upgrade',side,0.8);if(supportsFog(this.ruleset))refreshFog(this);return {ok:true,building:b};}
-  sell(id,side=0){if(this.limitReason)return {ok:false,code:'save-safety-limit',reason:this.limitReason};const b=this.state.buildings.find(b=>b.id===id&&b.side===side&&b.hp>0);if(this.state.winner!==null||!b)return {ok:false,reason:'Select one of your buildings.'};const refund=Math.floor(b.invested*0.5*b.hp/b.maxHp);this.state.gold[side]+=refund;this.state.buildings=this.state.buildings.filter(a=>a!==b);this._effect(b.x,b.y,'sell',side,0.6);if(supportsFog(this.ruleset))refreshFog(this);return {ok:true,refund};}
-  cast(x,y,side=0){if(this.limitReason)return {ok:false,code:'save-safety-limit',reason:this.limitReason};const s=this.state;if(s.winner!==null||![0,1].includes(side)||!Number.isFinite(x)||!Number.isFinite(y)||x<0||x>this.map.width||y<0||y>this.map.height)return {ok:false,reason:'Choose a point on the battlefield.'};if(supportsFog(this.ruleset)&&!isPointVisible(this,side,x,y))return {ok:false,code:'fog-hidden-aim',reason:'Volley needs a currently visible aim point.'};if(s.spellCooldown[side]>0)return {ok:false,reason:'Volley is recharging.'};if(s.gold[side]<SPELL.cost)return {ok:false,reason:`Need ${SPELL.cost} gold.`};s.gold[side]-=SPELL.cost;s.spellCooldown[side]=SPELL.cooldown;for(const u of s.units)if(u.side!==side&&Math.hypot(u.x-x,u.y-y)<SPELL.radius)this._damage(u,SPELL.damage,side);this._effect(x,y,'volley',side,1.1,SPELL.radius);if(supportsFog(this.ruleset))refreshFog(this);return {ok:true};}
+  upgrade(id,side=0){if(minorReserveEnded(this))return {ok:false,reason:'The battle has ended.'};if(this.limitReason)return {ok:false,code:'save-safety-limit',reason:this.limitReason};const b=this.state.buildings.find(b=>b.id===id&&b.side===side&&b.hp>0);if(this.state.winner!==null||!b)return {ok:false,reason:'Select one of your buildings.'};if(b.level>=3)return {ok:false,reason:'Already at maximum level.'};const cost=this.upgradeCost(b);if(this.state.gold[side]<cost)return {ok:false,reason:`Need ${cost} gold.`};this.state.gold[side]-=cost;b.invested+=cost;b.level++;const hp=this.buildings[b.type].hp*(1+0.4*(b.level-1));b.hp+=hp-b.maxHp;b.maxHp=hp;this._effect(b.x,b.y,'upgrade',side,0.8);if(supportsFog(this.ruleset))refreshFog(this);return {ok:true,building:b};}
+  sell(id,side=0){if(minorReserveEnded(this))return {ok:false,reason:'The battle has ended.'};if(this.limitReason)return {ok:false,code:'save-safety-limit',reason:this.limitReason};const b=this.state.buildings.find(b=>b.id===id&&b.side===side&&b.hp>0);if(this.state.winner!==null||!b)return {ok:false,reason:'Select one of your buildings.'};const refund=Math.floor(b.invested*0.5*b.hp/b.maxHp);this.state.gold[side]+=refund;this.state.buildings=this.state.buildings.filter(a=>a!==b);this._effect(b.x,b.y,'sell',side,0.6);if(supportsFog(this.ruleset))refreshFog(this);return {ok:true,refund};}
+  cast(x,y,side=0){if(minorReserveEnded(this))return {ok:false,reason:'The battle has ended.'};if(this.limitReason)return {ok:false,code:'save-safety-limit',reason:this.limitReason};const s=this.state;if(s.winner!==null||![0,1].includes(side)||!Number.isFinite(x)||!Number.isFinite(y)||x<0||x>this.map.width||y<0||y>this.map.height)return {ok:false,reason:'Choose a point on the battlefield.'};if(supportsFog(this.ruleset)&&!isPointVisible(this,side,x,y))return {ok:false,code:'fog-hidden-aim',reason:'Volley needs a currently visible aim point.'};if(s.spellCooldown[side]>0)return {ok:false,reason:'Volley is recharging.'};if(s.gold[side]<SPELL.cost)return {ok:false,reason:`Need ${SPELL.cost} gold.`};s.gold[side]-=SPELL.cost;s.spellCooldown[side]=SPELL.cooldown;for(const u of s.units)if(u.side!==side&&Math.hypot(u.x-x,u.y-y)<SPELL.radius)this._damage(u,SPELL.damage,side);this._effect(x,y,'volley',side,1.1,SPELL.radius);if(supportsFog(this.ruleset))refreshFog(this);return {ok:true};}
   _effect(x,y,type,side,life=0.35,radius=30,fogSeen){if(supportsFog(this.ruleset)){appendFogEffect(this,{x,y,type,side,life,maxLife:life,radius,fogSeen:fogSeen??eventAudience(this,x,y)});return;}if(this.state.effects.length>=256)this.state.effects.shift();this.state.effects.push({x,y,type,side,life,maxLife:life,radius});}
   _spawn(b){const s=this.state;if(s.units.filter(u=>u.side===b.side&&u.hp>0).length>=70)return;const type=this.buildings[b.type].unit,d=this.units[type],mult=1+0.12*(b.level-1);const u={id:this.nextId++,type,flying:d.flying,side:b.side,x:b.x+(b.side?-48:48),y:this.map.lanes[b.lane]+(this.random()-0.5)*32,lane:b.lane,hp:d.hp*mult,maxHp:d.hp*mult,level:b.level,cooldown:this.random()*0.2,attack:0};if(supportsAutonomousAir(this.ruleset)&&d.flying)u.airTargetId=null;if(supportsFlightOrders(this.ruleset)&&type==='gryphon'&&b.flightPlan!=null&&b.flightPlan!==b.lane)u.airRoute={from:b.lane,to:b.flightPlan,phase:'approach',remaining:this.ruleset.movement.flightOrders.warningSeconds};s.units.push(u);this._effect(u.x,u.y,'spawn',u.side,0.45);}
   _advanceAirRoute(u,dt){
@@ -141,9 +145,9 @@ export class Game {
   }
   _damage(target,amount,side){if(this.damageQueue){this.damageQueue.push([target,amount,side]);return;}if(target.hp<=0)return;const seen=supportsFog(this.ruleset)&&amount>=target.hp?eventAudience(this,target.x,target.y):undefined;const damage=Math.min(target.hp,amount);target.hp=Math.max(0,target.hp-amount);this.state.stats.damage[side]+=damage;if(damage>0&&target.type==='base'&&supportsCitadelOptions(this.ruleset))this.state.citadelOptions.sides[target.side].lastDamageAt=this.state.time;target.hit=0.16;if(target.hp===0){if(supportsAutonomousAir(this.ruleset))for(const u of this.state.units)if(u.airTargetId===target.id)releaseAirTarget(u);if(this.units[target.type]){this.state.stats.kills[side]++;this.state.gold[side]+=2;}this._effect(target.x,target.y,'death',target.side,0.7,this.units[target.type]?18:52,seen);}}
   _fire(attacker,target,damage,type,citadelExtra=false){const s=this.state;attacker.attack=0.22;this._damage(target,damage,attacker.side);if(type!=='warrior'&&type!=='rootwarden'&&s.projectiles.length<256&&!supportsFog(this.ruleset))s.projectiles.push({x:attacker.x,y:attacker.y,sx:attacker.x,sy:attacker.y,tx:target.x,ty:target.y,side:attacker.side,type,sourceAir:!!this.units[attacker.type]?.flying,targetAir:!!this.units[target.type]?.flying,...(citadelExtra?{citadelExtra:true}:{}),...(supportsFog(this.ruleset)?{fogSeen:eventAudience(this,attacker.x,attacker.y)&eventAudience(this,target.x,target.y)}:{}),life:0.28,maxLife:0.28});else this._effect(target.x,target.y,'hit',attacker.side,0.2,16);}
-  update(dt){if(!Number.isFinite(dt)||dt<=0||this.state.winner!==null||campaignControlEnded(this))return;const limit=this._limitFor(dt);if(limit)return {ok:false,code:'save-safety-limit',reason:limit};this.accumulator+=Math.min(dt,0.25);while(this.accumulator>=0.05){this._step(0.05);this.accumulator-=0.05;if(this.state.winner!==null||campaignControlEnded(this))break;}}
+  update(dt){if(minorReserveEnded(this)||minorReserveUnbound(this))return;if(!Number.isFinite(dt)||dt<=0||this.state.winner!==null||campaignControlEnded(this))return;const limit=this._limitFor(dt);if(limit)return {ok:false,code:'save-safety-limit',reason:limit};this.accumulator+=Math.min(dt,0.25);while(this.accumulator>=0.05){this._step(0.05);this.accumulator-=0.05;if(this.state.winner!==null||campaignControlEnded(this)||minorReserveEnded(this))break;}}
   _step(dt){
-    if(campaignControlEnded(this))return;
+    if(campaignControlEnded(this)||minorReserveEnded(this)||minorReserveUnbound(this))return;
     const s=this.state;this.tick++;this.damageQueue=[];s.time+=dt;s.overtime=s.time>=300;
     const fog=supportsFog(this.ruleset);if(fog)refreshFog(this);
     const contacts=fog?decisionSnapshot(this):null,canSee=(side,e)=>!contacts||contacts[side].has(e.id);
@@ -215,6 +219,7 @@ export class Game {
     if(fog)refreshFog(this);
     if(this.ai){this.aiTimer-=dt;if(this.aiTimer<=0){this._ai();this.aiTimer=(this.difficulty==='easy'?14:this.difficulty==='hard'?3:5)+this.random()*3;}}
     if(fog)refreshFog(this);
+    advanceMinorReserve(this);
   }
   _ai(side=1){
     if(![0,1].includes(side)||this.state.winner!==null||this.limitReason)return;
@@ -414,6 +419,8 @@ function validateSave(data){
   for(const p of s.projectiles){obj(p,'projectile');if(supportsFog(ruleset))num(p.fogSeen,0,3,'projectile.fogSeen',true);if(Object.hasOwn(p,'citadelExtra')&&(!supportsCitadelOptions(ruleset)||p.citadelExtra!==true||p.type!=='tower'||s.citadelOptions.sides[p.side]?.choice!=='arrows'||s.citadelOptions.sides[p.side].extraShots<1||p.sx!==(p.side?map.width-110:110)||p.sy!==450))fail('invalid extra-arrow projectile');for(const field of ['sourceAir','targetAir'])if(p[field]!==undefined&&typeof p[field]!=='boolean')fail('projectile flight flags must be boolean');if(!['archer','siege','wizard','gryphon','tower'].includes(p.type))fail('unknown projectile');if(ruleset.campaignOnly&&p.type!=='tower'&&!Object.hasOwn(ruleset.units,p.type))fail('projectile is outside this campaign roster');num(p.side,0,1,'projectile.side',true);for(const k of ['x','sx','tx'])num(p[k],0,map.width,'projectile.'+k);for(const k of ['y','sy','ty'])num(p[k],0,map.height,'projectile.'+k);num(p.maxLife,.01,1,'projectile.maxLife');num(p.life,0,p.maxLife,'projectile.life');}
   if(s.winner==='draw'&&s.bases.some(b=>b.hp>0))fail('draw requires both cores to be destroyed');
   if(typeof s.winner==='number'&&s.bases[1-s.winner].hp>0)fail('winner has not destroyed the opposing base');
+  if(supportsMinorReserve(ruleset))validateMinorReserve(s.minorReserve,{map,tick:data.tick,nextId:data.nextId,state:s},fail);
+  else if(Object.hasOwn(s,'minorReserve'))fail('reserve state is outside this ruleset');
   return {map,ruleset};
 }
 
@@ -425,7 +432,7 @@ export function validateEngineFields(data){
 }
 function strictFields(value,required,optional,fail){if(!value||typeof value!=='object'||Array.isArray(value)||Object.keys(value).some(k=>!required.includes(k)&&!optional.includes(k))||required.some(k=>!Object.hasOwn(value,k)))fail('unknown field or missing required field');}
 function strictStateFields(s,fail,ruleset){
-  strictFields(s,['time','gold','income','bases','buildings','units','projectiles','effects','frontline','winner','spellCooldown','overtime','stats',...(supportsBridgeControl(ruleset)?['bridgeControl']:[]),...(supportsCampaignControl(ruleset)?['campaignControl']:[]),...(supportsCitadelOptions(ruleset)?['citadelOptions']:[]),...(supportsFog(ruleset)?['fog']:[]),...(supportsHammer(ruleset)?['hammerCommitment']:[])],[],fail);
+  strictFields(s,['time','gold','income','bases','buildings','units','projectiles','effects','frontline','winner','spellCooldown','overtime','stats',...(supportsBridgeControl(ruleset)?['bridgeControl']:[]),...(supportsCampaignControl(ruleset)?['campaignControl']:[]),...(supportsCitadelOptions(ruleset)?['citadelOptions']:[]),...(supportsFog(ruleset)?['fog']:[]),...(supportsHammer(ruleset)?['hammerCommitment']:[]),...(supportsMinorReserve(ruleset)?['minorReserve']:[])],[],fail);
   strictFields(s.stats,['kills','built','damage'],[],fail);
   const entity=['id','type','side','hp','maxHp','cooldown','x','y'],flight=supportsFlightOrders(ruleset),autoAir=supportsAutonomousAir(ruleset);
   for(const [name,required,optional] of [

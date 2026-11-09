@@ -4145,3 +4145,27 @@ body.gamepad-active a:focus {
 .fog-memory-details ul { margin: 8px 0 0; padding-left: 20px; max-height: 180px; overflow-y: auto; overscroll-behavior: contain; }
 .fog-memory-details li { min-height: 44px; padding: 8px 4px; line-height: 1.5; overflow-wrap: anywhere; }
 .fog-memory-details li:focus-visible { outline: 2px solid var(--gold); outline-offset: -2px; }
+
+/* The optional reserve uses the existing measured dock, with its own control
+   and no destruction/protection meter or required-objective badge. */
+.minor-reserve-hud { grid-column: 2; grid-row: 1 / 4; min-width: 0; }
+.minor-reserve-card { width: 100%; height: 100%; align-content: center; }
+.objective-hud .minor-reserve-card .protected-name { grid-column: 1; }
+.objective-hud .minor-reserve-card .protected-health { grid-column: 1; }
+.objective-hud .minor-reserve-card .protected-focus-hint {
+  grid-column: 2; grid-row: 1 / 3; width: 76px; align-self: center;
+  white-space: normal; line-height: 1.2;
+}
+.minor-reserve-card[data-state='warning'], .minor-reserve-card[data-state='arriving'] {
+  border-color: #ffd193; background: #423523;
+}
+@media (max-width: 700px) {
+  .minor-reserve-hud { grid-column: 1 / -1; grid-row: 3; }
+}
+.protected-mobile.protected-landscape .minor-reserve-hud { grid-column: 3; grid-row: 1 / 4; }
+.protected-portrait .minor-reserve-hud,
+.protected-mobile.protected-sidebar .minor-reserve-hud { grid-column: 1 / -1; grid-row: 3; }
+.protected-mobile.protected-short-portrait .minor-reserve-hud { grid-column: 1 / -1; grid-row: 2; }
+.protected-mobile .minor-reserve-card { min-height: 44px; padding: 4px 5px; gap: 2px 4px; }
+.protected-mobile .objective-hud .minor-reserve-card .protected-name,
+.protected-mobile .objective-hud .minor-reserve-card .protected-health { font-size: 10px; line-height: 12px; }

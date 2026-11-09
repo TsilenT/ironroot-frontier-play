@@ -1,3 +1,5 @@
+import {MINOR_RESERVE_RULESET_ID,MINOR_RESERVE} from './minor-reserve.js';
+export {MINOR_RESERVE_RULESET_ID} from './minor-reserve.js';
 import {HAMMER_RULESET_ID,HAMMER_CAMPAIGN_RULESET_ID,HAMMER_AI} from './hammer-policy.js';
 import { BRIDGE_CONTROL, CAMPAIGN_CONTROL, RIVER_BETWEEN_CONTROL } from './bridge-control.js';
 import { CITADEL_OPTIONS } from './citadel-options.js';
@@ -88,6 +90,7 @@ const authoredAirEntry=id=>deepFreeze({
   movement:{policy:'autonomous-air-local-v1',autonomousAir:{perception:300,retention:420,adjacentOnly:true}}
 });
 export const RULESETS=deepFreeze({
+  [MINOR_RESERVE_RULESET_ID]:deepFreeze({...autonomousAirEntry(MINOR_RESERVE_RULESET_ID,'Campaign · Wake the Reserve',false,true),citadel:CITADEL_OPTIONS,minorReserve:MINOR_RESERVE}),
   [SHARED_WATCH_RULESET_ID]:deepFreeze({...autonomousAirEntry(SHARED_WATCH_RULESET_ID,'Campaign · The Shared Watch',false,true),citadel:CITADEL_OPTIONS}),
   [LONG_SCREEN_RULESET_ID]:deepFreeze({...autonomousAirEntry(LONG_SCREEN_RULESET_ID,'Campaign · The Long Screen',false,true),citadel:CITADEL_OPTIONS}),
   [HAMMER_CAMPAIGN_RULESET_ID]:deepFreeze({...autonomousAirEntry(HAMMER_CAMPAIGN_RULESET_ID,'Campaign · The Hammer Turns',false,true),citadel:CITADEL_OPTIONS,ai:HAMMER_AI}),

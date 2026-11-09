@@ -3,6 +3,7 @@ export const CURRENT_RIVER_COMPACT_EPILOGUE = 'From the lantern-lit banks to the
 export const CURRENT_UNLIT_ROADS_EPILOGUE = 'The watchfires answer across all three roads again. With a passage open through the reed beds, Rowan’s company leaves the uplands for the coast.';
 export const CURRENT_SIEGE_COAST_EPILOGUE = 'The quays and coastal roads are secure. Rowan’s company has completed the Siege Coast; later chapters remain ahead.';
 const GOALS = {
+  'wake-the-reserve': 'Destroy the enemy citadel by 10:00 while yours survives; 1 HP is enough. The North Command Post and its reserve are optional.',
   'the-shared-watch': 'Destroy the enemy citadel by 10:00 while yours survives; 1 HP is enough. A middle watch or advancing support is optional; no tower, road or unit is required.',
   'the-long-screen': 'Destroy the enemy citadel before 10:00 while yours survives. Break central production or buy time for an outer attack; no route is required.',
   'the-hammer-turns': 'Destroy the enemy citadel before 10:00 while yours survives. Meet the paid siege commitment or support another road; no route is required.',
@@ -96,6 +97,7 @@ export function missionBriefing(mission) {
   if (mission.id === 'a-river-between-us') facts.push('Both goals required; either order', 'North Command Post: original north-road watchtower', 'Your citadel must survive; replacements do not count');
   if (mission.id === 'false-quiet') facts.push('Two possible enemy layouts; scout to identify this attempt', 'Restart and Resume preserve the layout', 'Your citadel must survive; replacements do not count');
   if (mission.id === 'the-shared-watch') facts.push('Shared nearby middle/south ground defense or advancing support', 'Limited reach; one shared firing stream', 'No compulsory tower, target, unit or road', 'Your citadel must survive; 1 HP is enough');
+  if (mission.id === 'wake-the-reserve') facts.push('Fully visible optional North Command Post on the north road', 'Destroy the original post: six-second warning, then one north contingent', '4 warriors + 2 archers; ordinary level 1; enemy cap can delay arrival', 'Paid enemy building and factory production continue; no required reserve kills', 'Normal 5:00 escalation; your citadel must survive; 1 HP is enough', '3:00 and 4,500-HP stars are optional');
   if (mission.id === 'the-long-screen') facts.push('Durable central troops; ordinary paid adaptive enemy', 'Central demolition or temporary containment', 'No compulsory target, unit or road', 'Your citadel must survive; 1 HP is enough');
   if (mission.id === 'the-hammer-turns') facts.push('New paid foundries show the siege commitment', 'All roads visible; no compulsory target or army', 'Emergency defense uses the same treasury', 'Your citadel must survive; 1 HP is enough');
   if (mission.id === 'salt-in-the-stores') facts.push('Three real enemy mines fund later paid works', 'Mine raids optional; direct siege allowed', 'Existing factories keep spawning after mine losses', 'Your citadel must survive; 1 HP is enough');

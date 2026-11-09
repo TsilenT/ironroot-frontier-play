@@ -1,5 +1,6 @@
+import {bindMinorReserve} from './minor-reserve.js';
 import {Game, BUILDINGS, MAPS, getMap, getRuleset} from './engine.js';
-import {CAMPAIGN_RULESET_IDS, CITADEL_CAMPAIGN_RULESET_IDS, AUTHORED_AIR_RULESET_ID, AUTHORED_CITADEL_RULESET_ID, SHARED_CROSSING_RULESET_ID, ONE_SIGNAL_RULESET_ID, LANTERNS_RULESET_ID, BORROWED_GROUND_RULESET_ID, RIVER_BETWEEN_RULESET_ID, FALSE_QUIET_RULESET_IDS, ROAD_WE_KNOW_RULESET_ID, REED_BEDS_RULESET_ID, ARCHERS_QUAY_RULESET_ID, SALT_STORES_RULESET_ID, HAMMER_CAMPAIGN_RULESET_ID, LONG_SCREEN_RULESET_ID, SHARED_WATCH_RULESET_ID, deepFreeze} from './rulesets.js';
+import {CAMPAIGN_RULESET_IDS, CITADEL_CAMPAIGN_RULESET_IDS, AUTHORED_AIR_RULESET_ID, AUTHORED_CITADEL_RULESET_ID, SHARED_CROSSING_RULESET_ID, ONE_SIGNAL_RULESET_ID, LANTERNS_RULESET_ID, BORROWED_GROUND_RULESET_ID, RIVER_BETWEEN_RULESET_ID, FALSE_QUIET_RULESET_IDS, ROAD_WE_KNOW_RULESET_ID, REED_BEDS_RULESET_ID, ARCHERS_QUAY_RULESET_ID, SALT_STORES_RULESET_ID, HAMMER_CAMPAIGN_RULESET_ID, LONG_SCREEN_RULESET_ID, SHARED_WATCH_RULESET_ID, MINOR_RESERVE_RULESET_ID, deepFreeze} from './rulesets.js';
 import {campaignControlStatus, CAMPAIGN_CONTROL_RULES_TEXT} from './bridge-control.js';
 import {CURRENT_RIVER_COMPACT_EPILOGUE, CURRENT_UNLIT_ROADS_EPILOGUE, CURRENT_SIEGE_COAST_EPILOGUE} from './campaign-presentation.js';
 import {supportsFog, createFog, refreshFog} from './fog.js';
@@ -484,6 +485,26 @@ export const SHARED_WATCH_MISSIONS=[{
     'All eight earned buildings, automatic adjacent-road flyers and normal paid citadel choices are available. At 5:00 ordinary escalation speeds production ×1.65, multiplies troop structure damage ×1.75 and lowers citadel shot damage from 32 to 18. There is no fog or forced drain.'],
 }];
 
+export const BROKEN_LINE_CHAPTER=deepFreeze({id:'broken-line',number:9,name:'The Broken Line',subtitle:'Face the last local reserves',theme:'woodland',plannedMissions:5,description:'Chapter 9 begins here. Only its first mission is currently available; at least five are planned.',epilogue:'The first road through the Broken Line is open. More of this chapter lies ahead.'});
+export const WAKE_RESERVE_MISSIONS=[{
+  id:'wake-the-reserve',chapterId:'broken-line',number:30,name:'Wake the Reserve',subtitle:'Choose when to face the northern reserve',
+  scenarioRevision:1,mapId:'classic',mapRevision:1,rulesetId:MINOR_RESERVE_RULESET_ID,rulesetRevision:1,
+  description:'An optional northern command post calls one small, finite contingent when destroyed. Prepare support, attack early, or concentrate elsewhere while ordinary paid enemy development continues.',
+  dialogue:{speaker:'Captain Rowan',text:'That northern post can call one last company. We choose when to face it, or press another road.'},
+  victoryText:'The enemy citadel falls. The company opens the first road through the Broken Line; more of Chapter 9 lies ahead.',
+  objective:'Destroy the enemy citadel by 10:00. Your citadel must survive.',
+  hint:'Buy ranged support and a durable screen before rear siege. The original North Command Post is optional. Its one reserve enters from the northern enemy rear six seconds after the post falls; you do not have to kill that reserve to win.',
+  difficulty:'normal',seed:9104,timeLimit:600,startingGold:900,startingHealth:6000,enemyGold:100,ai:true,prerequisites:['the-shared-watch'],
+  playerBuildings:[['barracks',690,0],['barracks',690,1],['barracks',690,2],['archery',550,1],['mint',410,1]],
+  enemyBuildings:[['barracks',2090,0],['barracks',2090,1],['barracks',2090,2],['archery',2370,1],['mint',2790,1],['watchtower',2230,0]],
+  objectives:[{id:'citadel',type:'citadel',label:'Destroy the enemy citadel'}],medals:[swift(180),intact(4500)],
+  briefing:['All three roads are fully visible. Both sides begin with three barracks, middle archers and a real mine. The ordinary northern enemy watchtower at the marked command post is optional.',
+    'Destroying the original North Command Post gives a six-second warning, then one finite reserve of four ordinary warriors and two ordinary archers enters at the enemy rear on north. They march and fight normally. Replacements do not call another reserve. The normal 70-unit enemy cap can delay arrivals.',
+    'Destroy the enemy citadel by 10:00 while yours survives; 1 HP is enough. No road, post, unit, purchase or reserve kill is required. The 3:00 and 4,500 HP medals are optional.',
+    'The reserve is the only authored reinforcement exception. Normal adaptive enemy purchases, ordinary income and existing factory production continue; no treasury grants, unit buffs or repeated waves are added.',
+    'All eight earned buildings, automatic adjacent-road flyers and paid citadel choices are available. Normal 5:00 production and structure-damage escalation applies; there is no fog or forced drain.'],
+}];
+
 /** Validate the only admitted partial-destruction objective. No saved counters. */
 export function validateDestroyAnyObjective(mission) {
   const any=mission.objectives?.filter(o=>o.type==='destroy-any')||[];
@@ -518,12 +539,12 @@ const firstAuthoredIds=Object.fromEntries(Object.keys(MAPS).map(mapId=>[mapId,ne
 // Legacy catalogs retain their order, totals and completion semantics.
 export const ALL_CAMPAIGN_MISSIONS=[...CAMPAIGN_MISSIONS,...INTRO_MISSIONS];
 export const ALL_CAMPAIGN_CHAPTERS=[INTRO_CHAPTER,...CAMPAIGN_CHAPTERS];
-export const CURRENT_CAMPAIGN_CHAPTERS=deepFreeze([ONBOARDING_CHAPTER,...ALL_CAMPAIGN_CHAPTERS,SHARED_CROSSING_CHAPTER,UNLIT_ROADS_CHAPTER,SIEGE_COAST_CHAPTER]);
-export const CAMPAIGN_PROGRESS_MISSIONS=[...ALL_CAMPAIGN_MISSIONS,...ONBOARDING_MISSIONS,...SHARED_CROSSING_MISSIONS,...ONE_SIGNAL_MISSIONS,...LANTERNS_MISSIONS,...BORROWED_GROUND_MISSIONS,...RIVER_BETWEEN_MISSIONS,...FALSE_QUIET_MISSIONS,...ROAD_WE_KNOW_MISSIONS,...REED_BEDS_MISSIONS,...ARCHERS_QUAY_MISSIONS,...SALT_STORES_MISSIONS,...HAMMER_TURNS_MISSIONS,...LONG_SCREEN_MISSIONS,...SHARED_WATCH_MISSIONS];
+export const CURRENT_CAMPAIGN_CHAPTERS=deepFreeze([ONBOARDING_CHAPTER,...ALL_CAMPAIGN_CHAPTERS,SHARED_CROSSING_CHAPTER,UNLIT_ROADS_CHAPTER,SIEGE_COAST_CHAPTER,BROKEN_LINE_CHAPTER]);
+export const CAMPAIGN_PROGRESS_MISSIONS=[...ALL_CAMPAIGN_MISSIONS,...ONBOARDING_MISSIONS,...SHARED_CROSSING_MISSIONS,...ONE_SIGNAL_MISSIONS,...LANTERNS_MISSIONS,...BORROWED_GROUND_MISSIONS,...RIVER_BETWEEN_MISSIONS,...FALSE_QUIET_MISSIONS,...ROAD_WE_KNOW_MISSIONS,...REED_BEDS_MISSIONS,...ARCHERS_QUAY_MISSIONS,...SALT_STORES_MISSIONS,...HAMMER_TURNS_MISSIONS,...LONG_SCREEN_MISSIONS,...SHARED_WATCH_MISSIONS,...WAKE_RESERVE_MISSIONS];
 for(const mission of CAMPAIGN_PROGRESS_MISSIONS) {
   mission.mapId=mission.mapId||'classic';
   mission.ai=mission.ai===true;
-  if(mission.chapterId==='frontier'||mission.chapterId==='river-compact'||mission.chapterId==='unlit-roads'||mission.chapterId==='siege-coast') {
+  if(mission.chapterId==='frontier'||mission.chapterId==='river-compact'||mission.chapterId==='unlit-roads'||mission.chapterId==='siege-coast'||mission.chapterId==='broken-line') {
     const map=getMap(mission.mapId,mission.mapRevision??1);
     const buildings=mission.rulesetId?getRuleset(mission.rulesetId,mission.rulesetRevision??1).buildings:BUILDINGS;
     const charted=['charted-customs-posts','charted-central-fort'].includes(mission.intelligence);
@@ -548,6 +569,7 @@ for(const mission of CAMPAIGN_PROGRESS_MISSIONS) {
   mission.markedTargets=mission.objectives.flatMap(o=>['destroy','destroy-any'].includes(o.type)?o.targets:[]);
   mission.protectedTargets=mission.objectives.flatMap(o=>o.type==='protect'?o.targets:[]);
   if(['lanterns-on-the-water','borrowed-ground','a-river-between-us'].includes(mission.id))mission.reward='Completes the current Chapter 6 route';
+  else if(mission.id==='wake-the-reserve')mission.reward='Begins Chapter 9 · More of the Broken Line remains ahead';
   else if(mission.id==='the-shared-watch')mission.reward='Completes Chapter 8 · The Siege Coast';
   else if(mission.id==='the-long-screen')mission.reward='More of the Siege Coast remains ahead';
   else if(mission.id==='the-hammer-turns')mission.reward='More of the Siege Coast remains ahead';
@@ -572,6 +594,7 @@ deepFreeze(SALT_STORES_MISSIONS);
 deepFreeze(HAMMER_TURNS_MISSIONS);
 deepFreeze(LONG_SCREEN_MISSIONS);
 deepFreeze(SHARED_WATCH_MISSIONS);
+deepFreeze(WAKE_RESERVE_MISSIONS);
 deepFreeze(SIEGE_COAST_CHAPTER);
 deepFreeze(UNLIT_ROADS_CHAPTER);
 
@@ -640,7 +663,7 @@ export function getCampaignMission(id,revision=1) {
 /** Current deliberate starts/previews only. Existing attempts use their rules. */
 export function getCurrentCampaignRevision(id,progress) {
   getCampaignMission(id,1);
-  return ['shared-crossing','one-signal-is-enough','lanterns-on-the-water','borrowed-ground','a-river-between-us','false-quiet','the-road-we-know','through-the-reed-beds','the-archers-quay','salt-in-the-stores','the-hammer-turns','the-long-screen','the-shared-watch'].includes(id)?1:CITADEL_CAMPAIGN_REVISION;
+  return ['shared-crossing','one-signal-is-enough','lanterns-on-the-water','borrowed-ground','a-river-between-us','false-quiet','the-road-we-know','through-the-reed-beds','the-archers-quay','salt-in-the-stores','the-hammer-turns','the-long-screen','the-shared-watch','wake-the-reserve'].includes(id)?1:CITADEL_CAMPAIGN_REVISION;
 }
 function onboardingLaunchStage(id,progress) {
   return Math.max(ONBOARDING_MISSIONS.findIndex(m=>m.id===id)+1,getCampaignRoster(progress).stage);
@@ -653,7 +676,9 @@ export function getCampaignRevisionForRuleset(id,rulesetId,rulesetRevision=1) {
   let rules;
   try{rules=getRuleset(rulesetId,rulesetRevision);}catch{throw new RangeError('Unknown campaign ruleset identity: '+String(rulesetId));}
   let revision;
-  if(id==='the-shared-watch'){
+  if(id==='wake-the-reserve'){
+    if(rules.id===MINOR_RESERVE_RULESET_ID)revision=1;
+  } else if(id==='the-shared-watch'){
     if(rules.id===SHARED_WATCH_RULESET_ID)revision=1;
   } else if(id==='the-long-screen'){
     if(rules.id===LONG_SCREEN_RULESET_ID)revision=1;
@@ -719,13 +744,13 @@ function missionGameOptions(mission) {
 export function createCampaignMission(id,options={}) {
   // Construction-only QA seed openings are explicit for Hammer and Screen. Ordinary launch,
   // Restart and Replay omit it and retain the authored seed; no UI variation.
-  if(['the-hammer-turns','the-long-screen','the-shared-watch'].includes(id)){
+  if(['the-hammer-turns','the-long-screen','the-shared-watch','wake-the-reserve'].includes(id)){
     if(!options||typeof options!=='object'||Array.isArray(options)||![Object.prototype,null].includes(Object.getPrototypeOf(options)))throw new TypeError('Campaign construction options must be a plain object.');
     const descriptors=Object.getOwnPropertyDescriptors(options),allowed=['revision','progress','variant','seed'];
     if(Reflect.ownKeys(descriptors).some(k=>typeof k!=='string'||!allowed.includes(k)||!Object.hasOwn(descriptors[k],'value')||!descriptors[k].enumerable))throw new TypeError('Unknown or unsafe campaign construction option.');
   }
   const {revision=1,progress,variant,seed}=options;
-  if(seed!==undefined&&(!['the-hammer-turns','the-long-screen','the-shared-watch'].includes(id)||!Number.isSafeInteger(seed)||seed<0||seed>4294967295))throw new RangeError('A construction seed must be a uint32 and is supported only for The Hammer Turns, The Long Screen and The Shared Watch.');
+  if(seed!==undefined&&(!['the-hammer-turns','the-long-screen','the-shared-watch','wake-the-reserve'].includes(id)||!Number.isSafeInteger(seed)||seed<0||seed>4294967295))throw new RangeError('A construction seed must be a uint32 and is supported only for The Hammer Turns, The Long Screen, The Shared Watch and Wake the Reserve.');
   const base=missionFor(id,revision);
   const roster=revision===CITADEL_CAMPAIGN_REVISION?CITADEL_CAMPAIGN_RULESET_IDS:CAMPAIGN_RULESET_IDS;
   const mission=[1,CITADEL_CAMPAIGN_REVISION].includes(revision)&&progress!==undefined&&isOnboardingMission(id)?{...base,rulesetId:roster[Math.max(ONBOARDING_MISSIONS.findIndex(m=>m.id===id),getCampaignRoster(progress).stage-1)]}:base;
@@ -755,7 +780,8 @@ function createAuthoredCampaignMission(mission,options) {
   }
   // Match the independently validated new opening exactly, including its empty
   // authored-build effect list. Published earlier openings retain their effects.
-  if(id==='the-shared-watch')s.effects=[];
+  if(id==='the-shared-watch'||id==='wake-the-reserve')s.effects=[];
+  if(id==='wake-the-reserve')bindMinorReserve(game);
   s.gold=[mission.startingGold,mission.enemyGold||0];s.bases[0].hp=mission.startingHealth;
   s.income=[currentIncome(game,0),currentIncome(game,1)];
   // Construction is authoring, not observation. Discard all intermediate/default memories.
@@ -844,7 +870,7 @@ export function evaluateCampaignMission(game,id,revision) {
   const defeated=s.winner===1||s.winner==='draw'||s.bases[0].hp<=0;
   const broken=objectives.find(o=>o.failed);
   const coreVictory=s.winner===0||s.bases[1].hp<=0;
-  const completed=!defeated&&!broken&&((mission.mode!=='control'&&!['borrowed-ground','false-quiet','the-road-we-know','through-the-reed-beds','the-archers-quay','salt-in-the-stores','the-hammer-turns','the-long-screen','the-shared-watch'].includes(mission.id))||s.time<=mission.timeLimit+1e-7)&&(coreVictory||objectives.every(o=>o.met));
+  const completed=!defeated&&!broken&&((mission.mode!=='control'&&!['borrowed-ground','false-quiet','the-road-we-know','through-the-reed-beds','the-archers-quay','salt-in-the-stores','the-hammer-turns','the-long-screen','the-shared-watch','wake-the-reserve'].includes(mission.id))||s.time<=mission.timeLimit+1e-7)&&(coreVictory||objectives.every(o=>o.met));
   const failed=defeated||!!broken||(!completed&&atDeadline);
   const advancing=objectives.filter(o=>!['protect','health'].includes(o.type));
   let progress=advancing.reduce((n,o)=>n+o.progress,0)/advancing.length;
@@ -902,7 +928,7 @@ export function isMissionUnlocked(progress,id,revision=1) {
 export const CAMPAIGN_RULESET_STAGES=Object.freeze({
   'frontier-campaign-watch':1,'frontier-campaign-fork':2,'frontier-campaign-open':3,'frontier-campaign-flight':3,[AUTONOMOUS_AIR_CAMPAIGN_RULESET_ID]:3,
   ...Object.fromEntries(CITADEL_CAMPAIGN_RULESET_IDS.map((id,index)=>[id,index+1])),
-  [SHARED_WATCH_RULESET_ID]:3,[LONG_SCREEN_RULESET_ID]:3,[HAMMER_CAMPAIGN_RULESET_ID]:3,[SALT_STORES_RULESET_ID]:3,[ARCHERS_QUAY_RULESET_ID]:3,[REED_BEDS_RULESET_ID]:3,[ROAD_WE_KNOW_RULESET_ID]:3,[SHARED_CROSSING_RULESET_ID]:3,[ONE_SIGNAL_RULESET_ID]:3,[LANTERNS_RULESET_ID]:3,[BORROWED_GROUND_RULESET_ID]:3,[RIVER_BETWEEN_RULESET_ID]:3,...Object.fromEntries(FALSE_QUIET_RULESET_IDS.map(id=>[id,3])),
+  [MINOR_RESERVE_RULESET_ID]:3,[SHARED_WATCH_RULESET_ID]:3,[LONG_SCREEN_RULESET_ID]:3,[HAMMER_CAMPAIGN_RULESET_ID]:3,[SALT_STORES_RULESET_ID]:3,[ARCHERS_QUAY_RULESET_ID]:3,[REED_BEDS_RULESET_ID]:3,[ROAD_WE_KNOW_RULESET_ID]:3,[SHARED_CROSSING_RULESET_ID]:3,[ONE_SIGNAL_RULESET_ID]:3,[LANTERNS_RULESET_ID]:3,[BORROWED_GROUND_RULESET_ID]:3,[RIVER_BETWEEN_RULESET_ID]:3,...Object.fromEntries(FALSE_QUIET_RULESET_IDS.map(id=>[id,3])),
 });
 export function canUseCampaignRuleset(progress,id,revision,rulesetId) {
   if(!campaignRulesetAllowed(id,revision,rulesetId))return false;
@@ -926,12 +952,12 @@ export function createProgressionCampaignMission(id,progress) {
 }
 export function getProgressionCampaignOverview(progress) {
   const clean=normalizeCampaignProgress(progress),roster=getCampaignRoster(clean);
-  const missions=[...ONBOARDING_MISSIONS,...PROGRESSION_CAMPAIGN_MISSIONS,...SHARED_CROSSING_MISSIONS,...ONE_SIGNAL_MISSIONS,...LANTERNS_MISSIONS,...BORROWED_GROUND_MISSIONS,...RIVER_BETWEEN_MISSIONS,...FALSE_QUIET_MISSIONS,...ROAD_WE_KNOW_MISSIONS,...REED_BEDS_MISSIONS,...ARCHERS_QUAY_MISSIONS,...SALT_STORES_MISSIONS,...HAMMER_TURNS_MISSIONS,...LONG_SCREEN_MISSIONS,...SHARED_WATCH_MISSIONS].map(m=>{
+  const missions=[...ONBOARDING_MISSIONS,...PROGRESSION_CAMPAIGN_MISSIONS,...SHARED_CROSSING_MISSIONS,...ONE_SIGNAL_MISSIONS,...LANTERNS_MISSIONS,...BORROWED_GROUND_MISSIONS,...RIVER_BETWEEN_MISSIONS,...FALSE_QUIET_MISSIONS,...ROAD_WE_KNOW_MISSIONS,...REED_BEDS_MISSIONS,...ARCHERS_QUAY_MISSIONS,...SALT_STORES_MISSIONS,...HAMMER_TURNS_MISSIONS,...LONG_SCREEN_MISSIONS,...SHARED_WATCH_MISSIONS,...WAKE_RESERVE_MISSIONS].map(m=>{
     const launch=getCampaignLaunchMission(m.id,clean);
     return {...launch,record:clean.missions[m.id]||null,
       unlocked:isMissionUnlocked(clean,m.id,launch.scenarioRevision),completed:!!clean.missions[m.id]};
   });
-  const chapters=[ONBOARDING_CHAPTER,...CAMPAIGN_CHAPTERS,SHARED_CROSSING_CHAPTER,UNLIT_ROADS_CHAPTER,SIEGE_COAST_CHAPTER].map(c=>{const own=missions.filter(m=>m.chapterId===c.id);return {...c,...(c.id===SHARED_CROSSING_CHAPTER.id?{epilogue:CURRENT_RIVER_COMPACT_EPILOGUE}:c.id===UNLIT_ROADS_CHAPTER.id?{epilogue:CURRENT_UNLIT_ROADS_EPILOGUE}:c.id===SIEGE_COAST_CHAPTER.id?{epilogue:CURRENT_SIEGE_COAST_EPILOGUE}:{}),completed:own.every(m=>m.completed),unlocked:own.some(m=>m.unlocked),cleared:own.filter(m=>m.completed).length,total:own.length,stars:own.reduce((n,m)=>n+(m.record?.stars||0),0),maxStars:own.length*3};});
+  const chapters=[ONBOARDING_CHAPTER,...CAMPAIGN_CHAPTERS,SHARED_CROSSING_CHAPTER,UNLIT_ROADS_CHAPTER,SIEGE_COAST_CHAPTER,BROKEN_LINE_CHAPTER].map(c=>{const own=missions.filter(m=>m.chapterId===c.id);return {...c,...(c.id===SHARED_CROSSING_CHAPTER.id?{epilogue:CURRENT_RIVER_COMPACT_EPILOGUE}:c.id===UNLIT_ROADS_CHAPTER.id?{epilogue:CURRENT_UNLIT_ROADS_EPILOGUE}:c.id===SIEGE_COAST_CHAPTER.id?{epilogue:CURRENT_SIEGE_COAST_EPILOGUE}:{}),completed:own.every(m=>m.completed)&&(!c.plannedMissions||own.length>=c.plannedMissions),unlocked:own.some(m=>m.unlocked),cleared:own.filter(m=>m.completed).length,total:own.length,stars:own.reduce((n,m)=>n+(m.record?.stars||0),0),maxStars:own.length*3};});
   const next=missions.find(m=>m.unlocked&&!m.completed&&(!roster.returning||!isOnboardingMission(m.id)));
   const cleared=missions.filter(m=>m.completed).length,stars=missions.reduce((n,m)=>n+(m.record?.stars||0),0);
   const historicalIntroduction=getCampaignOverview(clean).introduction;
@@ -953,7 +979,7 @@ export function recordCampaignResult(progress,id,game) {
 export function getCampaignOverview(progress) {
   const clean=normalizeCampaignProgress(progress);
   const missions=CAMPAIGN_MISSIONS.map(m=>({...m,record:clean.missions[m.id]||null,unlocked:m.prerequisites.every(id=>clean.missions[id]?.completed),completed:!!clean.missions[m.id]}));
-  const chapters=CAMPAIGN_CHAPTERS.map(c=>{const own=missions.filter(m=>m.chapterId===c.id);return {...c,completed:own.every(m=>m.completed),unlocked:own.some(m=>m.unlocked),cleared:own.filter(m=>m.completed).length,total:own.length,stars:own.reduce((n,m)=>n+(m.record?.stars||0),0),maxStars:own.length*3};});
+  const chapters=CAMPAIGN_CHAPTERS.map(c=>{const own=missions.filter(m=>m.chapterId===c.id);return {...c,completed:own.every(m=>m.completed)&&(!c.plannedMissions||own.length>=c.plannedMissions),unlocked:own.some(m=>m.unlocked),cleared:own.filter(m=>m.completed).length,total:own.length,stars:own.reduce((n,m)=>n+(m.record?.stars||0),0),maxStars:own.length*3};});
   const cleared=missions.filter(m=>m.completed).length,stars=missions.reduce((n,m)=>n+(m.record?.stars||0),0);
   const introMissions=INTRO_MISSIONS.map(m=>({...m,record:clean.missions[m.id]||null,unlocked:m.prerequisites.every(id=>clean.missions[id]?.completed),completed:!!clean.missions[m.id]}));
   const introCleared=introMissions.filter(m=>m.completed).length,introStars=introMissions.reduce((n,m)=>n+(m.record?.stars||0),0);

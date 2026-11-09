@@ -706,12 +706,15 @@ export class Renderer {
       c.setLineDash([]);
     }
     // World-side labels remain grounded in the scene.
+    this.drawMinorReserveLandmark(ui.minorReserve);
     c.textAlign = 'center';
     c.font = `600 ${Math.max(13, 10 / this.scale)}px "DM Sans",sans-serif`;
     c.fillStyle = '#e5edc2';
     c.fillText('YOUR FRONTIER', 780, 145);
     c.fillStyle = '#f1d5b7';
-    c.fillText('ENEMY FRONTIER', this.map.width - 770, 145);
+    // The named northern post occupies this same label band at small scales.
+    if (!ui.minorReserve?.landmark || ui.minorReserve.ended)
+      c.fillText('ENEMY FRONTIER', this.map.width - 770, 145);
     c.restore();
     const shade = c.createLinearGradient(0, 0, 0, this.height);
     shade.addColorStop(0, '#172b2638');
@@ -721,6 +724,31 @@ export class Renderer {
     c.fillStyle = shade;
     c.fillRect(0, 0, this.width, this.height);
     this.drawMinimap(s, game, ui);
+  }
+  drawMinorReserveLandmark(reserve) {
+    if (!reserve || reserve.ended) return;
+    const { x, y } = reserve.landmark || reserve.focus;
+    const c = this.c;
+    const label = reserve.landmark ? reserve.landmark.label
+      : reserve.phase === 'warning' ? reserve.title : 'North reserve entry · once only';
+    c.save();
+    c.font = `600 ${Math.max(13, 10 / this.scale)}px "DM Sans",sans-serif`;
+    c.textAlign = 'center';
+    c.textBaseline = 'middle';
+    const width = c.measureText(label).width + 16;
+    const height = Math.max(22, 18 / this.scale);
+    const anchor = Math.max(width / 2 + 8, Math.min(this.map.width - width / 2 - 8, x));
+    c.fillStyle = '#14251ef2';
+    c.fillRect(anchor - width / 2, y - 126 - height / 2, width, height);
+    c.strokeStyle = reserve.phase === 'warning' ? '#ffd193' : '#b8ae74';
+    c.lineWidth = Math.max(1, 1 / this.scale);
+    c.strokeRect(anchor - width / 2, y - 126 - height / 2, width, height);
+    c.fillStyle = '#f5e2b5';
+    c.fillText(label, anchor, y - 126);
+    // A plain flag is a landmark, not the required-objective diamond/shield.
+    c.beginPath(); c.moveTo(x, y - 94); c.lineTo(x, y - 64); c.stroke();
+    c.fillRect(x, y - 94, 18, 10);
+    c.restore();
   }
   drawBridgeZones(game, layer = 'all') {
     if (!supportsBridgeControl(game.ruleset) && !supportsCampaignControl(game.ruleset)) return;
@@ -1837,6 +1865,14 @@ export class Renderer {
       }
     }
     drawFlightMinimap(c, game, { width: w, height: h, selected: ui.selected });
+    if (ui.minorReserve && !ui.minorReserve.ended) {
+      const reserve = ui.minorReserve;
+      const x = reserve.focus.x / this.map.width * w, y = reserve.focus.y / this.map.height * h;
+      c.save();
+      c.strokeStyle = '#ffe3a5'; c.lineWidth = 1.5;
+      c.strokeRect(x - 3.5, y - 3.5, 7, 7);
+      c.restore();
+    }
     if (game && (supportsBridgeControl(game.ruleset) || supportsCampaignControl(game.ruleset))) {
       c.save(); c.font = 'bold 8px sans-serif'; c.textAlign = 'center'; c.textBaseline = 'middle';
       for (const bridge of bridgeStatus(game)) {
