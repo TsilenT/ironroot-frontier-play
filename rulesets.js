@@ -1,5 +1,6 @@
 import { BRIDGE_CONTROL, CAMPAIGN_CONTROL, RIVER_BETWEEN_CONTROL } from './bridge-control.js';
 import { CITADEL_OPTIONS } from './citadel-options.js';
+export const ARCHERS_QUAY_RULESET_ID='frontier-campaign-archers-quay';
 export const REED_BEDS_RULESET_ID='frontier-campaign-reed-beds';
 export const ROAD_WE_KNOW_RULESET_ID='frontier-campaign-road-we-know';
 export const FALSE_QUIET_RULESET_IDS=Object.freeze(['frontier-campaign-false-quiet-a','frontier-campaign-false-quiet-b']);
@@ -82,6 +83,7 @@ const authoredAirEntry=id=>deepFreeze({
   movement:{policy:'autonomous-air-local-v1',autonomousAir:{perception:300,retention:420,adjacentOnly:true}}
 });
 export const RULESETS=deepFreeze({
+  [ARCHERS_QUAY_RULESET_ID]:deepFreeze({...autonomousAirEntry(ARCHERS_QUAY_RULESET_ID,'Campaign · The Archer’s Quay',false,true),citadel:CITADEL_OPTIONS}),
   [REED_BEDS_RULESET_ID]:deepFreeze({...autonomousAirEntry(REED_BEDS_RULESET_ID,'Campaign · Through the Reed Beds',false,true),citadel:CITADEL_OPTIONS}),
   [ROAD_WE_KNOW_RULESET_ID]:deepFreeze({...autonomousAirEntry(ROAD_WE_KNOW_RULESET_ID,'Campaign · The Road We Know',false,true),citadel:CITADEL_OPTIONS}),
   ...Object.fromEntries(FALSE_QUIET_RULESET_IDS.map(id=>[id,deepFreeze({...autonomousAirEntry(id,'Campaign · False Quiet',false,true),citadel:CITADEL_OPTIONS,fog:FOG})])),

@@ -1,5 +1,5 @@
 import {Game, BUILDINGS, MAPS, getMap, getRuleset} from './engine.js';
-import {CAMPAIGN_RULESET_IDS, CITADEL_CAMPAIGN_RULESET_IDS, AUTHORED_AIR_RULESET_ID, AUTHORED_CITADEL_RULESET_ID, SHARED_CROSSING_RULESET_ID, ONE_SIGNAL_RULESET_ID, LANTERNS_RULESET_ID, BORROWED_GROUND_RULESET_ID, RIVER_BETWEEN_RULESET_ID, FALSE_QUIET_RULESET_IDS, ROAD_WE_KNOW_RULESET_ID, REED_BEDS_RULESET_ID, deepFreeze} from './rulesets.js';
+import {CAMPAIGN_RULESET_IDS, CITADEL_CAMPAIGN_RULESET_IDS, AUTHORED_AIR_RULESET_ID, AUTHORED_CITADEL_RULESET_ID, SHARED_CROSSING_RULESET_ID, ONE_SIGNAL_RULESET_ID, LANTERNS_RULESET_ID, BORROWED_GROUND_RULESET_ID, RIVER_BETWEEN_RULESET_ID, FALSE_QUIET_RULESET_IDS, ROAD_WE_KNOW_RULESET_ID, REED_BEDS_RULESET_ID, ARCHERS_QUAY_RULESET_ID, deepFreeze} from './rulesets.js';
 import {campaignControlStatus, CAMPAIGN_CONTROL_RULES_TEXT} from './bridge-control.js';
 import {CURRENT_RIVER_COMPACT_EPILOGUE, CURRENT_UNLIT_ROADS_EPILOGUE} from './campaign-presentation.js';
 import {supportsFog, createFog, refreshFog} from './fog.js';
@@ -389,6 +389,25 @@ export const REED_BEDS_MISSIONS=[{
     'At 5:00, ordinary escalation speeds production ×1.65, multiplies troop damage to structures ×1.75, and lowers citadel shot damage from 32 to 18. There is no fog, free reinforcement, reserve wave or forced citadel drain.'],
 }];
 
+export const SIEGE_COAST_CHAPTER={id:'siege-coast',number:8,name:'The Siege Coast',subtitle:'Break a foothold on the shore',theme:'coast',description:'The coastal garrisons guard workshops and quays with overlapping lines of production. The company must find a supported route through the visible defenders.',epilogue:'The first quay is open, giving the company a foothold on the coast. The rest of the Siege Coast is still ahead.'};
+export const ARCHERS_QUAY_MISSIONS=[{
+  id:'the-archers-quay',chapterId:'siege-coast',number:25,name:'The Archer’s Quay',subtitle:'Find a supported route to the coastal citadel',
+  scenarioRevision:1,mapId:'classic',mapRevision:1,rulesetId:ARCHERS_QUAY_RULESET_ID,rulesetRevision:1,
+  description:'The first coastal quay feeds archers down the middle road while foundries work on both flanks. All three approaches are visible, but an unsupported force can still meet the wrong defenders.',
+  dialogue:{speaker:'Scout Sera',text:'Their middle workshops train archers; the outer foundries send siege down both flanks. Watch where those troops meet ours. We need their citadel, not every workshop.'},
+  victoryText:'The coastal citadel falls. With the first quay secured, the company has a foothold on the Siege Coast; more of the coast still lies ahead.',
+  objective:'Destroy the enemy citadel within 10:00. Your citadel must survive.',
+  hint:'Screen siege and ranged troops on an outer road, or support a breach through the middle. Central archers can intercept nearby flyers. Archery ranges produce marching troops; they are not stationary batteries. No building or route is required.',
+  difficulty:'normal',seed:8101,timeLimit:600,startingGold:1100,startingHealth:6000,enemyGold:100,ai:true,prerequisites:['through-the-reed-beds'],
+  playerBuildings:[['barracks',830,0],['barracks',830,1],['barracks',830,2],['archery',690,0],['archery',690,1],['archery',690,2],['mint',410,1]],
+  enemyBuildings:[['foundry',2230,0],['foundry',2230,2],['barracks',2090,0],['barracks',2090,2],['barracks',2090,1],['archery',2230,1,2],['archery',2370,1],['mint',2790,1]],
+  objectives:[{id:'citadel',type:'citadel',label:'Destroy the enemy citadel'}],medals:[swift(300),intact(4500)],
+  briefing:['All three roads and enemy forces are fully visible. Two middle-road archery ranges supply marching archers, with one foundry on each outer road. Archers can intercept nearby flyers, including across an adjacent road when in range; they do not cover every road permanently.',
+    'Destroy the enemy citadel by 10:00 with yours alive; 1 HP is enough. There are no required workshop targets, protected structures, bridge goals or forced route. Destroying an archery range stops its future production, but existing archers remain.',
+    'Both sides begin with a real mine and 7.5 gold/sec. The normal adaptive enemy pays ordinary prices for later buildings, upgrades and arrow volleys using income and kill bounties. All eight earned buildings, automatic adjacent-road flyers and ordinary citadel choices remain available. Flyers select contacts automatically and deal reduced structure damage.',
+    'At 5:00, ordinary escalation speeds production ×1.65, multiplies troop damage to structures ×1.75, and lowers citadel shot damage from 32 to 18. There is no fog, free reinforcement, reserve wave or forced citadel drain.'],
+}];
+
 /** Validate the only admitted partial-destruction objective. No saved counters. */
 export function validateDestroyAnyObjective(mission) {
   const any=mission.objectives?.filter(o=>o.type==='destroy-any')||[];
@@ -423,12 +442,12 @@ const firstAuthoredIds=Object.fromEntries(Object.keys(MAPS).map(mapId=>[mapId,ne
 // Legacy catalogs retain their order, totals and completion semantics.
 export const ALL_CAMPAIGN_MISSIONS=[...CAMPAIGN_MISSIONS,...INTRO_MISSIONS];
 export const ALL_CAMPAIGN_CHAPTERS=[INTRO_CHAPTER,...CAMPAIGN_CHAPTERS];
-export const CURRENT_CAMPAIGN_CHAPTERS=deepFreeze([ONBOARDING_CHAPTER,...ALL_CAMPAIGN_CHAPTERS,SHARED_CROSSING_CHAPTER,UNLIT_ROADS_CHAPTER]);
-export const CAMPAIGN_PROGRESS_MISSIONS=[...ALL_CAMPAIGN_MISSIONS,...ONBOARDING_MISSIONS,...SHARED_CROSSING_MISSIONS,...ONE_SIGNAL_MISSIONS,...LANTERNS_MISSIONS,...BORROWED_GROUND_MISSIONS,...RIVER_BETWEEN_MISSIONS,...FALSE_QUIET_MISSIONS,...ROAD_WE_KNOW_MISSIONS,...REED_BEDS_MISSIONS];
+export const CURRENT_CAMPAIGN_CHAPTERS=deepFreeze([ONBOARDING_CHAPTER,...ALL_CAMPAIGN_CHAPTERS,SHARED_CROSSING_CHAPTER,UNLIT_ROADS_CHAPTER,SIEGE_COAST_CHAPTER]);
+export const CAMPAIGN_PROGRESS_MISSIONS=[...ALL_CAMPAIGN_MISSIONS,...ONBOARDING_MISSIONS,...SHARED_CROSSING_MISSIONS,...ONE_SIGNAL_MISSIONS,...LANTERNS_MISSIONS,...BORROWED_GROUND_MISSIONS,...RIVER_BETWEEN_MISSIONS,...FALSE_QUIET_MISSIONS,...ROAD_WE_KNOW_MISSIONS,...REED_BEDS_MISSIONS,...ARCHERS_QUAY_MISSIONS];
 for(const mission of CAMPAIGN_PROGRESS_MISSIONS) {
   mission.mapId=mission.mapId||'classic';
   mission.ai=mission.ai===true;
-  if(mission.chapterId==='frontier'||mission.chapterId==='river-compact'||mission.chapterId==='unlit-roads') {
+  if(mission.chapterId==='frontier'||mission.chapterId==='river-compact'||mission.chapterId==='unlit-roads'||mission.chapterId==='siege-coast') {
     const map=getMap(mission.mapId,mission.mapRevision??1);
     const charted=['charted-customs-posts','charted-central-fort'].includes(mission.intelligence);
     mission.deployment={player:describeDeployment(mission.playerBuildings,map),enemy:charted?(mission.id==='false-quiet'?'Charted original Middle Road Fort; the selected production layout, patrols and other buildings are unknown':'Charted customs houses on the north and south roads; patrols and other buildings are unknown'):describeDeployment(mission.enemyBuildings,map)};
@@ -452,6 +471,7 @@ for(const mission of CAMPAIGN_PROGRESS_MISSIONS) {
   mission.markedTargets=mission.objectives.flatMap(o=>['destroy','destroy-any'].includes(o.type)?o.targets:[]);
   mission.protectedTargets=mission.objectives.flatMap(o=>o.type==='protect'?o.targets:[]);
   if(['lanterns-on-the-water','borrowed-ground','a-river-between-us'].includes(mission.id))mission.reward='Completes the current Chapter 6 route';
+  else if(mission.id==='the-archers-quay')mission.reward='Completes the current Siege Coast route';
   else if(mission.id==='through-the-reed-beds')mission.reward='Completes Chapter 7 · The Unlit Roads';
   else if(mission.id==='the-road-we-know')mission.reward='Completes the current Unlit Roads route';
   else if(mission.id==='false-quiet')mission.reward='Completes the current Unlit Roads route';
@@ -466,6 +486,8 @@ deepFreeze(RIVER_BETWEEN_MISSIONS);
 deepFreeze(FALSE_QUIET_MISSIONS);
 deepFreeze(ROAD_WE_KNOW_MISSIONS);
 deepFreeze(REED_BEDS_MISSIONS);
+deepFreeze(ARCHERS_QUAY_MISSIONS);
+deepFreeze(SIEGE_COAST_CHAPTER);
 deepFreeze(UNLIT_ROADS_CHAPTER);
 
 // Published revision 1/2/3 descriptors stay exact. Current starts select a
@@ -533,7 +555,7 @@ export function getCampaignMission(id,revision=1) {
 /** Current deliberate starts/previews only. Existing attempts use their rules. */
 export function getCurrentCampaignRevision(id,progress) {
   getCampaignMission(id,1);
-  return ['shared-crossing','one-signal-is-enough','lanterns-on-the-water','borrowed-ground','a-river-between-us','false-quiet','the-road-we-know','through-the-reed-beds'].includes(id)?1:CITADEL_CAMPAIGN_REVISION;
+  return ['shared-crossing','one-signal-is-enough','lanterns-on-the-water','borrowed-ground','a-river-between-us','false-quiet','the-road-we-know','through-the-reed-beds','the-archers-quay'].includes(id)?1:CITADEL_CAMPAIGN_REVISION;
 }
 function onboardingLaunchStage(id,progress) {
   return Math.max(ONBOARDING_MISSIONS.findIndex(m=>m.id===id)+1,getCampaignRoster(progress).stage);
@@ -546,7 +568,9 @@ export function getCampaignRevisionForRuleset(id,rulesetId,rulesetRevision=1) {
   let rules;
   try{rules=getRuleset(rulesetId,rulesetRevision);}catch{throw new RangeError('Unknown campaign ruleset identity: '+String(rulesetId));}
   let revision;
-  if(id==='through-the-reed-beds'){
+  if(id==='the-archers-quay'){
+    if(rules.id===ARCHERS_QUAY_RULESET_ID)revision=1;
+  } else if(id==='through-the-reed-beds'){
     if(rules.id===REED_BEDS_RULESET_ID)revision=1;
   } else if(id==='the-road-we-know'){
     if(rules.id===ROAD_WE_KNOW_RULESET_ID)revision=1;
@@ -713,7 +737,7 @@ export function evaluateCampaignMission(game,id,revision) {
   const defeated=s.winner===1||s.winner==='draw'||s.bases[0].hp<=0;
   const broken=objectives.find(o=>o.failed);
   const coreVictory=s.winner===0||s.bases[1].hp<=0;
-  const completed=!defeated&&!broken&&((mission.mode!=='control'&&!['borrowed-ground','false-quiet','the-road-we-know','through-the-reed-beds'].includes(mission.id))||s.time<=mission.timeLimit+1e-7)&&(coreVictory||objectives.every(o=>o.met));
+  const completed=!defeated&&!broken&&((mission.mode!=='control'&&!['borrowed-ground','false-quiet','the-road-we-know','through-the-reed-beds','the-archers-quay'].includes(mission.id))||s.time<=mission.timeLimit+1e-7)&&(coreVictory||objectives.every(o=>o.met));
   const failed=defeated||!!broken||(!completed&&atDeadline);
   const advancing=objectives.filter(o=>!['protect','health'].includes(o.type));
   let progress=advancing.reduce((n,o)=>n+o.progress,0)/advancing.length;
@@ -771,7 +795,7 @@ export function isMissionUnlocked(progress,id,revision=1) {
 export const CAMPAIGN_RULESET_STAGES=Object.freeze({
   'frontier-campaign-watch':1,'frontier-campaign-fork':2,'frontier-campaign-open':3,'frontier-campaign-flight':3,[AUTONOMOUS_AIR_CAMPAIGN_RULESET_ID]:3,
   ...Object.fromEntries(CITADEL_CAMPAIGN_RULESET_IDS.map((id,index)=>[id,index+1])),
-  [REED_BEDS_RULESET_ID]:3,[ROAD_WE_KNOW_RULESET_ID]:3,[SHARED_CROSSING_RULESET_ID]:3,[ONE_SIGNAL_RULESET_ID]:3,[LANTERNS_RULESET_ID]:3,[BORROWED_GROUND_RULESET_ID]:3,[RIVER_BETWEEN_RULESET_ID]:3,...Object.fromEntries(FALSE_QUIET_RULESET_IDS.map(id=>[id,3])),
+  [ARCHERS_QUAY_RULESET_ID]:3,[REED_BEDS_RULESET_ID]:3,[ROAD_WE_KNOW_RULESET_ID]:3,[SHARED_CROSSING_RULESET_ID]:3,[ONE_SIGNAL_RULESET_ID]:3,[LANTERNS_RULESET_ID]:3,[BORROWED_GROUND_RULESET_ID]:3,[RIVER_BETWEEN_RULESET_ID]:3,...Object.fromEntries(FALSE_QUIET_RULESET_IDS.map(id=>[id,3])),
 });
 export function canUseCampaignRuleset(progress,id,revision,rulesetId) {
   if(!campaignRulesetAllowed(id,revision,rulesetId))return false;
@@ -785,7 +809,7 @@ export function getCampaignLaunchMission(id,progress) {
   const presentation=opening&&stage===3?AUTONOMOUS_AIR_CAMPAIGN_MISSIONS.find(m=>m.id===id):mission;
   return {...mission,briefing:presentation.briefing,hint:presentation.hint,scenarioRevision:revision,
     // Current navigation copy only; published scenario descriptors remain immutable.
-    ...(id==='common-ground'?{reward:'Unlocks Shared Crossing'}:id==='shared-crossing'?{reward:'Unlocks One Signal Is Enough',subtitle:'Secure the convoy route'}:id==='one-signal-is-enough'?{reward:'Unlocks Lanterns on the Water'}:id==='lanterns-on-the-water'?{reward:'Unlocks Borrowed Ground'}:id==='borrowed-ground'?{reward:'Unlocks A River Between Us'}:id==='a-river-between-us'?{reward:'Unlocks False Quiet'}:id==='false-quiet'?{reward:'Unlocks The Road We Know'}:id==='the-road-we-know'?{reward:'Unlocks Through the Reed Beds'}:{}),
+    ...(id==='common-ground'?{reward:'Unlocks Shared Crossing'}:id==='shared-crossing'?{reward:'Unlocks One Signal Is Enough',subtitle:'Secure the convoy route'}:id==='one-signal-is-enough'?{reward:'Unlocks Lanterns on the Water'}:id==='lanterns-on-the-water'?{reward:'Unlocks Borrowed Ground'}:id==='borrowed-ground'?{reward:'Unlocks A River Between Us'}:id==='a-river-between-us'?{reward:'Unlocks False Quiet'}:id==='false-quiet'?{reward:'Unlocks The Road We Know'}:id==='the-road-we-know'?{reward:'Unlocks Through the Reed Beds'}:id==='through-the-reed-beds'?{reward:'Unlocks The Archer’s Quay'}:{}),
     ...(opening?{rulesetId:CITADEL_CAMPAIGN_RULESET_IDS[stage-1]}:{})};
 }
 export function createProgressionCampaignMission(id,progress) {
@@ -795,12 +819,12 @@ export function createProgressionCampaignMission(id,progress) {
 }
 export function getProgressionCampaignOverview(progress) {
   const clean=normalizeCampaignProgress(progress),roster=getCampaignRoster(clean);
-  const missions=[...ONBOARDING_MISSIONS,...PROGRESSION_CAMPAIGN_MISSIONS,...SHARED_CROSSING_MISSIONS,...ONE_SIGNAL_MISSIONS,...LANTERNS_MISSIONS,...BORROWED_GROUND_MISSIONS,...RIVER_BETWEEN_MISSIONS,...FALSE_QUIET_MISSIONS,...ROAD_WE_KNOW_MISSIONS,...REED_BEDS_MISSIONS].map(m=>{
+  const missions=[...ONBOARDING_MISSIONS,...PROGRESSION_CAMPAIGN_MISSIONS,...SHARED_CROSSING_MISSIONS,...ONE_SIGNAL_MISSIONS,...LANTERNS_MISSIONS,...BORROWED_GROUND_MISSIONS,...RIVER_BETWEEN_MISSIONS,...FALSE_QUIET_MISSIONS,...ROAD_WE_KNOW_MISSIONS,...REED_BEDS_MISSIONS,...ARCHERS_QUAY_MISSIONS].map(m=>{
     const launch=getCampaignLaunchMission(m.id,clean);
     return {...launch,record:clean.missions[m.id]||null,
       unlocked:isMissionUnlocked(clean,m.id,launch.scenarioRevision),completed:!!clean.missions[m.id]};
   });
-  const chapters=[ONBOARDING_CHAPTER,...CAMPAIGN_CHAPTERS,SHARED_CROSSING_CHAPTER,UNLIT_ROADS_CHAPTER].map(c=>{const own=missions.filter(m=>m.chapterId===c.id);return {...c,...(c.id===SHARED_CROSSING_CHAPTER.id?{epilogue:CURRENT_RIVER_COMPACT_EPILOGUE}:c.id===UNLIT_ROADS_CHAPTER.id?{epilogue:CURRENT_UNLIT_ROADS_EPILOGUE}:{}),completed:own.every(m=>m.completed),unlocked:own.some(m=>m.unlocked),cleared:own.filter(m=>m.completed).length,total:own.length,stars:own.reduce((n,m)=>n+(m.record?.stars||0),0),maxStars:own.length*3};});
+  const chapters=[ONBOARDING_CHAPTER,...CAMPAIGN_CHAPTERS,SHARED_CROSSING_CHAPTER,UNLIT_ROADS_CHAPTER,SIEGE_COAST_CHAPTER].map(c=>{const own=missions.filter(m=>m.chapterId===c.id);return {...c,...(c.id===SHARED_CROSSING_CHAPTER.id?{epilogue:CURRENT_RIVER_COMPACT_EPILOGUE}:c.id===UNLIT_ROADS_CHAPTER.id?{epilogue:CURRENT_UNLIT_ROADS_EPILOGUE}:{}),completed:own.every(m=>m.completed),unlocked:own.some(m=>m.unlocked),cleared:own.filter(m=>m.completed).length,total:own.length,stars:own.reduce((n,m)=>n+(m.record?.stars||0),0),maxStars:own.length*3};});
   const next=missions.find(m=>m.unlocked&&!m.completed&&(!roster.returning||!isOnboardingMission(m.id)));
   const cleared=missions.filter(m=>m.completed).length,stars=missions.reduce((n,m)=>n+(m.record?.stars||0),0);
   const historicalIntroduction=getCampaignOverview(clean).introduction;
