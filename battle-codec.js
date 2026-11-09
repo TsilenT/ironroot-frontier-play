@@ -79,6 +79,9 @@ export function validateBattleIdentity(identity){
   if((rules.id==='frontier-campaign-road-we-know'||scenario.id==='the-road-we-know')&&
     (rules.id!=='frontier-campaign-road-we-know'||rules.revision!==1||map.id!=='twin-span'||map.revision!==1||scenario.kind!=='campaign'||scenario.id!=='the-road-we-know'||scenario.revision!==1))
     fail('The Road We Know requires its exact campaign, Twin Span and ruleset identities.','unsupported-identity');
+  if((rules.id==='frontier-campaign-salt-stores'||scenario.id==='salt-in-the-stores')&&
+    (rules.id!=='frontier-campaign-salt-stores'||rules.revision!==1||map.id!=='classic'||map.revision!==1||scenario.kind!=='campaign'||scenario.id!=='salt-in-the-stores'||scenario.revision!==1))
+    fail('Salt in the Stores requires its exact campaign, ruleset and Classic identity.');
   if((rules.id==='frontier-campaign-archers-quay'||scenario.id==='the-archers-quay')&&
     (rules.id!=='frontier-campaign-archers-quay'||rules.revision!==1||map.id!=='classic'||map.revision!==1||scenario.kind!=='campaign'||scenario.id!=='the-archers-quay'||scenario.revision!==1))
     fail('The Archer’s Quay requires its exact campaign, ruleset and map identity.','campaign-identity');

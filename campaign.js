@@ -1,5 +1,5 @@
 import {Game, BUILDINGS, MAPS, getMap, getRuleset} from './engine.js';
-import {CAMPAIGN_RULESET_IDS, CITADEL_CAMPAIGN_RULESET_IDS, AUTHORED_AIR_RULESET_ID, AUTHORED_CITADEL_RULESET_ID, SHARED_CROSSING_RULESET_ID, ONE_SIGNAL_RULESET_ID, LANTERNS_RULESET_ID, BORROWED_GROUND_RULESET_ID, RIVER_BETWEEN_RULESET_ID, FALSE_QUIET_RULESET_IDS, ROAD_WE_KNOW_RULESET_ID, REED_BEDS_RULESET_ID, ARCHERS_QUAY_RULESET_ID, deepFreeze} from './rulesets.js';
+import {CAMPAIGN_RULESET_IDS, CITADEL_CAMPAIGN_RULESET_IDS, AUTHORED_AIR_RULESET_ID, AUTHORED_CITADEL_RULESET_ID, SHARED_CROSSING_RULESET_ID, ONE_SIGNAL_RULESET_ID, LANTERNS_RULESET_ID, BORROWED_GROUND_RULESET_ID, RIVER_BETWEEN_RULESET_ID, FALSE_QUIET_RULESET_IDS, ROAD_WE_KNOW_RULESET_ID, REED_BEDS_RULESET_ID, ARCHERS_QUAY_RULESET_ID, SALT_STORES_RULESET_ID, deepFreeze} from './rulesets.js';
 import {campaignControlStatus, CAMPAIGN_CONTROL_RULES_TEXT} from './bridge-control.js';
 import {CURRENT_RIVER_COMPACT_EPILOGUE, CURRENT_UNLIT_ROADS_EPILOGUE} from './campaign-presentation.js';
 import {supportsFog, createFog, refreshFog} from './fog.js';
@@ -408,6 +408,24 @@ export const ARCHERS_QUAY_MISSIONS=[{
     'At 5:00, ordinary escalation speeds production ×1.65, multiplies troop damage to structures ×1.75, and lowers citadel shot damage from 32 to 18. There is no fog, free reinforcement, reserve wave or forced citadel drain.'],
 }];
 
+export const SALT_STORES_MISSIONS=[{
+  id:'salt-in-the-stores',chapterId:'siege-coast',number:26,name:'Salt in the Stores',subtitle:'Raid the mines or support the direct siege',
+  scenarioRevision:1,mapId:'classic',mapRevision:1,rulesetId:SALT_STORES_RULESET_ID,rulesetRevision:1,
+  description:'Three mines fund the coastal garrison’s next works. The exposed northern mine invites a raid; the southern store sits deeper behind the lines. The inherited middle-road camp can support a direct siege instead.',
+  dialogue:{speaker:'Scout Sera',text:'Their mines pay for new works, not the troops already marching. We can raid an outer store or drive through the middle. Either way, we need their citadel.'},
+  victoryText:'The stores fall quiet as the coastal citadel yields. Another foothold is secure, but more of the Siege Coast remains ahead.',
+  objective:'Destroy the enemy citadel within 10:00. Your citadel must survive.',
+  hint:'Commit paid troops to an outer mine raid, or reinforce the inherited middle-road production for a direct siege. Troops choose targets automatically. No mine or route is required. Destroying mines reduces future spending; surviving factories keep spawning.',
+  difficulty:'normal',seed:8202,timeLimit:600,startingGold:1100,startingHealth:6000,enemyGold:100,ai:true,prerequisites:['the-archers-quay'],
+  playerBuildings:[['barracks',970,1,2],['archery',830,1,2],['watchtower',1110,0,2],['watchtower',1110,2,2],['mint',410,1,1]],
+  enemyBuildings:[['mint',1950,0,1],['mint',2090,2,1],['mint',2790,1,1],['barracks',2370,0,1],['barracks',2370,2,1],['watchtower',2090,1,2],['barracks',2230,1,2],['archery',2370,1,1]],
+  objectives:[{id:'citadel',type:'citadel',label:'Destroy the enemy citadel'}],medals:[swift(240),intact(4500)],
+  briefing:['All three roads and the enemy are fully visible. Your inherited barracks and archery range produce middle-road troops. Outer towers defend but do not send raiders; an outer mine raid needs paid production.',
+    'Destroy the enemy citadel by 10:00 while yours survives; 1 HP is enough. No mine, workshop or route is required. Troops choose their own targets. The middle mine lies on the direct siege road.',
+    'Your real mine gives 7.5 gold/sec including ordinary income. Three enemy mines give 12.5 gold/sec. Each level-one mine adds 2.5 gold/sec above the ordinary 5. Losing a mine reduces future income for paid buildings, upgrades and volleys. Existing factories keep spawning without wages, and ordinary income continues. The normal adaptive enemy may buy a replacement mine when its ordinary decisions allow it; a rebuild is not guaranteed.',
+    'All eight earned buildings, automatic adjacent-road flyers and normal citadel choices are available. At 5:00 ordinary escalation speeds production ×1.65, multiplies troop structure damage ×1.75 and lowers citadel shot damage from 32 to 18. There is no fog, reserve wave, forced drain or free reinforcement.'],
+}];
+
 /** Validate the only admitted partial-destruction objective. No saved counters. */
 export function validateDestroyAnyObjective(mission) {
   const any=mission.objectives?.filter(o=>o.type==='destroy-any')||[];
@@ -443,7 +461,7 @@ const firstAuthoredIds=Object.fromEntries(Object.keys(MAPS).map(mapId=>[mapId,ne
 export const ALL_CAMPAIGN_MISSIONS=[...CAMPAIGN_MISSIONS,...INTRO_MISSIONS];
 export const ALL_CAMPAIGN_CHAPTERS=[INTRO_CHAPTER,...CAMPAIGN_CHAPTERS];
 export const CURRENT_CAMPAIGN_CHAPTERS=deepFreeze([ONBOARDING_CHAPTER,...ALL_CAMPAIGN_CHAPTERS,SHARED_CROSSING_CHAPTER,UNLIT_ROADS_CHAPTER,SIEGE_COAST_CHAPTER]);
-export const CAMPAIGN_PROGRESS_MISSIONS=[...ALL_CAMPAIGN_MISSIONS,...ONBOARDING_MISSIONS,...SHARED_CROSSING_MISSIONS,...ONE_SIGNAL_MISSIONS,...LANTERNS_MISSIONS,...BORROWED_GROUND_MISSIONS,...RIVER_BETWEEN_MISSIONS,...FALSE_QUIET_MISSIONS,...ROAD_WE_KNOW_MISSIONS,...REED_BEDS_MISSIONS,...ARCHERS_QUAY_MISSIONS];
+export const CAMPAIGN_PROGRESS_MISSIONS=[...ALL_CAMPAIGN_MISSIONS,...ONBOARDING_MISSIONS,...SHARED_CROSSING_MISSIONS,...ONE_SIGNAL_MISSIONS,...LANTERNS_MISSIONS,...BORROWED_GROUND_MISSIONS,...RIVER_BETWEEN_MISSIONS,...FALSE_QUIET_MISSIONS,...ROAD_WE_KNOW_MISSIONS,...REED_BEDS_MISSIONS,...ARCHERS_QUAY_MISSIONS,...SALT_STORES_MISSIONS];
 for(const mission of CAMPAIGN_PROGRESS_MISSIONS) {
   mission.mapId=mission.mapId||'classic';
   mission.ai=mission.ai===true;
@@ -471,6 +489,7 @@ for(const mission of CAMPAIGN_PROGRESS_MISSIONS) {
   mission.markedTargets=mission.objectives.flatMap(o=>['destroy','destroy-any'].includes(o.type)?o.targets:[]);
   mission.protectedTargets=mission.objectives.flatMap(o=>o.type==='protect'?o.targets:[]);
   if(['lanterns-on-the-water','borrowed-ground','a-river-between-us'].includes(mission.id))mission.reward='Completes the current Chapter 6 route';
+  else if(mission.id==='salt-in-the-stores')mission.reward='More of the Siege Coast remains ahead';
   else if(mission.id==='the-archers-quay')mission.reward='Completes the current Siege Coast route';
   else if(mission.id==='through-the-reed-beds')mission.reward='Completes Chapter 7 · The Unlit Roads';
   else if(mission.id==='the-road-we-know')mission.reward='Completes the current Unlit Roads route';
@@ -487,6 +506,7 @@ deepFreeze(FALSE_QUIET_MISSIONS);
 deepFreeze(ROAD_WE_KNOW_MISSIONS);
 deepFreeze(REED_BEDS_MISSIONS);
 deepFreeze(ARCHERS_QUAY_MISSIONS);
+deepFreeze(SALT_STORES_MISSIONS);
 deepFreeze(SIEGE_COAST_CHAPTER);
 deepFreeze(UNLIT_ROADS_CHAPTER);
 
@@ -555,7 +575,7 @@ export function getCampaignMission(id,revision=1) {
 /** Current deliberate starts/previews only. Existing attempts use their rules. */
 export function getCurrentCampaignRevision(id,progress) {
   getCampaignMission(id,1);
-  return ['shared-crossing','one-signal-is-enough','lanterns-on-the-water','borrowed-ground','a-river-between-us','false-quiet','the-road-we-know','through-the-reed-beds','the-archers-quay'].includes(id)?1:CITADEL_CAMPAIGN_REVISION;
+  return ['shared-crossing','one-signal-is-enough','lanterns-on-the-water','borrowed-ground','a-river-between-us','false-quiet','the-road-we-know','through-the-reed-beds','the-archers-quay','salt-in-the-stores'].includes(id)?1:CITADEL_CAMPAIGN_REVISION;
 }
 function onboardingLaunchStage(id,progress) {
   return Math.max(ONBOARDING_MISSIONS.findIndex(m=>m.id===id)+1,getCampaignRoster(progress).stage);
@@ -568,7 +588,9 @@ export function getCampaignRevisionForRuleset(id,rulesetId,rulesetRevision=1) {
   let rules;
   try{rules=getRuleset(rulesetId,rulesetRevision);}catch{throw new RangeError('Unknown campaign ruleset identity: '+String(rulesetId));}
   let revision;
-  if(id==='the-archers-quay'){
+  if(id==='salt-in-the-stores'){
+    if(rules.id===SALT_STORES_RULESET_ID)revision=1;
+  } else if(id==='the-archers-quay'){
     if(rules.id===ARCHERS_QUAY_RULESET_ID)revision=1;
   } else if(id==='through-the-reed-beds'){
     if(rules.id===REED_BEDS_RULESET_ID)revision=1;
@@ -737,7 +759,7 @@ export function evaluateCampaignMission(game,id,revision) {
   const defeated=s.winner===1||s.winner==='draw'||s.bases[0].hp<=0;
   const broken=objectives.find(o=>o.failed);
   const coreVictory=s.winner===0||s.bases[1].hp<=0;
-  const completed=!defeated&&!broken&&((mission.mode!=='control'&&!['borrowed-ground','false-quiet','the-road-we-know','through-the-reed-beds','the-archers-quay'].includes(mission.id))||s.time<=mission.timeLimit+1e-7)&&(coreVictory||objectives.every(o=>o.met));
+  const completed=!defeated&&!broken&&((mission.mode!=='control'&&!['borrowed-ground','false-quiet','the-road-we-know','through-the-reed-beds','the-archers-quay','salt-in-the-stores'].includes(mission.id))||s.time<=mission.timeLimit+1e-7)&&(coreVictory||objectives.every(o=>o.met));
   const failed=defeated||!!broken||(!completed&&atDeadline);
   const advancing=objectives.filter(o=>!['protect','health'].includes(o.type));
   let progress=advancing.reduce((n,o)=>n+o.progress,0)/advancing.length;
@@ -795,7 +817,7 @@ export function isMissionUnlocked(progress,id,revision=1) {
 export const CAMPAIGN_RULESET_STAGES=Object.freeze({
   'frontier-campaign-watch':1,'frontier-campaign-fork':2,'frontier-campaign-open':3,'frontier-campaign-flight':3,[AUTONOMOUS_AIR_CAMPAIGN_RULESET_ID]:3,
   ...Object.fromEntries(CITADEL_CAMPAIGN_RULESET_IDS.map((id,index)=>[id,index+1])),
-  [ARCHERS_QUAY_RULESET_ID]:3,[REED_BEDS_RULESET_ID]:3,[ROAD_WE_KNOW_RULESET_ID]:3,[SHARED_CROSSING_RULESET_ID]:3,[ONE_SIGNAL_RULESET_ID]:3,[LANTERNS_RULESET_ID]:3,[BORROWED_GROUND_RULESET_ID]:3,[RIVER_BETWEEN_RULESET_ID]:3,...Object.fromEntries(FALSE_QUIET_RULESET_IDS.map(id=>[id,3])),
+  [SALT_STORES_RULESET_ID]:3,[ARCHERS_QUAY_RULESET_ID]:3,[REED_BEDS_RULESET_ID]:3,[ROAD_WE_KNOW_RULESET_ID]:3,[SHARED_CROSSING_RULESET_ID]:3,[ONE_SIGNAL_RULESET_ID]:3,[LANTERNS_RULESET_ID]:3,[BORROWED_GROUND_RULESET_ID]:3,[RIVER_BETWEEN_RULESET_ID]:3,...Object.fromEntries(FALSE_QUIET_RULESET_IDS.map(id=>[id,3])),
 });
 export function canUseCampaignRuleset(progress,id,revision,rulesetId) {
   if(!campaignRulesetAllowed(id,revision,rulesetId))return false;
@@ -809,7 +831,7 @@ export function getCampaignLaunchMission(id,progress) {
   const presentation=opening&&stage===3?AUTONOMOUS_AIR_CAMPAIGN_MISSIONS.find(m=>m.id===id):mission;
   return {...mission,briefing:presentation.briefing,hint:presentation.hint,scenarioRevision:revision,
     // Current navigation copy only; published scenario descriptors remain immutable.
-    ...(id==='common-ground'?{reward:'Unlocks Shared Crossing'}:id==='shared-crossing'?{reward:'Unlocks One Signal Is Enough',subtitle:'Secure the convoy route'}:id==='one-signal-is-enough'?{reward:'Unlocks Lanterns on the Water'}:id==='lanterns-on-the-water'?{reward:'Unlocks Borrowed Ground'}:id==='borrowed-ground'?{reward:'Unlocks A River Between Us'}:id==='a-river-between-us'?{reward:'Unlocks False Quiet'}:id==='false-quiet'?{reward:'Unlocks The Road We Know'}:id==='the-road-we-know'?{reward:'Unlocks Through the Reed Beds'}:id==='through-the-reed-beds'?{reward:'Unlocks The Archer’s Quay'}:{}),
+    ...(id==='common-ground'?{reward:'Unlocks Shared Crossing'}:id==='shared-crossing'?{reward:'Unlocks One Signal Is Enough',subtitle:'Secure the convoy route'}:id==='one-signal-is-enough'?{reward:'Unlocks Lanterns on the Water'}:id==='lanterns-on-the-water'?{reward:'Unlocks Borrowed Ground'}:id==='borrowed-ground'?{reward:'Unlocks A River Between Us'}:id==='a-river-between-us'?{reward:'Unlocks False Quiet'}:id==='false-quiet'?{reward:'Unlocks The Road We Know'}:id==='the-road-we-know'?{reward:'Unlocks Through the Reed Beds'}:id==='through-the-reed-beds'?{reward:'Unlocks The Archer’s Quay'}:id==='the-archers-quay'?{reward:'Unlocks Salt in the Stores'}:{}),
     ...(opening?{rulesetId:CITADEL_CAMPAIGN_RULESET_IDS[stage-1]}:{})};
 }
 export function createProgressionCampaignMission(id,progress) {
@@ -819,7 +841,7 @@ export function createProgressionCampaignMission(id,progress) {
 }
 export function getProgressionCampaignOverview(progress) {
   const clean=normalizeCampaignProgress(progress),roster=getCampaignRoster(clean);
-  const missions=[...ONBOARDING_MISSIONS,...PROGRESSION_CAMPAIGN_MISSIONS,...SHARED_CROSSING_MISSIONS,...ONE_SIGNAL_MISSIONS,...LANTERNS_MISSIONS,...BORROWED_GROUND_MISSIONS,...RIVER_BETWEEN_MISSIONS,...FALSE_QUIET_MISSIONS,...ROAD_WE_KNOW_MISSIONS,...REED_BEDS_MISSIONS,...ARCHERS_QUAY_MISSIONS].map(m=>{
+  const missions=[...ONBOARDING_MISSIONS,...PROGRESSION_CAMPAIGN_MISSIONS,...SHARED_CROSSING_MISSIONS,...ONE_SIGNAL_MISSIONS,...LANTERNS_MISSIONS,...BORROWED_GROUND_MISSIONS,...RIVER_BETWEEN_MISSIONS,...FALSE_QUIET_MISSIONS,...ROAD_WE_KNOW_MISSIONS,...REED_BEDS_MISSIONS,...ARCHERS_QUAY_MISSIONS,...SALT_STORES_MISSIONS].map(m=>{
     const launch=getCampaignLaunchMission(m.id,clean);
     return {...launch,record:clean.missions[m.id]||null,
       unlocked:isMissionUnlocked(clean,m.id,launch.scenarioRevision),completed:!!clean.missions[m.id]};
