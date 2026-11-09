@@ -1231,6 +1231,12 @@ function chartedMission() {
 function objectiveFocusTargets() {
   const charted = chartedMission();
   if (charted) return chartedObjectiveTargets(charted, battleView(), getCampaignTargets(game, currentCampaign));
+  if (currentCampaign === 'through-the-reed-beds') return getCampaignTargets(game, currentCampaign).map(target => ({
+    ...target, label:target.name, road:['North','Middle','South'][target.lane],
+    hp:target.building?.hp??0,maxHp:target.building?.maxHp??0,
+    percent:target.building?Math.ceil(100*target.building.hp/target.building.maxHp):0,
+    status:target.building?'standing':'destroyed',
+  }));
   if (protectedMonitor) return protectedMonitor.read();
   if (!currentChallenge) return [];
   return getChallengeTargets(game, currentChallenge).filter(target => target.name).map(target => ({
@@ -1270,10 +1276,10 @@ function beginProtectedObjectives() {
   $('objectiveHUD').classList.toggle('protect-hud', !!targets.length);
   $('protectedTargets').classList.toggle('hidden', !targets.length);
   $('objectiveIdentity').classList.toggle('hidden', !targets.length);
-  $('objectiveIdentity').textContent = targets.length ? currentChallenge ? `FIELD TRIAL · ANY ${getChallengeForGame(game, currentChallenge).requiredTargets} OF ${targets.length}` : `${game.difficulty.toUpperCase()} · ${charted ? (charted.id==='false-quiet'?'FOG · CHARTED FORT':'FOG · CHARTED POSTS') : signals ? 'KEEP 1 SIGNAL' : 'PROTECT'}` : '';
-  $('protectedTargets').classList.toggle('trial-targets', (!!currentChallenge || !!charted) && !!targets.length);
+  $('objectiveIdentity').textContent = targets.length ? currentChallenge ? `FIELD TRIAL · ANY ${getChallengeForGame(game, currentChallenge).requiredTargets} OF ${targets.length}` : `${game.difficulty.toUpperCase()} · ${currentCampaign === 'through-the-reed-beds' ? 'ANY 2 OF 3' : charted ? (charted.id==='false-quiet'?'FOG · CHARTED FORT':'FOG · CHARTED POSTS') : signals ? 'KEEP 1 SIGNAL' : 'PROTECT'}` : '';
+  $('protectedTargets').classList.toggle('trial-targets', (!!currentChallenge || !!charted || currentCampaign === 'through-the-reed-beds') && !!targets.length);
   $('protectedTargets').classList.toggle('charted-targets', !!charted && !!targets.length);
-  $('protectedTargets').setAttribute('aria-label', charted ? (charted.id==='false-quiet'?'Charted original Middle Road Fort. Health unknown outside current sight; dispatch confirms destruction. Activate the fort to focus its known location.':'Charted original customs posts. Health unknown outside current sight; dispatch confirms destruction. Activate a post to focus its known location.') : currentChallenge ? 'Choose any two enemy positions; activate a standing position to focus camera' : signals ? 'Keep at least one original signal; activate a standing signal to focus camera' : 'Protected original structures; activate to focus camera');
+  $('protectedTargets').setAttribute('aria-label', charted ? (charted.id==='false-quiet'?'Charted original Middle Road Fort. Health unknown outside current sight; dispatch confirms destruction. Activate the fort to focus its known location.':'Charted original customs posts. Health unknown outside current sight; dispatch confirms destruction. Activate a post to focus its known location.') : currentChallenge || currentCampaign === 'through-the-reed-beds' ? 'Choose any two original enemy positions; activate a standing position to focus camera' : signals ? 'Keep at least one original signal; activate a standing signal to focus camera' : 'Protected original structures; activate to focus camera');
   for (const target of targets) {
     const button = document.createElement('button');
     button.type = 'button';
@@ -1466,7 +1472,7 @@ function updateProtectedObjectives() {
     if (control.status !== target.status && target.status === 'lost')
       announcements.push(`${target.label}: original structure lost.`);
     if (control.status !== target.status && target.status === 'destroyed')
-      announcements.push(charted ? `Dispatch confirms ${target.label} destroyed. Replacements do not restore the original ${charted.id==='false-quiet'?'fort':'post'}.` : `${target.label} destroyed. ${evaluateChallenge(game, currentChallenge).label}`);
+      announcements.push(charted ? `Dispatch confirms ${target.label} destroyed. Replacements do not restore the original ${charted.id==='false-quiet'?'fort':'post'}.` : `${target.label} destroyed. ${currentCampaign ? evaluateCampaignMission(game, currentCampaign).label : evaluateChallenge(game, currentChallenge).label}`);
     control.status = target.status;
   }
   if (announcements.length) {
@@ -1866,7 +1872,9 @@ function finish() {
     ? game.state.winner === 0 || game.state.bases[1].hp <= 0
       ? 'With the enemy citadel fallen, the River Compact has broken the toll commander’s hold on the river.'
       : 'With the original North Command Post destroyed and 60 seconds of secure passage banked across two crossings, the River Compact can keep its own roads supplied.'
-    : mission?.victoryText;
+    : won && mission?.id === 'through-the-reed-beds' && (game.state.winner === 0 || game.state.bases[1].hp <= 0)
+      ? 'The enemy citadel falls, opening the coastal passage.'
+      : mission?.victoryText;
   $('resultEyebrow').textContent = mission
     ? won
       ? 'MISSION WON'
@@ -1922,6 +1930,11 @@ function finish() {
       p.textContent = `${target.name}: ${target.building ? won ? 'standing · not needed' : 'standing' : 'destroyed'}`;
       $('resultObjectives').append(p);
     }
+  }
+  if (mission?.id === 'through-the-reed-beds') for (const target of getCampaignTargets(game, currentCampaign)) {
+    const p=document.createElement('p');
+    p.textContent=`${target.name}: ${target.building ? won ? 'standing · not needed' : 'standing' : 'original destroyed'}`;
+    $('resultObjectives').append(p);
   }
   if (mission) {
     const stars = document.createElement('div');
@@ -2430,6 +2443,8 @@ function updateHUD() {
             .map((o) =>
               o.type === 'control'
                 ? controlProgressLabel(crossing)
+                : o.type === 'destroy-any'
+                  ? `${o.value}/${o.target} original positions · need ${o.required}`
                 : o.type === 'destroy'
                 ? `${o.value}/${o.target} ${chartedMission() ? (currentCampaign==='false-quiet'?'fort confirmed destroyed':'posts confirmed destroyed') : 'targets'}`
                 : o.type === 'protect'

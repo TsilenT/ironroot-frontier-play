@@ -1,7 +1,7 @@
 import {Game, BUILDINGS, MAPS, getMap, getRuleset} from './engine.js';
-import {CAMPAIGN_RULESET_IDS, CITADEL_CAMPAIGN_RULESET_IDS, AUTHORED_AIR_RULESET_ID, AUTHORED_CITADEL_RULESET_ID, SHARED_CROSSING_RULESET_ID, ONE_SIGNAL_RULESET_ID, LANTERNS_RULESET_ID, BORROWED_GROUND_RULESET_ID, RIVER_BETWEEN_RULESET_ID, FALSE_QUIET_RULESET_IDS, ROAD_WE_KNOW_RULESET_ID, deepFreeze} from './rulesets.js';
+import {CAMPAIGN_RULESET_IDS, CITADEL_CAMPAIGN_RULESET_IDS, AUTHORED_AIR_RULESET_ID, AUTHORED_CITADEL_RULESET_ID, SHARED_CROSSING_RULESET_ID, ONE_SIGNAL_RULESET_ID, LANTERNS_RULESET_ID, BORROWED_GROUND_RULESET_ID, RIVER_BETWEEN_RULESET_ID, FALSE_QUIET_RULESET_IDS, ROAD_WE_KNOW_RULESET_ID, REED_BEDS_RULESET_ID, deepFreeze} from './rulesets.js';
 import {campaignControlStatus, CAMPAIGN_CONTROL_RULES_TEXT} from './bridge-control.js';
-import {CURRENT_RIVER_COMPACT_EPILOGUE} from './campaign-presentation.js';
+import {CURRENT_RIVER_COMPACT_EPILOGUE, CURRENT_UNLIT_ROADS_EPILOGUE} from './campaign-presentation.js';
 import {supportsFog, createFog, refreshFog} from './fog.js';
 import {ONBOARDING_CHAPTER, ONBOARDING_MISSIONS, isOnboardingMission} from './campaign-onboarding.js';
 export {ONBOARDING_CHAPTER, ONBOARDING_MISSIONS, isOnboardingMission} from './campaign-onboarding.js';
@@ -368,6 +368,47 @@ export const ROAD_WE_KNOW_MISSIONS=[{
     'At 5:00, ordinary escalation speeds production ×1.65, multiplies troop damage to structures ×1.75, and lowers citadel shot damage from 32 to 18. There is no forced citadel drain.'],
 }];
 
+export const REED_BEDS_MISSIONS=[{
+  id:'through-the-reed-beds',chapterId:'unlit-roads',number:24,name:'Through the Reed Beds',subtitle:'Choose two positions to break',
+  scenarioRevision:1,mapId:'classic',mapRevision:1,rulesetId:REED_BEDS_RULESET_ID,rulesetRevision:1,
+  description:'The open road gives way to reed-lined causeways. Three garrisons guard the last approach to the coast, but the company needs only two gaps to bring the column through.',
+  dialogue:{speaker:'Scout Sera',text:'The north watch, middle works and southern hall anchor their line. Break any two and we can carry the column through. Or press all the way to their citadel. The reeds hide no troops from us here.'},
+  victoryText:'Two positions fall, opening a passage through the reed beds. The company leaves the unlit roads behind and follows the coastal wind.',
+  objective:'Destroy any 2 of the 3 original named positions within 10:00, or destroy the enemy citadel. Your citadel must survive.',
+  hint:'Choose the outer pair or support a push through the middle. Siege can reach the northern watchtower; ranged troops need a screen. You may leave the third position standing or bypass the positions for the citadel.',
+  difficulty:'normal',seed:7307,timeLimit:600,startingGold:1100,startingHealth:6000,enemyGold:100,ai:true,prerequisites:['the-road-we-know'],
+  playerBuildings:[['barracks',830,0],['barracks',830,1],['barracks',830,2],['mint',410,1]],
+  enemyBuildings:[['watchtower',2230,0,2],['archery',2370,0],['foundry',2230,1],['barracks',2090,1],['sanctum',2230,2],['archery',2090,2],['mint',2790,1]],
+  objectives:[{id:'reed-positions',type:'destroy-any',label:'Destroy any 2 of the 3 original named positions',required:2,targets:[
+    {type:'watchtower',x:2230,lane:0,name:'North Reed Watch'},
+    {type:'foundry',x:2230,lane:1,name:'Middle Iron Works'},
+    {type:'sanctum',x:2230,lane:2,name:'South Ember Hall'}]}],medals:[swift(300),intact(4500)],
+  briefing:['All three roads and enemy forces are fully visible. Destroy any two original named positions; the third may remain standing. Replacements do not restore an original target.',
+    'Destroying the enemy citadel also wins with fewer than two positions destroyed. Your own citadel must survive; 1 HP is enough. There is no mandatory health floor or required route.',
+    'Both sides begin with a real mine and 7.5 gold/sec. The normal adaptive enemy pays ordinary prices for buildings, upgrades and arrow volleys. All eight buildings, automatic adjacent-road flyers and ordinary citadel choices remain available.',
+    'At 5:00, ordinary escalation speeds production ×1.65, multiplies troop damage to structures ×1.75, and lowers citadel shot damage from 32 to 18. There is no fog, free reinforcement, reserve wave or forced citadel drain.'],
+}];
+
+/** Validate the only admitted partial-destruction objective. No saved counters. */
+export function validateDestroyAnyObjective(mission) {
+  const any=mission.objectives?.filter(o=>o.type==='destroy-any')||[];
+  if(!any.length) {
+    if(mission.objectives?.some(o=>Object.hasOwn(o,'required')))throw new RangeError('Required count needs a destroy-any objective.');
+    return null;
+  }
+  const o=any[0],allowed=['id','type','label','required','targets'];
+  if(any.length!==1||mission.objectives.length!==1||mission.id!=='through-the-reed-beds'||mission.mapId!=='classic'||mission.mapRevision!==1||mission.rulesetId!==REED_BEDS_RULESET_ID||mission.rulesetRevision!==1||mission.scenarioRevision!==1||
+    Object.keys(o).some(k=>!allowed.includes(k))||allowed.some(k=>!Object.hasOwn(o,k))||typeof o.id!=='string'||!o.id||typeof o.label!=='string'||!o.label||
+    !Number.isInteger(o.required)||o.required<1||!Array.isArray(o.targets)||o.required>=o.targets.length||Object.hasOwn(mission,'requiredTargets'))
+    throw new RangeError('Invalid destroy-any objective: '+mission.id);
+  const keys=o.targets.map(t=>`${t.type}/${t.x}/${t.lane}`);
+  if(new Set(keys).size!==keys.length||o.targets.some(t=>!t||typeof t!=='object'||Array.isArray(t)||Object.keys(t).some(k=>!['type','x','lane','name'].includes(k))||
+    typeof t.name!=='string'||!t.name.trim()||!Number.isFinite(t.x)||!Number.isInteger(t.lane)||
+    !mission.enemyBuildings.some(([type,x,lane])=>type===t.type&&x===t.x&&lane===t.lane)))
+    throw new RangeError('Invalid original destroy-any targets: '+mission.id);
+  return o;
+}
+
 function describeDeployment(placements,map) {
   const names=map.lanes.length===2?['North','South']:['North','Middle','South'];
   return map.lanes.map((_,lane)=>{
@@ -383,7 +424,7 @@ const firstAuthoredIds=Object.fromEntries(Object.keys(MAPS).map(mapId=>[mapId,ne
 export const ALL_CAMPAIGN_MISSIONS=[...CAMPAIGN_MISSIONS,...INTRO_MISSIONS];
 export const ALL_CAMPAIGN_CHAPTERS=[INTRO_CHAPTER,...CAMPAIGN_CHAPTERS];
 export const CURRENT_CAMPAIGN_CHAPTERS=deepFreeze([ONBOARDING_CHAPTER,...ALL_CAMPAIGN_CHAPTERS,SHARED_CROSSING_CHAPTER,UNLIT_ROADS_CHAPTER]);
-export const CAMPAIGN_PROGRESS_MISSIONS=[...ALL_CAMPAIGN_MISSIONS,...ONBOARDING_MISSIONS,...SHARED_CROSSING_MISSIONS,...ONE_SIGNAL_MISSIONS,...LANTERNS_MISSIONS,...BORROWED_GROUND_MISSIONS,...RIVER_BETWEEN_MISSIONS,...FALSE_QUIET_MISSIONS,...ROAD_WE_KNOW_MISSIONS];
+export const CAMPAIGN_PROGRESS_MISSIONS=[...ALL_CAMPAIGN_MISSIONS,...ONBOARDING_MISSIONS,...SHARED_CROSSING_MISSIONS,...ONE_SIGNAL_MISSIONS,...LANTERNS_MISSIONS,...BORROWED_GROUND_MISSIONS,...RIVER_BETWEEN_MISSIONS,...FALSE_QUIET_MISSIONS,...ROAD_WE_KNOW_MISSIONS,...REED_BEDS_MISSIONS];
 for(const mission of CAMPAIGN_PROGRESS_MISSIONS) {
   mission.mapId=mission.mapId||'classic';
   mission.ai=mission.ai===true;
@@ -406,10 +447,12 @@ for(const mission of CAMPAIGN_PROGRESS_MISSIONS) {
       !objective.targets.every(t=>mission.playerBuildings.some(([type,x,lane])=>type===t.type&&x===t.x&&lane===t.lane)))
       throw new RangeError('Invalid minimum-survivors objective: '+mission.id);
   }
+  validateDestroyAnyObjective(mission);
   mission.mode=mission.objectives[0].type;
-  mission.markedTargets=mission.objectives.flatMap(o=>o.type==='destroy'?o.targets:[]);
+  mission.markedTargets=mission.objectives.flatMap(o=>['destroy','destroy-any'].includes(o.type)?o.targets:[]);
   mission.protectedTargets=mission.objectives.flatMap(o=>o.type==='protect'?o.targets:[]);
   if(['lanterns-on-the-water','borrowed-ground','a-river-between-us'].includes(mission.id))mission.reward='Completes the current Chapter 6 route';
+  else if(mission.id==='through-the-reed-beds')mission.reward='Completes Chapter 7 · The Unlit Roads';
   else if(mission.id==='the-road-we-know')mission.reward='Completes the current Unlit Roads route';
   else if(mission.id==='false-quiet')mission.reward='Completes the current Unlit Roads route';
   else if(!mission.optional&&!isOnboardingMission(mission.id))mission.reward=`Unlocks ${CAMPAIGN_MISSIONS.filter(m=>m.prerequisites.includes(mission.id)).map(m=>m.name).join(' / ')||'the campaign epilogue'}`;
@@ -422,6 +465,7 @@ deepFreeze(BORROWED_GROUND_MISSIONS);
 deepFreeze(RIVER_BETWEEN_MISSIONS);
 deepFreeze(FALSE_QUIET_MISSIONS);
 deepFreeze(ROAD_WE_KNOW_MISSIONS);
+deepFreeze(REED_BEDS_MISSIONS);
 deepFreeze(UNLIT_ROADS_CHAPTER);
 
 // Published revision 1/2/3 descriptors stay exact. Current starts select a
@@ -489,7 +533,7 @@ export function getCampaignMission(id,revision=1) {
 /** Current deliberate starts/previews only. Existing attempts use their rules. */
 export function getCurrentCampaignRevision(id,progress) {
   getCampaignMission(id,1);
-  return ['shared-crossing','one-signal-is-enough','lanterns-on-the-water','borrowed-ground','a-river-between-us','false-quiet','the-road-we-know'].includes(id)?1:CITADEL_CAMPAIGN_REVISION;
+  return ['shared-crossing','one-signal-is-enough','lanterns-on-the-water','borrowed-ground','a-river-between-us','false-quiet','the-road-we-know','through-the-reed-beds'].includes(id)?1:CITADEL_CAMPAIGN_REVISION;
 }
 function onboardingLaunchStage(id,progress) {
   return Math.max(ONBOARDING_MISSIONS.findIndex(m=>m.id===id)+1,getCampaignRoster(progress).stage);
@@ -502,7 +546,9 @@ export function getCampaignRevisionForRuleset(id,rulesetId,rulesetRevision=1) {
   let rules;
   try{rules=getRuleset(rulesetId,rulesetRevision);}catch{throw new RangeError('Unknown campaign ruleset identity: '+String(rulesetId));}
   let revision;
-  if(id==='the-road-we-know'){
+  if(id==='through-the-reed-beds'){
+    if(rules.id===REED_BEDS_RULESET_ID)revision=1;
+  } else if(id==='the-road-we-know'){
     if(rules.id===ROAD_WE_KNOW_RULESET_ID)revision=1;
   } else if(id==='false-quiet'){
     if(FALSE_QUIET_RULESET_IDS.includes(rules.id))revision=1;
@@ -632,9 +678,10 @@ function metric(game,objective,atDeadline,targets) {
     const status=campaignControlStatus(game),value=status.seconds;
     return {met:status.complete,progress:value/objective.seconds,value,target:objective.seconds,count:status.count,required:status.required,advancing:status.advancing,text:`${value.toFixed(1)}/${objective.seconds}s secured · ${status.count}/${status.required} bridges clear${status.complete?'':status.advancing?' · Advancing':' · Progress paused'}`};
   }
-  if(objective.type==='destroy') {
+  if(['destroy','destroy-any'].includes(objective.type)) {
     const own=targets.filter(t=>t.kind==='destroy'&&objective.targets.some(x=>x.type===t.type&&x.x===t.x&&x.lane===t.lane));
     const count=own.filter(t=>!t.building).length;
+    if(objective.type==='destroy-any'){const required=objective.required;return {met:count>=required,progress:Math.min(1,count/required),value:count,target:own.length,required,text:`${count}/${own.length} original positions destroyed; need ${required}`};}
     return {met:count===own.length,progress:count/own.length,value:count,target:own.length,text:`${count}/${own.length} targets destroyed`};
   }
   if(objective.type==='protect') {
@@ -666,7 +713,7 @@ export function evaluateCampaignMission(game,id,revision) {
   const defeated=s.winner===1||s.winner==='draw'||s.bases[0].hp<=0;
   const broken=objectives.find(o=>o.failed);
   const coreVictory=s.winner===0||s.bases[1].hp<=0;
-  const completed=!defeated&&!broken&&((mission.mode!=='control'&&!['borrowed-ground','false-quiet','the-road-we-know'].includes(mission.id))||s.time<=mission.timeLimit+1e-7)&&(coreVictory||objectives.every(o=>o.met));
+  const completed=!defeated&&!broken&&((mission.mode!=='control'&&!['borrowed-ground','false-quiet','the-road-we-know','through-the-reed-beds'].includes(mission.id))||s.time<=mission.timeLimit+1e-7)&&(coreVictory||objectives.every(o=>o.met));
   const failed=defeated||!!broken||(!completed&&atDeadline);
   const advancing=objectives.filter(o=>!['protect','health'].includes(o.type));
   let progress=advancing.reduce((n,o)=>n+o.progress,0)/advancing.length;
@@ -724,7 +771,7 @@ export function isMissionUnlocked(progress,id,revision=1) {
 export const CAMPAIGN_RULESET_STAGES=Object.freeze({
   'frontier-campaign-watch':1,'frontier-campaign-fork':2,'frontier-campaign-open':3,'frontier-campaign-flight':3,[AUTONOMOUS_AIR_CAMPAIGN_RULESET_ID]:3,
   ...Object.fromEntries(CITADEL_CAMPAIGN_RULESET_IDS.map((id,index)=>[id,index+1])),
-  [ROAD_WE_KNOW_RULESET_ID]:3,[SHARED_CROSSING_RULESET_ID]:3,[ONE_SIGNAL_RULESET_ID]:3,[LANTERNS_RULESET_ID]:3,[BORROWED_GROUND_RULESET_ID]:3,[RIVER_BETWEEN_RULESET_ID]:3,...Object.fromEntries(FALSE_QUIET_RULESET_IDS.map(id=>[id,3])),
+  [REED_BEDS_RULESET_ID]:3,[ROAD_WE_KNOW_RULESET_ID]:3,[SHARED_CROSSING_RULESET_ID]:3,[ONE_SIGNAL_RULESET_ID]:3,[LANTERNS_RULESET_ID]:3,[BORROWED_GROUND_RULESET_ID]:3,[RIVER_BETWEEN_RULESET_ID]:3,...Object.fromEntries(FALSE_QUIET_RULESET_IDS.map(id=>[id,3])),
 });
 export function canUseCampaignRuleset(progress,id,revision,rulesetId) {
   if(!campaignRulesetAllowed(id,revision,rulesetId))return false;
@@ -738,7 +785,7 @@ export function getCampaignLaunchMission(id,progress) {
   const presentation=opening&&stage===3?AUTONOMOUS_AIR_CAMPAIGN_MISSIONS.find(m=>m.id===id):mission;
   return {...mission,briefing:presentation.briefing,hint:presentation.hint,scenarioRevision:revision,
     // Current navigation copy only; published scenario descriptors remain immutable.
-    ...(id==='common-ground'?{reward:'Unlocks Shared Crossing'}:id==='shared-crossing'?{reward:'Unlocks One Signal Is Enough',subtitle:'Secure the convoy route'}:id==='one-signal-is-enough'?{reward:'Unlocks Lanterns on the Water'}:id==='lanterns-on-the-water'?{reward:'Unlocks Borrowed Ground'}:id==='borrowed-ground'?{reward:'Unlocks A River Between Us'}:id==='a-river-between-us'?{reward:'Unlocks False Quiet'}:id==='false-quiet'?{reward:'Unlocks The Road We Know'}:{}),
+    ...(id==='common-ground'?{reward:'Unlocks Shared Crossing'}:id==='shared-crossing'?{reward:'Unlocks One Signal Is Enough',subtitle:'Secure the convoy route'}:id==='one-signal-is-enough'?{reward:'Unlocks Lanterns on the Water'}:id==='lanterns-on-the-water'?{reward:'Unlocks Borrowed Ground'}:id==='borrowed-ground'?{reward:'Unlocks A River Between Us'}:id==='a-river-between-us'?{reward:'Unlocks False Quiet'}:id==='false-quiet'?{reward:'Unlocks The Road We Know'}:id==='the-road-we-know'?{reward:'Unlocks Through the Reed Beds'}:{}),
     ...(opening?{rulesetId:CITADEL_CAMPAIGN_RULESET_IDS[stage-1]}:{})};
 }
 export function createProgressionCampaignMission(id,progress) {
@@ -748,12 +795,12 @@ export function createProgressionCampaignMission(id,progress) {
 }
 export function getProgressionCampaignOverview(progress) {
   const clean=normalizeCampaignProgress(progress),roster=getCampaignRoster(clean);
-  const missions=[...ONBOARDING_MISSIONS,...PROGRESSION_CAMPAIGN_MISSIONS,...SHARED_CROSSING_MISSIONS,...ONE_SIGNAL_MISSIONS,...LANTERNS_MISSIONS,...BORROWED_GROUND_MISSIONS,...RIVER_BETWEEN_MISSIONS,...FALSE_QUIET_MISSIONS,...ROAD_WE_KNOW_MISSIONS].map(m=>{
+  const missions=[...ONBOARDING_MISSIONS,...PROGRESSION_CAMPAIGN_MISSIONS,...SHARED_CROSSING_MISSIONS,...ONE_SIGNAL_MISSIONS,...LANTERNS_MISSIONS,...BORROWED_GROUND_MISSIONS,...RIVER_BETWEEN_MISSIONS,...FALSE_QUIET_MISSIONS,...ROAD_WE_KNOW_MISSIONS,...REED_BEDS_MISSIONS].map(m=>{
     const launch=getCampaignLaunchMission(m.id,clean);
     return {...launch,record:clean.missions[m.id]||null,
       unlocked:isMissionUnlocked(clean,m.id,launch.scenarioRevision),completed:!!clean.missions[m.id]};
   });
-  const chapters=[ONBOARDING_CHAPTER,...CAMPAIGN_CHAPTERS,SHARED_CROSSING_CHAPTER,UNLIT_ROADS_CHAPTER].map(c=>{const own=missions.filter(m=>m.chapterId===c.id);return {...c,...(c.id===SHARED_CROSSING_CHAPTER.id?{epilogue:CURRENT_RIVER_COMPACT_EPILOGUE}:{}),completed:own.every(m=>m.completed),unlocked:own.some(m=>m.unlocked),cleared:own.filter(m=>m.completed).length,total:own.length,stars:own.reduce((n,m)=>n+(m.record?.stars||0),0),maxStars:own.length*3};});
+  const chapters=[ONBOARDING_CHAPTER,...CAMPAIGN_CHAPTERS,SHARED_CROSSING_CHAPTER,UNLIT_ROADS_CHAPTER].map(c=>{const own=missions.filter(m=>m.chapterId===c.id);return {...c,...(c.id===SHARED_CROSSING_CHAPTER.id?{epilogue:CURRENT_RIVER_COMPACT_EPILOGUE}:c.id===UNLIT_ROADS_CHAPTER.id?{epilogue:CURRENT_UNLIT_ROADS_EPILOGUE}:{}),completed:own.every(m=>m.completed),unlocked:own.some(m=>m.unlocked),cleared:own.filter(m=>m.completed).length,total:own.length,stars:own.reduce((n,m)=>n+(m.record?.stars||0),0),maxStars:own.length*3};});
   const next=missions.find(m=>m.unlocked&&!m.completed&&(!roster.returning||!isOnboardingMission(m.id)));
   const cleared=missions.filter(m=>m.completed).length,stars=missions.reduce((n,m)=>n+(m.record?.stars||0),0);
   const historicalIntroduction=getCampaignOverview(clean).introduction;
