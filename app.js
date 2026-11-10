@@ -3103,7 +3103,7 @@ function syncPauseMenu() {
     $('pauseBridgeStatus').textContent = (controlMode ? controlProgressDescription(campaignControlStatus(game), riverControlContext()) + ' ' : '') + bridgeSummary(game);
     $('pauseBridgeRules').textContent = riverControlContext()
       ? mission.objective + ' Ground troops capture after two continuous uncontested seconds. Opposing troops, including flyers, interrupt capture and deny control time. Flyers cannot capture. Empty bridges retain ownership. Either side can capture. Falling below two clear bridges pauses your total without resetting it. Once 60 seconds are secured, that goal stays complete while fighting and bridge ownership continue. Replacements do not undo destruction of the original post. Bridges grant no income or capture bounty.'
-      : controlMode ? CAMPAIGN_CONTROL_RULES_TEXT : BRIDGE_RULES_TEXT;
+      : controlMode ? (game.ruleset.id === 'frontier-campaign-leave-roads' ? 'Secure all three bridges for 30 cumulative seconds, or destroy the enemy citadel, by 10:00 while yours survives. Ground captures take two uncontested seconds. Enemy presence pauses earned control time without resetting it. Flyers deny but cannot capture. Empty ownership persists. No bridge income or capture bounty. Normal paid adaptive enemy and 5:00 escalation continue.' : CAMPAIGN_CONTROL_RULES_TEXT) : BRIDGE_RULES_TEXT;
     $('pauseBridgeLegend').textContent = controlMode ? CONTROL_MAP_LEGEND : 'Map labels: Y = you, E = enemy, — = unowned, X = payout blocked. An arrow points to the side attempting a ground capture. Bridges are numbered from the top road.';
   }
   $('restartBattle').textContent = `Restart ${noun}…`;

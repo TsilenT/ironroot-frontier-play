@@ -4,6 +4,7 @@ import {HAMMER_RULESET_ID,HAMMER_CAMPAIGN_RULESET_ID,HAMMER_AI} from './hammer-p
 import { BRIDGE_CONTROL, CAMPAIGN_CONTROL, RIVER_BETWEEN_CONTROL } from './bridge-control.js';
 import { CITADEL_OPTIONS } from './citadel-options.js';
 export {HAMMER_CAMPAIGN_RULESET_ID} from './hammer-policy.js';
+export const LEAVE_ROADS_RULESET_ID='frontier-campaign-leave-roads';
 export const EMPTY_PURSE_RULESET_ID='frontier-campaign-empty-purse';
 export const SHARED_WATCH_RULESET_ID='frontier-campaign-shared-watch';
 export const LONG_SCREEN_RULESET_ID='frontier-campaign-long-screen';
@@ -91,6 +92,7 @@ const authoredAirEntry=id=>deepFreeze({
   movement:{policy:'autonomous-air-local-v1',autonomousAir:{perception:300,retention:420,adjacentOnly:true}}
 });
 export const RULESETS=deepFreeze({
+  [LEAVE_ROADS_RULESET_ID]:deepFreeze({...autonomousAirEntry(LEAVE_ROADS_RULESET_ID,'Campaign · Leave No Road Closed',false,true),citadel:CITADEL_OPTIONS,campaignControl:{...CAMPAIGN_CONTROL,requiredBridges:3,seconds:30,timeLimit:600}}),
   [EMPTY_PURSE_RULESET_ID]:deepFreeze({...autonomousAirEntry(EMPTY_PURSE_RULESET_ID,'Campaign · The Empty Purse',false,true),citadel:CITADEL_OPTIONS}),
   [MINOR_RESERVE_RULESET_ID]:deepFreeze({...autonomousAirEntry(MINOR_RESERVE_RULESET_ID,'Campaign · Wake the Reserve',false,true),citadel:CITADEL_OPTIONS,minorReserve:MINOR_RESERVE}),
   [SHARED_WATCH_RULESET_ID]:deepFreeze({...autonomousAirEntry(SHARED_WATCH_RULESET_ID,'Campaign · The Shared Watch',false,true),citadel:CITADEL_OPTIONS}),
