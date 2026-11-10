@@ -1785,7 +1785,8 @@ button:disabled {
   border-color: var(--gold);
 }
 .mode-tabs span {
-  font-size: 8px;
+  font-size: 10px;
+  color: var(--ink);
   background: #44563a;
   padding: 2px 4px;
   letter-spacing: 0;
@@ -2419,7 +2420,6 @@ button:disabled {
     letter-spacing: 1px;
   }
   .mode-tabs span {
-    font-size: 7px;
     margin-left: 1px;
   }
   .campaign-overview {

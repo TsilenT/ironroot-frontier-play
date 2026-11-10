@@ -90,8 +90,8 @@
           ><button
             id="speed"
             class="icon-button"
-            title="Battle speed"
-            aria-label="Change battle speed"
+            title="Battle speed: 1×. Change to 1.5×"
+            aria-label="Battle speed: 1×. Change to 1.5×"
           >
             1×</button
           ><button
@@ -191,7 +191,7 @@
         </div>
         <div class="deck-body">
           <div class="build-cards" id="buildCards"></div>
-          <button id="rally" class="rally-card" aria-label="Arrow volley. Area damage to troops." aria-describedby="rallyCost">
+          <button id="rally" class="rally-card" aria-label="Arrow volley. Area damage to troops." aria-describedby="rallyCost" aria-pressed="false">
             <span class="rally-icon">✦</span><b>Arrow volley</b
             ><small>Area damage to troops</small
             ><span class="rally-cost" id="rallyCost"
@@ -285,11 +285,11 @@
         <div id="skirmishConfig" class="hidden">
           <div class="mode-label">CHOOSE YOUR OPPONENT</div>
           <div class="difficulty-choices">
-            <button class="active" data-difficulty="easy">
+            <button class="active" data-difficulty="easy" aria-pressed="true">
               <b>The Outrider</b><small>A gentler first battle</small></button
-            ><button data-difficulty="normal">
+            ><button data-difficulty="normal" aria-pressed="false">
               <b>The Marshal</b><small>A balanced challenge</small></button
-            ><button data-difficulty="hard">
+            ><button data-difficulty="hard" aria-pressed="false">
               <b>The Warlord</b><small>No ground given</small>
             </button>
           </div>
@@ -411,7 +411,7 @@
         </button>
         <p class="save-status hidden" id="saveStatus" role="status"></p>
         <button id="exportUnreadableBattle" class="text-button hidden">Download original save</button>
-        <p class="welcome-foot">Campaign · Skirmish · Field trials · v0.39.0</p>
+        <p class="welcome-foot">Campaign · Skirmish · Field trials · v0.39.1</p>
         <div class="welcome-links">
           <a class="text-button training-link" id="welcomeTraining" href="./training.html" aria-label="Optional guided practice. Learn without changing your saved battle">Guided practice (optional) →</a>
           <button class="text-button" id="welcomeFullscreen" type="button" data-fullscreen aria-pressed="false" aria-describedby="welcomeFullscreenStatus">Enter fullscreen</button>
@@ -491,7 +491,7 @@
           >
           <span id="buildingKeyHelp"></span><br /><span id="battleKeyHelp"></span>
         </p>
-        <p class="controls">Fullscreen is in Preferences, available from the title screen or pause menu. Use Tab then Enter or Space to activate its button. Browser and device support varies; Esc exits fullscreen.</p>
+        <p class="controls">Fullscreen is in Options, available from the title screen or pause menu. Use Tab then Enter or Space to activate its button. Browser and device support varies; Esc exits fullscreen.</p>
         <p class="controls" id="controllerHelp">
           <b>Controller · experimental:</b> Left stick moves the cursor, right
           stick pans. A confirms, B cancels, LB/RB chooses buildings, X opens

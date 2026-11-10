@@ -383,7 +383,7 @@ function savePreferences() {
   preferences.sound = soundOn;
   preferenceSession.stage(preferences);
   const ok = retryPreferences();
-  if (!ok) toast('Preferences apply to this page only. Open Preferences to retry saving.');
+  if (!ok) toast('Preferences apply to this page only. Open Options to retry saving.');
   return ok;
 }
 function updateHistorySaveStatus(read = null) {
@@ -480,6 +480,7 @@ for (const [type, d] of Object.entries(game.buildings || BUILDINGS)) {
   ];
   const btn = document.createElement('button');
   btn.className = 'build-card';
+  btn.setAttribute('aria-pressed', 'false');
   btn.dataset.type = type;
   btn.title = `${d.name} · ${d.cost} gold. ${d.description}`;
   const code = effectiveBindings(preferences.keyboard)['build' + (Object.keys(game.buildings || BUILDINGS).indexOf(type) + 1)];
@@ -551,8 +552,13 @@ function syncChoice() {
   updateCampaignDeck();
   document
     .querySelectorAll('.build-card')
-    .forEach((b) => b.classList.toggle('active', b.dataset.type === ui.build));
+    .forEach((b) => {
+      const active = b.dataset.type === ui.build;
+      b.classList.toggle('active', active);
+      b.setAttribute('aria-pressed', String(active));
+    });
   $('rally').classList.toggle('active', ui.spell);
+  $('rally').setAttribute('aria-pressed', String(ui.spell));
   $('battle').classList.toggle('placing', !!ui.build || ui.spell);
   $('cancelBuild').classList.toggle('hidden', !ui.build && !ui.spell);
   $('buildPrompt').textContent = ui.build
@@ -952,7 +958,10 @@ $('viewportExit').onclick = $('saveExit').onclick;
 $('viewportResume').onclick = () => pause(false, { explicit: true });
 $('speed').onclick = () => {
   speed = speed === 1 ? 1.5 : speed === 1.5 ? 2 : 1;
+  const next = speed === 1 ? 1.5 : speed === 1.5 ? 2 : 1;
   $('speed').textContent = `${speed}×`;
+  $('speed').setAttribute('aria-label', `Battle speed: ${speed}×. Change to ${next}×`);
+  $('speed').title = `Battle speed: ${speed}×. Change to ${next}×`;
 };
 $('sound').onclick = () => {
   soundOn = !soundOn;
@@ -1031,7 +1040,10 @@ for (const btn of document.querySelectorAll('[data-difficulty]'))
     difficulty = btn.dataset.difficulty;
     document
       .querySelectorAll('[data-difficulty]')
-      .forEach((b) => b.classList.toggle('active', b === btn));
+      .forEach((b) => {
+        b.classList.toggle('active', b === btn);
+        b.setAttribute('aria-pressed', String(b === btn));
+      });
     sound('click');
   };
 function holdBattleSafety(reason) {
@@ -1135,9 +1147,11 @@ function start(
     difficulty = game.difficulty;
     document
       .querySelectorAll('[data-difficulty]')
-      .forEach((b) =>
-        b.classList.toggle('active', b.dataset.difficulty === difficulty),
-      );
+      .forEach((b) => {
+        const active = b.dataset.difficulty === difficulty;
+        b.classList.toggle('active', active);
+        b.setAttribute('aria-pressed', String(active));
+      });
   }
   viewportPause.clear();
   $('viewportModal').classList.add('hidden');
@@ -1193,6 +1207,8 @@ function start(
   );
   renderer.resize();
   $('speed').textContent = '1×';
+  $('speed').setAttribute('aria-label', 'Battle speed: 1×. Change to 1.5×');
+  $('speed').title = 'Battle speed: 1×. Change to 1.5×';
   pauseControl();
   $('pause').onclick = toggleBattlePause;
   renderer.camera = restored && !fresh ? battleFront() : 450;
@@ -1888,7 +1904,7 @@ function updateResume() {
   }
   $('saveStatus').classList.toggle('hidden', !error);
   $('saveStatus').textContent = error
-    ? 'The saved battle could not be loaded and has not been changed. Download the original save, then open Preferences to restore a compatible backup.' : '';
+    ? 'The saved battle could not be loaded and has not been changed. Download the original save, then open Options to restore a compatible backup.' : '';
   $('exportUnreadableBattle').classList.toggle('hidden', !error);
   $('exportUnreadableBattle').onclick = () => {
     if (original !== null) downloadBackup(original, '-original-battle');
@@ -2736,6 +2752,7 @@ function renderChallenge() {
   for (const [index, c] of CHALLENGES.entries()) {
     const button = document.createElement('button');
     button.className = c.id === selectedChallenge ? 'active' : '';
+    button.setAttribute('aria-pressed', String(c.id === selectedChallenge));
     button.innerHTML = `<span>${trialRecords[c.id]?.completed ? '✓' : String(index + 1).padStart(2, '0')}</span><b>${c.name}</b>`;
     button.onclick = () => {
       selectedChallenge = c.id;
