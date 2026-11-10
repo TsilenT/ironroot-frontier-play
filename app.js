@@ -284,7 +284,7 @@ let knownHistory = historySession.snapshot().rows,
 let campaignProgress = readCampaignProgress(storage),
   progressDirty = false;
 const initialOverview = getCampaignOverview(campaignProgress);
-const nextCampaign = initialOverview.nextMissionId || (initialOverview.completed
+const nextCampaign = initialOverview.nextMissionId || ((initialOverview.completed || initialOverview.cleared === initialOverview.total)
   ? initialOverview.missions.at(-1).id : initialOverview.missions[0].id);
 if (initialOverview.completed) mode = 'skirmish';
 if (nextCampaign) {
@@ -1770,7 +1770,7 @@ $('playAgain').onclick = () => {
   if (currentCampaign) {
     const overview = getCampaignOverview(campaignProgress);
     if (objectiveOutcome?.completed && currentCampaign === overview.missions.at(-1).id) {
-      mode = 'skirmish';
+      mode = currentCampaign === 'three-minutes-more' ? 'campaign' : 'skirmish';
       battleSession.remove();
       showTitle({ focusStart: true });
       return;
@@ -2005,7 +2005,7 @@ function finish() {
   }
   const finalMission = !!mission && currentCampaign === getCampaignOverview(campaignProgress).missions.at(-1).id;
   $('playAgain').innerHTML = mission
-    ? (won ? finalMission ? 'SKIRMISHES' : 'CONTINUE CAMPAIGN' : 'RETRY MISSION') + ' <span>→</span>'
+    ? (won ? finalMission ? currentCampaign === 'three-minutes-more' ? 'CAMPAIGN MISSIONS' : 'SKIRMISHES' : 'CONTINUE CAMPAIGN' : 'RETRY MISSION') + ' <span>→</span>'
     : trial
       ? (won ? 'MORE FIELD TRIALS' : 'RETRY FIELD TRIAL') + ' <span>→</span>'
       : 'NEW SKIRMISH <span>→</span>';
@@ -2877,7 +2877,7 @@ function renderCampaign() {
   document.querySelectorAll('[data-mission-path]').forEach(el => el.classList.toggle('hidden', campaignPage !== 'mission'));
   $('campaignMissionPosition').textContent = `Mission ${position + 1} of ${chapterMissions.length}`;
   $('campaignChapterLabel').textContent = chapter.optional ? 'LEGACY LESSONS' : chapter.id === ONBOARDING_CHAPTER.id ? 'START HERE' : `CHAPTER ${chapter.number} · ${chapter.name}`;
-  $('campaignChapterProgress').textContent = `${chapterOverview.cleared}/${chapterOverview.total} missions complete · ${chapterOverview.stars}/${chapterOverview.maxStars} stars`;
+  $('campaignChapterProgress').textContent = `${chapterOverview.cleared}/${chapterOverview.total} missions complete · ${chapterOverview.stars}/${chapterOverview.maxStars} stars` + (chapter.plannedMissions && chapterOverview.total < chapter.plannedMissions ? ` · ${chapterOverview.total} available of at least ${chapter.plannedMissions} planned` : '');
   $('campaignMissionStatus').textContent = record?.completed ? `${'★'.repeat(record.stars)}${'☆'.repeat(3 - record.stars)} · Complete` : mission.unlocked ? 'Ready to play' : 'Locked';
   for (const [id, offset] of [['campaignPrevious', -1], ['campaignNext', 1]]) {
     const neighbor = missions[missionIndex + offset];
