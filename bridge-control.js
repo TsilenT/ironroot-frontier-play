@@ -2,6 +2,7 @@
 export const BRIDGE_CONTROL = Object.freeze({policy:'persistent-bridge-v1',width:210,height:130,captureSeconds:2,totalIncome:0.5});
 export const BRIDGE_RULES_TEXT = 'Experimental bridge income: 0.5 gold/s across the whole map, divided equally between roads. Bridges start unowned. Ground troops capture after 2 continuous uncontested seconds. Any living opposing troop, including a flyer, interrupts capture and stops payment. Flyers deny but cannot capture. Ownership remains when empty, with no timeout. Enemies need the same 2 seconds to take it; if they withdraw early, the previous owner earns again. Both sides follow the same rules. No overtime bonus.';
 export const CAMPAIGN_CONTROL = Object.freeze({policy:'cumulative-route-v1',requiredBridges:2,seconds:60,timeLimit:270});
+export const FINAL_CROSSING_CONTROL=Object.freeze({...CAMPAIGN_CONTROL,timeLimit:600});
 // Compound campaign goals are evaluated by the campaign wrapper, not the engine.
 export const RIVER_BETWEEN_CONTROL = Object.freeze({...CAMPAIGN_CONTROL,timeLimit:600,endOnGoal:false});
 export const CAMPAIGN_CONTROL_RULES_TEXT = 'Secure any two of the three bridges for 60 cumulative simulated seconds. Ground troops capture after 2 continuous uncontested seconds. Opposing troops, including flyers, interrupt capture and deny control time. Flyers cannot capture. Empty bridges retain their owner until captured. Both sides capture the same way, but only your supply route has a control victory; the enemy denies it. Falling below two clear bridges pauses your total without resetting it. Bridges grant no income or capture bounty. Destroying the enemy citadel also wins; losing yours fails. Time limit: 4:30.';
@@ -117,7 +118,8 @@ export function campaignControlEnded(game){
 }
 export function validateCampaignControl(control,map,time,fail,rule=CAMPAIGN_CONTROL){
   if(!control||typeof control!=='object'||Array.isArray(control)||Object.keys(control).length!==2||!Object.hasOwn(control,'bridges')||!Object.hasOwn(control,'heldSeconds'))fail('invalid campaign control shape');
-  if(map.id!=='classic'||map.revision!==1)fail('campaign control requires Classic');
+  if(rule===FINAL_CROSSING_CONTROL){if(map.id!=='twin-span'||map.revision!==1)fail('final crossing requires Twin Span');}
+  else if(map.id!=='classic'||map.revision!==1)fail('campaign control requires Classic');
   validateBridgeControl({bridges:control.bridges,earned:[0,0]},map,time,fail);
   if(!Number.isFinite(control.heldSeconds)||control.heldSeconds<0||control.heldSeconds>rule.seconds||control.heldSeconds>Math.max(0,time-BRIDGE_CONTROL.captureSeconds)+1e-7||time>rule.timeLimit+1e-7)fail('invalid campaign control time');
 }

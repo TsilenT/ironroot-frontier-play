@@ -2,7 +2,7 @@ import { decodeBattle, encodeBattle } from './battle-codec.js';
 import { validateHistory } from './history-codec.js';
 import {
   CAMPAIGN_PROGRESS_MISSIONS, CAMPAIGN_STORAGE_KEY, createCampaignProgress,
-  normalizeCampaignProgress,
+  normalizeCampaignProgress, campaignRecordTimeLimit,
 } from './campaign.js';
 import { CURRENT_CHALLENGES as CHALLENGES } from './challenges.js';
 import { normalizeKeyboardMap } from './keyboard.js';
@@ -116,7 +116,7 @@ function campaign(value) {
     fields(record, ['completed', 'stars', 'bestTime'], ['completed', 'stars', 'bestTime'], 'Campaign record');
     if (record.completed !== true) fail('Campaign records must describe completed missions.');
     number(record.stars, 1, 3, 'Campaign stars', true);
-    number(record.bestTime, 0, mission.timeLimit + .25, 'Campaign best time');
+    number(record.bestTime, 0, campaignRecordTimeLimit(mission) + .25, 'Campaign best time');
   }
   const clean = normalizeCampaignProgress(value);
   if (Object.keys(clean.missions).length !== Object.keys(value.missions).length)

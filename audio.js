@@ -8,7 +8,7 @@ const midi = note => 440 * 2 ** ((note - 69) / 12);
 const EPSILON = 0.0001;
 const SCENES = new Set(['menu', 'battle', 'paused', 'victory', 'defeat']);
 const ALIASES = {select:'click',warrior:'sword',hit:'sword',archer:'arrow',tower:'arrow',wizard:'magic',blast:'siege',volley:'strike',death:'collapse',win:'victory',lose:'defeat',construction:'build'};
-const COOLDOWNS = {click:.035,error:.15,build:.10,upgrade:.14,sell:.10,spawn:.28,sword:.105,arrow:.13,siege:.28,magic:.22,gryphon:.35,strike:.30,collapse:.22,warning:2,start:.50,victory:2,defeat:2,pause:.15,resume:.15};
+const COOLDOWNS = {click:.035,error:.15,build:.10,upgrade:.14,sell:.10,spawn:.28,sword:.105,arrow:.13,siege:.28,magic:.22,gryphon:.35,strike:.30,collapse:.22,warning:2,start:.50,victory:2,defeat:2,pause:.15,resume:.15,engineReveal:8,engineImpact:.55};
 export const SOUND_NAMES = Object.freeze(Object.keys(COOLDOWNS));
 export const AUDIO_CREDITS = Object.freeze({title:'The Long Reach — Hearth to Standard',composer:'Original score for Ironroot Frontier',source:'Procedural Web Audio composition and sound design. No third-party audio assets.',bpm:108,bars:64,key:'D minor',seconds:64*4*60/108});
 export const AUDIO_SECTIONS = Object.freeze(['Hearth','The Road','The Crossing','The Standard']);
@@ -105,7 +105,7 @@ export class GameAudio {
         this.context=this.contextFactory?this.contextFactory():new Context({latencyHint:'interactive'});
         this._createGraph();
       }
-      if(this.context.state==='suspended')await this.context.resume();
+      if(this.context.state==='suspended'){this._stopVoices('sfx',0,true);await this.context.resume();}
       if(this.context.state==='closed')return false;
       this.available=true;
       this._updateGains();
@@ -131,9 +131,9 @@ export class GameAudio {
     else this._startScheduler();
   }
   setSfxEnabled(value){this.sfxEnabled=!!value;this._updateGains();if(!this.sfxEnabled)this._stopVoices('sfx',.04);}
-  setVolume(value){this.volume=clamp(value,0,1);this._updateGains();}
+  setVolume(value){this.volume=clamp(value,0,1);this._updateGains();if(this.volume===0)this._stopVoices('sfx',0,true);}
   setMusicVolume(value){this.musicVolume=clamp(value,0,1);this._updateGains();}
-  setSfxVolume(value){this.sfxVolume=clamp(value,0,1);this._updateGains();}
+  setSfxVolume(value){this.sfxVolume=clamp(value,0,1);this._updateGains();if(this.sfxVolume===0)this._stopVoices('sfx',0,true);}
   setIntensity(value){
     this.intensity=clamp(value,0,1);
     const previous=this.energy;
@@ -145,7 +145,9 @@ export class GameAudio {
     if(previous!==this.energy||Math.abs(this.mixIntensity-this.intensity)>=.04){this.mixIntensity=this.intensity;this._updateGains();}
   }
   setScene(scene) {
-    if(this.destroyed||!SCENES.has(scene)||scene===this.scene)return;
+    if(this.destroyed||!SCENES.has(scene))return;
+    if(scene!=='battle'||this.context?.state!=='running')this._stopVoices('sfx',0,true);
+    if(scene===this.scene)return;
     const previous=this.scene;
     this.scene=scene;
     if(ACTIVE_SCENES.has(previous)&&ACTIVE_SCENES.has(scene)&&this.timer!==null){
@@ -169,8 +171,11 @@ export class GameAudio {
     name=ALIASES[name]||name;
     const c=this.context;
     if(this.destroyed||this.muted||!this.sfxEnabled||!c||c.state!=='running'||!Object.hasOwn(COOLDOWNS,name)||this.volume<=0||this.sfxVolume<=0)return false;
+    const engineCue=name==='engineReveal'||name==='engineImpact';
+    if(engineCue&&this.scene!=='battle')return false;
     const now=c.currentTime;
     if(now-(this.lastPlayed.get(name)??-Infinity)<COOLDOWNS[name]){this.stats.droppedEffects++;return false;}
+    if(engineCue&&this._voiceCount('sfx')+(name==='engineReveal'?5:3)>24){if(name==='engineReveal')this._stopVoices('sfx',0);else{this.stats.droppedEffects++;return false;}}
     if(this._voiceCount('sfx')>=24){
       // A crowded clash must never swallow the result or the player's rally.
       if(['victory','defeat','warning','strike','start'].includes(name))this._stopVoices('sfx',0);
@@ -178,10 +183,10 @@ export class GameAudio {
     }
     this.lastPlayed.set(name,now);
     this.stats.soundEffects++;
-    if(['warning','strike','start','victory','defeat'].includes(name))this._duckMusic(now,name==='victory'?2.7:name==='defeat'?1.8:.85);
+    if(['warning','strike','start','victory','defeat','engineReveal'].includes(name))this._duckMusic(now,name==='victory'?2.7:name==='defeat'?1.8:.85);
     const at=now+.006, p=clamp(pan,-1,1),v=clamp(volume,0,1);
-    const note=(frequency,duration,gain,options={})=>this._tone(at+(options.delay||0),frequency,duration,gain*v,{kind:'sfx',pan:p,...options});
-    const noise=(duration,gain,options={})=>this._noise(at+(options.delay||0),duration,gain*v,{kind:'sfx',pan:p,...options});
+    const note=(frequency,duration,gain,options={})=>this._tone(at+(options.delay||0),frequency,duration,gain*v,{kind:'sfx',pan:p,...(engineCue?{cue:name}:{}),...options});
+    const noise=(duration,gain,options={})=>this._noise(at+(options.delay||0),duration,gain*v,{kind:'sfx',pan:p,...(engineCue?{cue:name}:{}),...options});
     const bell=(frequency,delay=0,gain=.18)=>{note(frequency,.38,gain,{type:'sine',delay});note(frequency*2.756,.16,gain*.18,{type:'sine',delay});};
     switch(name) {
       case 'click':note(740,.055,.16,{type:'sine',end:510});break;
@@ -199,6 +204,16 @@ export class GameAudio {
       case 'siege':
         note(105,.62,.37,{type:'sine',end:29});noise(.65,.24,{filter:'lowpass',frequency:1150,end:180});
         noise(.09,.12,{filter:'highpass',frequency:1400});break;
+      case 'engineReveal':
+        // A restrained low mechanical rise, latch and settling metal; no sample.
+        note(70,1.6,.18,{type:'triangle',end:44,attack:.09,release:.3,cutoff:240});
+        note(140,1.3,.06,{type:'sine',end:88,attack:.05});
+        noise(1,.11,{filter:'lowpass',frequency:650,end:120});
+        noise(.12,.08,{filter:'bandpass',frequency:1300,q:1,delay:.2});
+        note(180,.45,.09,{type:'triangle',end:75,delay:.45,cutoff:900});break;
+      case 'engineImpact':
+        note(78,.55,.24,{type:'sine',end:28});noise(.5,.12,{filter:'lowpass',frequency:800,end:140});
+        note(310,.18,.06,{type:'triangle',end:130,delay:.025,cutoff:900});break;
       case 'magic':
         note(440,.25,.12,{type:'sine',end:1320});note(660,.32,.08,{type:'triangle',end:1760,delay:.025,cutoff:2200});
         noise(.24,.055,{filter:'bandpass',frequency:2800,end:600,q:2});break;
@@ -341,8 +356,8 @@ export class GameAudio {
   }
   _voiceCount(kind){let count=0;for(const voice of this.voices)if(voice.kind===kind)count++;return count;}
   _output(kind,layer){return kind==='music'?(this.layers[layer]||this.layers.theme):this.sfx;}
-  _track(source,gain,nodes,kind,stopAt){
-    const voice={source,gain,nodes,kind};
+  _track(source,gain,nodes,kind,stopAt,cue=null){
+    const voice={source,gain,nodes,kind,cue};
     this.voices.add(voice);
     this.stats.peakVoices=Math.max(this.stats.peakVoices,this.voices.size);
     source.onended=()=>{for(const node of nodes){try{node.disconnect();}catch{}}this.voices.delete(voice);};
@@ -356,7 +371,7 @@ export class GameAudio {
     gain.gain.exponentialRampToValueAtTime(Math.max(EPSILON,peak*.65),at+Math.max(a,duration-r));
     gain.gain.exponentialRampToValueAtTime(EPSILON,at+duration);
   }
-  _tone(at,frequency,duration,volume,{kind='sfx',layer='theme',type='sine',end=null,attack=.005,release=.06,pan=0,cutoff=0}={}){
+  _tone(at,frequency,duration,volume,{kind='sfx',layer='theme',type='sine',end=null,attack=.005,release=.06,pan=0,cutoff=0,cue=null}={}){
     if(!this.context||this.voices.size>=80||kind==='music'&&this._voiceCount('music')>=56)return;
     const c=this.context,source=c.createOscillator(),gain=c.createGain(),nodes=[source,gain];
     source.type=type;source.frequency.setValueAtTime(frequency,at);
@@ -367,9 +382,9 @@ export class GameAudio {
     output.connect(gain);output=gain;
     if(pan&&c.createStereoPanner){const panner=c.createStereoPanner();panner.pan.value=pan;output.connect(panner);nodes.push(panner);output=panner;}
     output.connect(this._output(kind,layer));
-    source.start(at);this._track(source,gain,nodes,kind,at+duration+.02);
+    source.start(at);this._track(source,gain,nodes,kind,at+duration+.02,cue);
   }
-  _noise(at,duration,volume,{kind='sfx',layer='drums',filter='lowpass',frequency=1200,end=null,q=.7,pan=0}={}){
+  _noise(at,duration,volume,{kind='sfx',layer='drums',filter='lowpass',frequency=1200,end=null,q=.7,pan=0,cue=null}={}){
     if(!this.context||this.voices.size>=80||kind==='music'&&this._voiceCount('music')>=56)return;
     const c=this.context,source=c.createBufferSource(),gain=c.createGain(),shape=c.createBiquadFilter(),nodes=[source,gain,shape];
     source.buffer=this.noiseBuffer;shape.type=filter;shape.frequency.setValueAtTime(frequency,at);shape.Q.value=q;
@@ -378,12 +393,12 @@ export class GameAudio {
     source.connect(shape);shape.connect(gain);let output=gain;
     if(pan&&c.createStereoPanner){const panner=c.createStereoPanner();panner.pan.value=pan;output.connect(panner);nodes.push(panner);output=panner;}
     output.connect(this._output(kind,layer));
-    source.start(at);this._track(source,gain,nodes,kind,at+duration+.02);
+    source.start(at);this._track(source,gain,nodes,kind,at+duration+.02,cue);
   }
-  _stopVoices(kind,fade){
+  _stopVoices(kind,fade,engineOnly=false){
     if(!this.context)return;
     const now=this.context.currentTime;
-    for(const voice of [...this.voices])if(kind===null||voice.kind===kind){
+    for(const voice of [...this.voices])if((kind===null||voice.kind===kind)&&(!engineOnly||voice.cue==='engineReveal'||voice.cue==='engineImpact')){
       try{voice.gain.gain.cancelScheduledValues(now);voice.gain.gain.setValueAtTime(Math.max(EPSILON,voice.gain.gain.value),now);voice.gain.gain.linearRampToValueAtTime(EPSILON,now+fade);voice.source.stop(now+fade+.005);}catch{}
       // Closed or test contexts need not emit onended; do not retain their nodes.
       if(fade===0){for(const node of voice.nodes){try{node.disconnect();}catch{}}this.voices.delete(voice);}

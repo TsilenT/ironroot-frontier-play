@@ -3,6 +3,14 @@
  */
 const LIMITS = Object.freeze({ samples: 256, objectives: 32, targets: 64, composition: 16, limitations: 24, text: 512 });
 const SIDES = ['You', 'Enemy'];
+/** The registered finale's observer omits the boss row until actual reveal.
+ * Row presence, including zero after death, is the retained visibility fact. */
+export function reportConcealsFinale(report) {
+  const identity = report?.identity;
+  return report?.version === 2 && identity?.ruleset.id === 'frontier-campaign-last-engine-r2' && identity.ruleset.revision === 1 &&
+    identity.scenario.kind === 'campaign' && identity.scenario.id === 'the-last-engine' && identity.scenario.revision === 1 &&
+    report.final.sides.every(side => !side.unitComposition.some(unit => unit.type === 'colossus'));
+}
 const METRICS = [
   { key: 'gold', title: 'Gold on hand', unit: 'gold', detail: 'Gold available at each sample. This does not show total earnings or profit.' },
   { key: 'income', title: 'Income rate', unit: 'gold / sec', detail: 'The income rate at each sample, not total income earned.' },
@@ -142,13 +150,17 @@ function totals(report) {
 function rulesSummary(report) {
   if (report.version === 1) return '';
   const { identity, rules } = report, policy = rules.endgame;
+  const concealed = reportConcealsFinale(report);
+  const ruleName = concealed ? 'Campaign · The Last Fortress' : rules.name;
+  const ruleId = concealed ? 'Final fortress rules' : identity.ruleset.id;
+  const scenarioId = concealed ? 'The Last Fortress' : identity.scenario.id;
   const endgame = policy.forcedDecay
     ? `Both citadels begin losing health automatically after ${time(policy.decayAt)}.`
     : identity.scenario.kind === 'skirmish'
       ? 'No automatic citadel decay or forced time-limit winner.'
       : 'No automatic citadel decay. Authored objectives and deadlines still apply.';
   const bridges=rules.bridgeControl?`<p>Experimental bridges: ground troops need 2 uncontested seconds to capture; living enemy troops, including flyers, stop capture and payment. Empty ownership persists. Both sides share a map-wide maximum of 0.5 gold/s, with no overtime multiplier.</p><p>${report.final.sides.map(side=>`${SIDES[side.side]} final income: ${format(side.income)} gold/s total, including ${format(number(side.bridgeIncome,'bridge income'))} from bridges.`).join(' ')}</p>`:'';
-  return `<section class="report-section report-rules"><h3>Battle rules</h3><p>${escape(rules.name)} · ${escape(identity.ruleset.id)} @ ${identity.ruleset.revision}</p><p>${escape(identity.scenario.kind)} · ${escape(identity.scenario.id)} @ ${identity.scenario.revision}. ${escape(report.map.name)} @ ${identity.map.revision}.</p><p>At ${time(policy.escalationAt)}, production runs at ${format(policy.productionMultiplier)}× and troop damage to structures at ${format(policy.structureDamageMultiplier)}×. Citadel retaliation changes from ${format(policy.baseDamage)} to ${format(policy.escalatedBaseDamage)} damage. ${endgame}</p>${bridges}<p class="report-note">These are the selected rules, not a claim about what caused the result.</p></section>`;
+  return `<section class="report-section report-rules"><h3>Battle rules</h3><p>${escape(ruleName)} · ${escape(ruleId)} @ ${identity.ruleset.revision}</p><p>${escape(identity.scenario.kind)} · ${escape(scenarioId)} @ ${identity.scenario.revision}. ${escape(report.map.name)} @ ${identity.map.revision}.</p><p>At ${time(policy.escalationAt)}, production runs at ${format(policy.productionMultiplier)}× and troop damage to structures at ${format(policy.structureDamageMultiplier)}×. Citadel retaliation changes from ${format(policy.baseDamage)} to ${format(policy.escalatedBaseDamage)} damage. ${endgame}</p>${bridges}<p class="report-note">These are the selected rules, not a claim about what caused the result.</p></section>`;
 }
 
 function lineChart(report, metric) {
@@ -200,5 +212,5 @@ function sampleTables(report) {
 export function renderBattleReport(input) {
   const report = validate(input);
   const result = { victory: 'Victory', defeat: 'Defeat', draw: 'Draw' }[report.outcome.result];
-  return `<details class="battle-report"><summary><span class="report-summary-title">Battle report</span><span class="report-summary-subtitle">Forces, economy &amp; objectives</span></summary><div class="report-body" role="region" aria-label="Battle report"><header class="report-header"><span class="report-kicker">FIELD RECORD</span><h3>${escape(report.context.name)}</h3><p>${escape(report.map.name)} <span aria-hidden="true">·</span> ${time(report.scope.endedAt)} battle time</p><span class="report-result">${result}</span></header>${rulesSummary(report)}${totals(report)}${coverage(report)}<section class="report-section report-history"><h3>Recorded battle history</h3><p class="report-note">Each point records both armies at one moment. Lines join those points. Events between samples may be missed.</p><p class="report-legend"><span><i class="report-key report-key-you" aria-hidden="true"></i>You · solid / circle</span><span><i class="report-key report-key-enemy" aria-hidden="true"></i>Enemy · dashed / diamond</span></p>${METRICS.map(metric => lineChart(report, metric)).join('')}${sampleTables(report)}</section>${roster(report)}${objectives(report)}<div class="report-download"><p class="report-note">Available in this tab until a new battle or page reload. Not included in saved games, history or backups.</p><button type="button" data-report-download>Download report data (JSON)</button><p class="report-note">Contains report data. It cannot replay the battle.</p><p class="report-download-status" data-report-status role="status" aria-live="polite"></p></div>${report.limitations.length ? `<details class="report-subdetails report-limitations"><summary>About these records</summary><ul>${report.limitations.map(item => `<li>${escape(item)}</li>`).join('')}</ul></details>` : ''}</div></details>`;
+  return `<details class="battle-report"><summary><span class="report-summary-title">Battle report</span><span class="report-summary-subtitle">Forces, economy &amp; objectives</span></summary><div class="report-body" role="region" aria-label="Battle report"><header class="report-header"><span class="report-kicker">FIELD RECORD</span><h3>${escape(report.context.name)}</h3><p>${escape(report.map.name)} <span aria-hidden="true">·</span> ${time(report.scope.endedAt)} battle time</p><span class="report-result">${result}</span></header>${rulesSummary(report)}${totals(report)}${coverage(report)}<section class="report-section report-history"><h3>Recorded battle history</h3><p class="report-note">Each point records both armies at one moment. Lines join those points. Events between samples may be missed.</p><p class="report-legend"><span><i class="report-key report-key-you" aria-hidden="true"></i>You · solid / circle</span><span><i class="report-key report-key-enemy" aria-hidden="true"></i>Enemy · dashed / diamond</span></p>${METRICS.map(metric => lineChart(report, metric)).join('')}${sampleTables(report)}</section>${roster(report)}${objectives(report)}<div class="report-download"><p class="report-note">Available in this tab until a new battle or page reload. Not included in saved games, history or backups.</p>${reportConcealsFinale(report) ? '<p class="report-note">JSON includes exact technical encounter identifiers and may reveal encounter details.</p>' : ''}<button type="button" data-report-download>Download report data (JSON)</button><p class="report-note">Contains report data. It cannot replay the battle.</p><p class="report-download-status" data-report-status role="status" aria-live="polite"></p></div>${report.limitations.length ? `<details class="report-subdetails report-limitations"><summary>About these records</summary><ul>${report.limitations.map(item => `<li>${escape(item)}</li>`).join('')}</ul></details>` : ''}</div></details>`;
 }

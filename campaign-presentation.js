@@ -96,8 +96,12 @@ export function missionBriefing(mission) {
   const facts = [];
   if (income) facts.push(`${income.amount} gold/sec at ${clock(mission.timeLimit)}`);
   else if (hold?.seconds === mission.timeLimit) facts.push(`Hold for ${clock(hold.seconds)}`);
-  else facts.push(`${clock(mission.timeLimit)} time limit`);
-  if (control) facts.push(`Hold any ${control.bridges} bridges for ${control.seconds} seconds in total`, 'Contested progress pauses; secured time is kept', 'No bridge gold bonus');
+  else facts.push(mission.timeLimit===null?'No artificial deadline':`${clock(mission.timeLimit)} time limit`);
+  if(mission.id==='carry-the-crossing')facts.push('Hold both clear crossings for 60 cumulative seconds','Contested progress pauses; secured time is kept','No bridge gold or bounty');
+  else if (control) facts.push(`Hold any ${control.bridges} bridges for ${control.seconds} seconds in total`, 'Contested progress pauses; secured time is kept', 'No bridge gold bonus');
+  if(mission.chapterId==='last-ascent')facts.push('Hard paid adaptive enemy; ordinary costs, income and unit stats','One HP earns the primary star; no forced damage or protection floor','Normal 5:00 escalation');
+  if(mission.id==='no-fires-tonight')facts.push('Only the original North Command Post site is charted','Hidden HP, defenders and production remain unknown','Volley needs current sight; Resume keeps both fog memories');
+  if(mission.id==='the-last-engine')facts.push('Break the final fortress','Keep your citadel standing at any HP','No artificial deadline');
   if (mission.id === 'a-river-between-us') facts.push('Both goals required; either order', 'North Command Post: original north-road watchtower', 'Your citadel must survive; replacements do not count');
   if (mission.id === 'false-quiet') facts.push('Two possible enemy layouts; scout to identify this attempt', 'Restart and Resume preserve the layout', 'Your citadel must survive; replacements do not count');
   if (mission.id === 'the-shared-watch') facts.push('Shared nearby middle/south ground defense or advancing support', 'Limited reach; one shared firing stream', 'No compulsory tower, target, unit or road', 'Your citadel must survive; 1 HP is enough');

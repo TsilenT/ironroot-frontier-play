@@ -1,5 +1,5 @@
 import { MAPS, getMap, getRuleset } from './engine.js';
-import { CAMPAIGN_MISSIONS } from './campaign.js';
+import { CAMPAIGN_MISSIONS, campaignRecordTimeLimit } from './campaign.js';
 import { CHALLENGES } from './challenges.js';
 import { validateBattleIdentity, resolveScenario } from './battle-codec.js';
 
@@ -58,7 +58,7 @@ export function validateHistoryRow(record) {
     }
     if (authored && (record.mapId ?? 'classic') !== (authored.mapId ?? 'classic')) fail(`Authored mission results require the ${getMap(authored.mapId ?? 'classic').name} battlefield.`);
   }
-  number(record.time, 0, authored ? authored.timeLimit + .25 : limits.maxTime, 'Recent result time');
+  number(record.time, 0, authored ? campaignRecordTimeLimit(authored) + .25 : limits.maxTime, 'Recent result time');
   number(record.kills, 0, limits.maxCounter, 'Recent result kills', true);
   number(record.built, 0, limits.maxCounter, 'Recent result buildings', true);
   const statistics = { difficulty: record.difficulty, time: record.time, kills: record.kills, built: record.built, date: iso(record.date) };

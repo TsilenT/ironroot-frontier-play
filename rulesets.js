@@ -1,8 +1,10 @@
+import {COLOSSUS} from './colossus-spec.js';
+import {FINAL_CHAPTER_RULESETS,FINAL_NIGHT_RULESET_ID} from './final-chapter-identities.js';
 import {MINOR_RESERVE_RULESET_ID,MINOR_RESERVE} from './minor-reserve.js';
 export {MINOR_RESERVE_RULESET_ID} from './minor-reserve.js';
 import {HAMMER_RULESET_ID,HAMMER_CAMPAIGN_RULESET_ID,HAMMER_AI} from './hammer-policy.js';
-import { BRIDGE_CONTROL, CAMPAIGN_CONTROL, RIVER_BETWEEN_CONTROL } from './bridge-control.js';
-import { CITADEL_OPTIONS } from './citadel-options.js';
+import { BRIDGE_CONTROL, CAMPAIGN_CONTROL, RIVER_BETWEEN_CONTROL, FINAL_CROSSING_CONTROL } from './bridge-control.js';
+import { CITADEL_OPTIONS } from './citadel-spec.js';
 export {HAMMER_CAMPAIGN_RULESET_ID} from './hammer-policy.js';
 export const BOWSTRINGS_RULESET_ID='frontier-campaign-bowstrings';
 export const THREE_MINUTES_RULESET_ID='frontier-campaign-three-minutes';
@@ -19,7 +21,7 @@ export const RIVER_BETWEEN_RULESET_ID='frontier-campaign-river-between';
 export const ONE_SIGNAL_RULESET_ID='frontier-campaign-one-signal';
 export const SHARED_CROSSING_RULESET_ID='frontier-campaign-shared-crossing';
 export const LANTERNS_RULESET_ID='frontier-campaign-lanterns';
-export const CAMPAIGN_FOG_RULESET_IDS=Object.freeze([LANTERNS_RULESET_ID,...FALSE_QUIET_RULESET_IDS]);
+export const CAMPAIGN_FOG_RULESET_IDS=Object.freeze([LANTERNS_RULESET_ID,...FALSE_QUIET_RULESET_IDS,FINAL_NIGHT_RULESET_ID]);
 export const BORROWED_GROUND_RULESET_ID='frontier-campaign-borrowed-ground';
 export const FOG_RULESET_ID='frontier-fog-experimental-open';
 export const FOG_SKIRMISH_RULESET_ID='frontier-fog-skirmish-open';
@@ -94,6 +96,7 @@ const authoredAirEntry=id=>deepFreeze({
   movement:{policy:'autonomous-air-local-v1',autonomousAir:{perception:300,retention:420,adjacentOnly:true}}
 });
 export const RULESETS=deepFreeze({
+  ...Object.fromEntries(Object.entries(FINAL_CHAPTER_RULESETS).map(([mission,id])=>[id,deepFreeze({...autonomousAirEntry(id,'Campaign · '+mission,false,true),citadel:CITADEL_OPTIONS,...(mission==='no-fires-tonight'?{fog:FOG}:{}),...(mission==='carry-the-crossing'?{campaignControl:FINAL_CROSSING_CONTROL}:{}),...(mission==='the-last-engine'?{units:{...rootwardenUnits,colossus:COLOSSUS}}:{})})])),
   [BOWSTRINGS_RULESET_ID]:deepFreeze({...autonomousAirEntry(BOWSTRINGS_RULESET_ID,'Campaign · Cut the Bowstrings',false,true),citadel:CITADEL_OPTIONS}),
   [THREE_MINUTES_RULESET_ID]:deepFreeze({...autonomousAirEntry(THREE_MINUTES_RULESET_ID,'Campaign · Three Minutes More',false,true),citadel:CITADEL_OPTIONS}),
   [LEAVE_ROADS_RULESET_ID]:deepFreeze({...autonomousAirEntry(LEAVE_ROADS_RULESET_ID,'Campaign · Leave No Road Closed',false,true),citadel:CITADEL_OPTIONS,campaignControl:{...CAMPAIGN_CONTROL,requiredBridges:3,seconds:30,timeLimit:600}}),

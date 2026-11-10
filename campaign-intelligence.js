@@ -1,7 +1,10 @@
 /** Presentation policy for the immutable chart, not a second fog-memory store. */
 export function hasChartedIntelligence(mission) {
   if (!mission || mission.scenarioRevision !== 1 || mission.rulesetRevision !== 1) return false;
-  return (mission.id === 'lanterns-on-the-water'
+  return (mission.id === 'no-fires-tonight'
+    && mission.rulesetId === 'frontier-campaign-no-fires'
+    && mission.intelligence === 'charted-command-post')
+    || (mission.id === 'lanterns-on-the-water'
     && mission.rulesetId === 'frontier-campaign-lanterns'
     && mission.intelligence === 'charted-customs-posts')
     || (mission.id === 'false-quiet'

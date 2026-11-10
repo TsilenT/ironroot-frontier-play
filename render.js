@@ -1,3 +1,5 @@
+import {colossusPose} from './final-chapter-view.js';
+import {COLOSSUS} from './colossus-spec.js';
 import { citadelOptionStatus, supportsCitadelOptions } from './citadel-options.js';
 import { bridgeZones, bridgeStatus, supportsBridgeControl, supportsCampaignControl } from './bridge-control.js';
 import { drawRootwarden, drawWardenLodge } from './rootwarden-art.js';
@@ -557,9 +559,10 @@ export class Renderer {
     for (const id of this.rootwardenMotion.keys()) if (!wardenIds.has(id)) this.rootwardenMotion.delete(id);
     const entities = [...s.buildings, ...s.units].sort((a, b) => a.y - b.y);
     for (const e of entities) {
-      if (e.x < left || e.x > right) continue;
+      const radius = e.type === 'colossus' ? COLOSSUS.radius : 0;
+      if (e.x + radius < left || e.x - radius > right) continue;
       if (Object.hasOwn(this.buildings, e.type)) this.drawBuilding(e);
-      else this.drawUnit(e, s.time);
+      else this.drawUnit(e, s.time, s.colossus);
     }
     for (const p of s.projectiles) {
       const t = 1 - p.life / p.maxLife;
@@ -629,7 +632,8 @@ export class Renderer {
     this.drawBridgeZones(game, 'labels');
     // Mission badges must not disappear behind enlarged troops or projectile trails.
     for (const e of s.buildings) {
-      if (e.x < left || e.x > right) continue;
+      const radius = e.type === 'colossus' ? COLOSSUS.radius : 0;
+      if (e.x + radius < left || e.x - radius > right) continue;
       if (ui.targets?.includes(e.id)) {
         c.save();
         c.translate(e.x, e.y - 94);
@@ -1351,7 +1355,33 @@ export class Renderer {
     }
     c.restore();
   }
-  drawUnit(u, time) {
+  drawColossus(u, time, phase) {
+    const c=this.c,pose=colossusPose(u,time,phase,{reducedMotion:this.reducedMotion}),emerging=pose.mode==='emerging';
+    c.save();c.translate(u.x,u.y);
+    // The marked footprint matches the 210-world-pixel physical body, across roads.
+    c.fillStyle='#201e22aa';c.beginPath();c.ellipse(0,15,210,190,0,0,Math.PI*2);c.fill();
+    c.strokeStyle=u.hit>0?'#f1c499':'#c99a73';c.lineWidth=4;c.setLineDash([12,10]);
+    c.beginPath();c.arc(0,0,COLOSSUS.radius,0,Math.PI*2);c.stroke();c.setLineDash([]);
+    for(const y of [-140,140]){
+      c.fillStyle='#29292b';c.fillRect(-175,y-30,350,60);c.strokeStyle='#ac9275';c.lineWidth=5;c.strokeRect(-175,y-30,350,60);
+      for(let x=-140;x<=140;x+=56){c.fillStyle='#615c52';c.beginPath();c.arc(x,y,19,0,Math.PI*2);c.fill();c.stroke();c.beginPath();c.moveTo(x-14*Math.cos(pose.wheelAngle),y-14*Math.sin(pose.wheelAngle));c.lineTo(x+14*Math.cos(pose.wheelAngle),y+14*Math.sin(pose.wheelAngle));c.stroke();}
+      c.strokeStyle='#c5ad87';c.lineWidth=3;for(let x=-160+pose.treadOffset;x<165;x+=32){c.beginPath();c.moveTo(x,y-26);c.lineTo(x+10,y-26);c.moveTo(x,y+26);c.lineTo(x+10,y+26);c.stroke();}
+    }
+    c.fillStyle=u.hit>0?'#96775e':'#654c44';c.fillRect(-158,-118,316,236);
+    c.strokeStyle='#d2b080';c.lineWidth=7;c.strokeRect(-158,-118,316,236);
+    c.fillStyle='#302e32';c.fillRect(-132,-85,94,170);c.fillStyle='#c98552';c.fillRect(-120,-68,70,136);
+    c.fillStyle='#9b8067';for(const y of [-110,94])c.fillRect(-20,y-pose.panelLift,160,16);
+    c.strokeStyle='#3a3331';c.lineWidth=11;for(let y=-55;y<68;y+=30){c.beginPath();c.moveTo(-126,y);c.lineTo(-42,y);c.stroke();}
+    c.fillStyle='#9b7d64';c.fillRect(-205+pose.brace,-42,110,84);c.strokeStyle='#d9b88e';c.lineWidth=5;c.strokeRect(-205+pose.brace,-42,110,84);
+    for(const y of [-75,75]){c.fillStyle='#2a282b';c.fillRect(22,y-25,125,50);c.fillStyle='#a78e73';c.fillRect(40+pose.piston,y-18,90,36);}
+    if(pose.contact){c.strokeStyle='#dcb68b';c.lineWidth=9;c.beginPath();c.arc(0,0,COLOSSUS.radius+10,Math.PI*.55,Math.PI*1.45);c.stroke();}
+    const font=Math.max(18,12/(this.scale||1));c.font=`bold ${font}px sans-serif`;c.textAlign='center';c.textBaseline='bottom';c.fillStyle='#fff1ce';
+    c.fillText(emerging?'THE LAST ENGINE · EMERGING':pose.mode==='approach'?'THE LAST ENGINE · APPROACH':'THE LAST ENGINE · SIEGE MARCH',0,-230);
+    this.health(-175,-221,350,u.hp/u.maxHp,'#f2bd81',Math.max(8,4/(this.scale||1)));
+    c.restore();
+  }
+  drawUnit(u, time, phase = null) {
+    if(u.type==='colossus'){this.drawColossus(u,time,phase);return;}
     const c = this.c,
       co = COLORS[u.side],
       direction = u.side ? -1 : 1,
@@ -1839,6 +1869,7 @@ export class Renderer {
       );
     }
     for (const u of s.units) {
+      if(u.type==='colossus'){c.fillStyle='#ffd08e';c.fillRect((u.x-COLOSSUS.radius)/this.map.width*w,(u.y-COLOSSUS.radius)/this.map.height*h,2*COLOSSUS.radius/this.map.width*w,2*COLOSSUS.radius/this.map.height*h);continue;}
       c.fillStyle = u.side ? '#df9b77' : '#c7dfaf';
       c.fillRect(
         (u.x / this.map.width) * w,

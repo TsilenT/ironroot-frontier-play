@@ -138,7 +138,7 @@ export function createCodex(context = null) {
   };
 
   /** Display order is intentional; portraitId is a Renderer.drawUnit unit type. */
-  const UNIT_CODEX = freeze(Object.keys(UNITS).map(id => {
+  const UNIT_CODEX = freeze(Object.keys(UNITS).filter(id=>Object.values(BUILDINGS).some(building=>building.unit===id)).map(id => {
     const unit = UNITS[id];
     const [buildingId, building] = Object.entries(BUILDINGS).find(([, value]) => value.unit === id);
     return {

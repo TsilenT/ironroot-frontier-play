@@ -1,3 +1,5 @@
+import {FINAL_CHAPTER_MAPS,FINAL_CROSSING_RULESET_ID} from './final-chapter-identities.js';
+import {supportsColossus,isColossus,bodyDistance,createColossusState,advanceColossus,stepColossusUnit,settleColossusOutcome,settleColossusCommand,validateColossusState} from './colossus.js';
 import {supportsMinorReserve,createMinorReserve,advanceMinorReserve,validateMinorReserve,minorReserveEnded,minorReserveUnbound} from './minor-reserve.js';
 import {supportsHammer,createHammerState,runHammerAI,validateHammerState} from './hammer-policy.js';
 import { BUILDINGS, UNITS, SPELL, getRuleset, LEGACY_RULESET_ID, LANTERNS_RULESET_ID, CAMPAIGN_FOG_RULESET_IDS, BORROWED_GROUND_RULESET_ID } from './rulesets.js';
@@ -51,7 +53,9 @@ export class Game {
     if(supportsMinorReserve(ruleset)&&(map.id!=='classic'||map.revision!==1))throw Error('Wake the Reserve requires Classic.');
     if((map.id==='borrowed-yard')!==(ruleset.id===BORROWED_GROUND_RULESET_ID))throw new Error('Borrowed Yard requires the Borrowed Ground campaign ruleset.');
     if(supportsFog(ruleset)&&(map.id!=='classic'||map.revision!==1||ruleset.endgame.forcedDecay||ruleset.economy.policy!=='legacy'||(ruleset.campaignOnly&&!CAMPAIGN_FOG_RULESET_IDS.includes(ruleset.id))||ruleset.authoredOnly))throw new Error('Experimental fog requires Classic open-ended Skirmish or an explicitly supported campaign mission');
-    if(supportsCampaignControl(ruleset)&&(map.id!=='classic'||map.revision!==1))throw new Error('Campaign control requires Classic');
+    if(Object.hasOwn(FINAL_CHAPTER_MAPS,ruleset.id)&&(map.id!==FINAL_CHAPTER_MAPS[ruleset.id]||map.revision!==1))throw new Error('Final chapter rules require their exact authored battlefield');
+    if(ruleset.id===FINAL_CROSSING_RULESET_ID){if(map.id!=='twin-span'||map.revision!==1)throw Error('Final crossing requires Twin Span');}
+    else if(supportsCampaignControl(ruleset)&&(map.id!=='classic'||map.revision!==1))throw new Error('Campaign control requires Classic');
     if(supportsBridgeControl(ruleset)&&!Object.hasOwn(MAPS,map.id))throw new Error('Bridge income requires a Skirmish battlefield');
     if(supportsCitadelOptions(ruleset)&&ruleset.skirmishOnly&&!Object.hasOwn(MAPS,map.id))throw new Error('Citadel choices require a Skirmish battlefield');
     if(supportsHammer(ruleset)&&(map.id!=='classic'||map.revision!==1))throw new Error('Hammer prototype requires Classic.');
@@ -60,6 +64,7 @@ export class Game {
     this.state={time:0,gold:[420,420],income:[5,5],bases:[{id:'base0',type:'base',side:0,hp:6000,maxHp:6000,cooldown:0,x:110,y:450},{id:'base1',type:'base',side:1,hp:6000,maxHp:6000,cooldown:0,x:map.width-110,y:450}],buildings:[],units:[],projectiles:[],effects:[],frontline:map.width/2,winner:null,spellCooldown:[0,0],overtime:false,stats:{kills:[0,0],built:[0,0],damage:[0,0]}};
     if(supportsMinorReserve(ruleset))this.state.minorReserve=createMinorReserve();
     if(supportsHammer(ruleset))this.state.hammerCommitment=createHammerState();
+    if(supportsColossus(ruleset)){if(map.id!=='classic')throw Error('Colossus requires Classic');this.state.colossus=createColossusState();}
     if(supportsBridgeControl(ruleset))this.state.bridgeControl=createBridgeControl(map);
     if(supportsCampaignControl(ruleset))this.state.campaignControl=createCampaignControl(map);
     if(supportsCitadelOptions(ruleset))this.state.citadelOptions=createCitadelOptions();
@@ -92,6 +97,7 @@ export class Game {
   random(){this.seed=(Math.imul(this.seed,1664525)+1013904223)>>>0;return this.seed/4294967296;}
   canBuild(type,x,y,side=0){
     if(minorReserveEnded(this))return {ok:false,reason:'The battle has ended.'};
+    if(supportsColossus(this.ruleset)&&[0,1].includes(side)&&this.state.bases[side].hp<=0)return {ok:false,code:'citadel-fallen',reason:'This citadel has fallen.'};
     if(this.limitReason)return {ok:false,code:'save-safety-limit',reason:this.limitReason};
     if(typeof type!=='string'||!Object.hasOwn(this.buildings,type))return {ok:false,reason:'Unknown building.'};
     const s=this.state,d=this.buildings[type],bounds=buildBounds(this.map,side);
@@ -118,11 +124,11 @@ export class Game {
     b.flightPlan=toLane;
     return {ok:true,building:b,reason:'Flight plan set for future launches. Airborne gryphons keep their orders.'};
   }
-  upgrade(id,side=0){if(minorReserveEnded(this))return {ok:false,reason:'The battle has ended.'};if(this.limitReason)return {ok:false,code:'save-safety-limit',reason:this.limitReason};const b=this.state.buildings.find(b=>b.id===id&&b.side===side&&b.hp>0);if(this.state.winner!==null||!b)return {ok:false,reason:'Select one of your buildings.'};if(b.level>=3)return {ok:false,reason:'Already at maximum level.'};const cost=this.upgradeCost(b);if(this.state.gold[side]<cost)return {ok:false,reason:`Need ${cost} gold.`};this.state.gold[side]-=cost;b.invested+=cost;b.level++;const hp=this.buildings[b.type].hp*(1+0.4*(b.level-1));b.hp+=hp-b.maxHp;b.maxHp=hp;this._effect(b.x,b.y,'upgrade',side,0.8);if(supportsFog(this.ruleset))refreshFog(this);return {ok:true,building:b};}
-  sell(id,side=0){if(minorReserveEnded(this))return {ok:false,reason:'The battle has ended.'};if(this.limitReason)return {ok:false,code:'save-safety-limit',reason:this.limitReason};const b=this.state.buildings.find(b=>b.id===id&&b.side===side&&b.hp>0);if(this.state.winner!==null||!b)return {ok:false,reason:'Select one of your buildings.'};const refund=Math.floor(b.invested*0.5*b.hp/b.maxHp);this.state.gold[side]+=refund;this.state.buildings=this.state.buildings.filter(a=>a!==b);this._effect(b.x,b.y,'sell',side,0.6);if(supportsFog(this.ruleset))refreshFog(this);return {ok:true,refund};}
-  cast(x,y,side=0){if(minorReserveEnded(this))return {ok:false,reason:'The battle has ended.'};if(this.limitReason)return {ok:false,code:'save-safety-limit',reason:this.limitReason};const s=this.state;if(s.winner!==null||![0,1].includes(side)||!Number.isFinite(x)||!Number.isFinite(y)||x<0||x>this.map.width||y<0||y>this.map.height)return {ok:false,reason:'Choose a point on the battlefield.'};if(supportsFog(this.ruleset)&&!isPointVisible(this,side,x,y))return {ok:false,code:'fog-hidden-aim',reason:'Volley needs a currently visible aim point.'};if(s.spellCooldown[side]>0)return {ok:false,reason:'Volley is recharging.'};if(s.gold[side]<SPELL.cost)return {ok:false,reason:`Need ${SPELL.cost} gold.`};s.gold[side]-=SPELL.cost;s.spellCooldown[side]=SPELL.cooldown;for(const u of s.units)if(u.side!==side&&Math.hypot(u.x-x,u.y-y)<SPELL.radius)this._damage(u,SPELL.damage,side);this._effect(x,y,'volley',side,1.1,SPELL.radius);if(supportsFog(this.ruleset))refreshFog(this);return {ok:true};}
+  upgrade(id,side=0){if(minorReserveEnded(this))return {ok:false,reason:'The battle has ended.'};if(supportsColossus(this.ruleset)&&[0,1].includes(side)&&this.state.bases[side].hp<=0)return {ok:false,code:'citadel-fallen',reason:'This citadel has fallen.'};if(this.limitReason)return {ok:false,code:'save-safety-limit',reason:this.limitReason};const b=this.state.buildings.find(b=>b.id===id&&b.side===side&&b.hp>0);if(this.state.winner!==null||!b)return {ok:false,reason:'Select one of your buildings.'};if(b.level>=3)return {ok:false,reason:'Already at maximum level.'};const cost=this.upgradeCost(b);if(this.state.gold[side]<cost)return {ok:false,reason:`Need ${cost} gold.`};this.state.gold[side]-=cost;b.invested+=cost;b.level++;const hp=this.buildings[b.type].hp*(1+0.4*(b.level-1));b.hp+=hp-b.maxHp;b.maxHp=hp;this._effect(b.x,b.y,'upgrade',side,0.8);if(supportsFog(this.ruleset))refreshFog(this);return {ok:true,building:b};}
+  sell(id,side=0){if(minorReserveEnded(this))return {ok:false,reason:'The battle has ended.'};if(supportsColossus(this.ruleset)&&[0,1].includes(side)&&this.state.bases[side].hp<=0)return {ok:false,code:'citadel-fallen',reason:'This citadel has fallen.'};if(this.limitReason)return {ok:false,code:'save-safety-limit',reason:this.limitReason};const b=this.state.buildings.find(b=>b.id===id&&b.side===side&&b.hp>0);if(this.state.winner!==null||!b)return {ok:false,reason:'Select one of your buildings.'};const refund=Math.floor(b.invested*0.5*b.hp/b.maxHp);this.state.gold[side]+=refund;this.state.buildings=this.state.buildings.filter(a=>a!==b);this._effect(b.x,b.y,'sell',side,0.6);if(supportsFog(this.ruleset))refreshFog(this);return {ok:true,refund};}
+  cast(x,y,side=0){if(minorReserveEnded(this))return {ok:false,reason:'The battle has ended.'};if(supportsColossus(this.ruleset)&&[0,1].includes(side)&&this.state.bases[side].hp<=0)return {ok:false,code:'citadel-fallen',reason:'This citadel has fallen.'};if(this.limitReason)return {ok:false,code:'save-safety-limit',reason:this.limitReason};const s=this.state;if(s.winner!==null||![0,1].includes(side)||!Number.isFinite(x)||!Number.isFinite(y)||x<0||x>this.map.width||y<0||y>this.map.height)return {ok:false,reason:'Choose a point on the battlefield.'};if(supportsFog(this.ruleset)&&!isPointVisible(this,side,x,y))return {ok:false,code:'fog-hidden-aim',reason:'Volley needs a currently visible aim point.'};if(s.spellCooldown[side]>0)return {ok:false,reason:'Volley is recharging.'};if(s.gold[side]<SPELL.cost)return {ok:false,reason:`Need ${SPELL.cost} gold.`};s.gold[side]-=SPELL.cost;s.spellCooldown[side]=SPELL.cooldown;for(const u of s.units)if(u.side!==side&&(supportsColossus(this.ruleset)&&isColossus(u)?bodyDistance(u,{x,y}):Math.hypot(u.x-x,u.y-y))<SPELL.radius)this._damage(u,SPELL.damage,side);this._effect(x,y,'volley',side,1.1,SPELL.radius);if(supportsColossus(this.ruleset))settleColossusCommand(this);if(supportsFog(this.ruleset))refreshFog(this);return {ok:true};}
   _effect(x,y,type,side,life=0.35,radius=30,fogSeen){if(supportsFog(this.ruleset)){appendFogEffect(this,{x,y,type,side,life,maxLife:life,radius,fogSeen:fogSeen??eventAudience(this,x,y)});return;}if(this.state.effects.length>=256)this.state.effects.shift();this.state.effects.push({x,y,type,side,life,maxLife:life,radius});}
-  _spawn(b){const s=this.state;if(s.units.filter(u=>u.side===b.side&&u.hp>0).length>=70)return;const type=this.buildings[b.type].unit,d=this.units[type],mult=1+0.12*(b.level-1);const u={id:this.nextId++,type,flying:d.flying,side:b.side,x:b.x+(b.side?-48:48),y:this.map.lanes[b.lane]+(this.random()-0.5)*32,lane:b.lane,hp:d.hp*mult,maxHp:d.hp*mult,level:b.level,cooldown:this.random()*0.2,attack:0};if(supportsAutonomousAir(this.ruleset)&&d.flying)u.airTargetId=null;if(supportsFlightOrders(this.ruleset)&&type==='gryphon'&&b.flightPlan!=null&&b.flightPlan!==b.lane)u.airRoute={from:b.lane,to:b.flightPlan,phase:'approach',remaining:this.ruleset.movement.flightOrders.warningSeconds};s.units.push(u);this._effect(u.x,u.y,'spawn',u.side,0.45);}
+  _spawn(b){const s=this.state;if(s.units.filter(u=>u.side===b.side&&u.hp>0).length>=(supportsColossus(this.ruleset)&&b.side===1&&s.colossus.phase==='armed'?69:70))return;const type=this.buildings[b.type].unit,d=this.units[type],mult=1+0.12*(b.level-1);const u={id:this.nextId++,type,flying:d.flying,side:b.side,x:b.x+(b.side?-48:48),y:this.map.lanes[b.lane]+(this.random()-0.5)*32,lane:b.lane,hp:d.hp*mult,maxHp:d.hp*mult,level:b.level,cooldown:this.random()*0.2,attack:0};if(supportsAutonomousAir(this.ruleset)&&d.flying)u.airTargetId=null;if(supportsFlightOrders(this.ruleset)&&type==='gryphon'&&b.flightPlan!=null&&b.flightPlan!==b.lane)u.airRoute={from:b.lane,to:b.flightPlan,phase:'approach',remaining:this.ruleset.movement.flightOrders.warningSeconds};s.units.push(u);this._effect(u.x,u.y,'spawn',u.side,0.45);}
   _advanceAirRoute(u,dt){
     if(!supportsFlightOrders(this.ruleset)||u.type!=='gryphon')return false;
     const route=u.airRoute;if(!route||route.phase==='done')return false;
@@ -156,22 +162,22 @@ export class Game {
     for(const e of s.effects)e.life-=dt;s.effects=s.effects.filter(e=>e.life>0);
     for(const p of s.projectiles){p.life-=dt;const t=1-p.life/p.maxLife;p.x=p.sx+(p.tx-p.sx)*t;p.y=p.sy+(p.ty-p.sy)*t;}s.projectiles=s.projectiles.filter(p=>p.life>0);
     for(const b of (this.tick%2?s.buildings:[...s.buildings].reverse())){if(b.hp<=0)continue;b.hit=Math.max(0,(b.hit||0)-dt);const d=this.buildings[b.type];if(d.unit){b.progress+=dt*(1+0.22*(b.level-1))*(s.overtime?1.65:1)/d.spawnTime;if(b.progress>=1){b.progress-=1;this._spawn(b);}}
-      if(d.range){b.cooldown=Math.max(-1,b.cooldown-dt);const enemies=s.units.filter(u=>u.side!==b.side&&u.hp>0&&canSee(b.side,u)&&Math.hypot(u.x-b.x,u.y-b.y)<d.range);enemies.sort((a,c)=>Math.hypot(a.x-b.x,a.y-b.y)-Math.hypot(c.x-b.x,c.y-b.y));if(enemies[0]&&b.cooldown<=0){const t=enemies[0];this._fire(b,t,d.damage*(1+0.3*(b.level-1))*(t.type==='warrior'?0.72:1),'tower');b.cooldown=0.85;}}
+      if(d.range){b.cooldown=Math.max(-1,b.cooldown-dt);const enemies=s.units.filter(u=>u.side!==b.side&&u.hp>0&&canSee(b.side,u)&&bodyDistance(u,b)<d.range);enemies.sort((a,c)=>bodyDistance(a,b)-bodyDistance(c,b));if(enemies[0]&&b.cooldown<=0){const t=enemies[0];this._fire(b,t,d.damage*(1+0.3*(b.level-1))*(t.type==='warrior'?0.72:1),'tower');b.cooldown=0.85;}}
     }
     // Preserve the structure-first snapshot, then resolve all routes before unit combat.
     const flightOrders=supportsFlightOrders(this.ruleset),autoAir=supportsAutonomousAir(this.ruleset),routing=new Set();
     const airTargets=autoAir?new Map(s.units.map(u=>[u.id,u])):null;
     if(flightOrders)for(const u of s.units)if(u.hp>0&&this._advanceAirRoute(u,dt))routing.add(u.id);
     const pendingMoves=[];
-    for(const u of (this.tick%2?s.units:[...s.units].reverse())){if(u.hp<=0)continue;const d=this.units[u.type],dir=u.side? -1:1;u.cooldown=Math.max(-1,u.cooldown-dt);u.attack=Math.max(0,u.attack-dt);u.hit=Math.max(0,(u.hit||0)-dt);
+    for(const u of (this.tick%2?s.units:[...s.units].reverse())){if(u.hp<=0)continue;const d=this.units[u.type],dir=u.side? -1:1;if(supportsColossus(this.ruleset)&&isColossus(u)){const move=stepColossusUnit(this,u,dt);if(move)pendingMoves.push([u,move.x,move.y]);continue;}u.cooldown=Math.max(-1,u.cooldown-dt);u.attack=Math.max(0,u.attack-dt);u.hit=Math.max(0,(u.hit||0)-dt);
       if(routing.has(u.id))continue;
       let target=null,best=Infinity;
       const autonomousFlyer=autoAir&&d.flying;
       if(autonomousFlyer){
         target=autonomousAirTarget(fog?airViews[u.side]:this,u,fog?new Map([...airTargets].filter(([,e])=>canSee(u.side,e))):airTargets);
-        if(target)best=Math.hypot(target.x-u.x,target.y-u.y);
+        if(target)best=isColossus(target)?bodyDistance(u,target):Math.hypot(target.x-u.x,target.y-u.y);
       }
-      if(!autonomousFlyer)for(const e of s.units){if(e.side===u.side||e.hp<=0||!canSee(u.side,e)||(e.lane!==u.lane&&!(autoAir&&d.canAttackAir&&this.units[e.type].flying)&&!(flightOrders&&d.canAttackAir&&e.type==='gryphon'&&e.airRoute?.phase==='transit'&&[e.airRoute.from,e.airRoute.to].includes(u.lane))&&Math.abs(u.x-(u.side?110:this.map.width-110))>220)||(this.units[e.type].flying&&!d.canAttackAir)||(!this.units[e.type].flying&&!d.canAttackGround)||(autoAir&&!d.flying&&this.units[e.type].flying&&Math.abs(e.y-this.map.lanes[u.lane])>d.range&&Math.hypot(e.x-u.x,e.y-u.y)>d.range))continue;const dist=Math.hypot(e.x-u.x,e.y-u.y);if(dist<best&&dist<Math.max(d.range+80,190)){target=e;best=dist;}}
+      if(!autonomousFlyer)for(const e of s.units){if(e.side===u.side||e.hp<=0||!canSee(u.side,e)||(e.lane!==u.lane&&!isColossus(e)&&!(autoAir&&d.canAttackAir&&this.units[e.type].flying)&&!(flightOrders&&d.canAttackAir&&e.type==='gryphon'&&e.airRoute?.phase==='transit'&&[e.airRoute.from,e.airRoute.to].includes(u.lane))&&Math.abs(u.x-(u.side?110:this.map.width-110))>220)||(this.units[e.type].flying&&!d.canAttackAir)||(!this.units[e.type].flying&&!d.canAttackGround)||(autoAir&&!d.flying&&this.units[e.type].flying&&Math.abs(e.y-this.map.lanes[u.lane])>d.range&&Math.hypot(e.x-u.x,e.y-u.y)>d.range))continue;const dist=isColossus(e)?bodyDistance(u,e):Math.hypot(e.x-u.x,e.y-u.y);if(dist<best&&dist<Math.max(d.range+80,190)){target=e;best=dist;}}
       if(!target){for(const b of s.buildings){if(b.side===u.side||b.hp<=0||!canSee(u.side,b)||b.lane!==u.lane||(b.x-u.x)*dir < -90)continue;const dist=Math.hypot(b.x-u.x,b.y-u.y)-35;if(dist<best){target=b;best=dist;}}}
       if(!target){target=s.bases[1-u.side];best=Math.hypot(target.x-u.x,target.y-u.y)-55;}
       const structure=!this.units[target.type];
@@ -184,12 +190,13 @@ export class Game {
         const dx=target.x-u.x,dy=this.map.lanes[u.lane]-u.y,length=Math.hypot(dx,dy)||1,step=Math.min(d.speed*dt,length);
         pendingMoves.push([u,clamp(u.x+dx/length*step,75,this.map.width-75),clamp(u.y+dy/length*step,180,720)]);
       }
-      else {const targetY=target.type==='base'&&Math.abs(target.x-u.x)>180?this.map.lanes[u.lane]:target.y;let dx=target.x-u.x,dy=targetY-u.y;const length=Math.hypot(dx,dy)||1;pendingMoves.push([u,clamp(u.x+dx/length*d.speed*dt,75,this.map.width-75),clamp(u.y+dy/length*d.speed*dt,180,720)]);}
+      else {const targetY=isColossus(target)||target.type==='base'&&Math.abs(target.x-u.x)>180?this.map.lanes[u.lane]:target.y;let dx=target.x-u.x,dy=targetY-u.y;const length=Math.hypot(dx,dy)||1;pendingMoves.push([u,clamp(u.x+dx/length*d.speed*dt,75,this.map.width-75),clamp(u.y+dy/length*d.speed*dt,180,720)]);}
     }
     for(const [unit,x,y] of pendingMoves){unit.x=x;unit.y=y;if(autoAir&&this.units[unit.type].flying)unit.lane=laneFor(this.map,y);}
     for(const base of s.bases){
+      if(supportsColossus(this.ruleset)&&base.hp<=0)continue;
       base.cooldown=Math.max(-1,base.cooldown-dt);base.hit=Math.max(0,(base.hit||0)-dt);base.attack=Math.max(0,(base.attack||0)-dt);
-      const nearby=s.units.filter(u=>u.side!==base.side&&canSee(base.side,u)&&(!supportsCitadelOptions(this.ruleset)||u.hp>0)&&Math.hypot(u.x-base.x,u.y-base.y)<310).sort((a,b)=>Math.hypot(a.x-base.x,a.y-base.y)-Math.hypot(b.x-base.x,b.y-base.y));
+      const nearby=s.units.filter(u=>u.side!==base.side&&canSee(base.side,u)&&(!supportsCitadelOptions(this.ruleset)||u.hp>0)&&bodyDistance(u,base)<310).sort((a,b)=>bodyDistance(a,base)-bodyDistance(b,base));
       if(base.cooldown<=0&&nearby[0]){
         const damage=s.overtime?18:32;this._fire(base,nearby[0],damage,'tower');
         if(supportsCitadelOptions(this.ruleset)&&s.citadelOptions.sides[base.side].choice==='arrows'&&nearby[1]){this._fire(base,nearby[1],damage*.5,'tower',true);s.citadelOptions.sides[base.side].extraShots++;}
@@ -207,7 +214,8 @@ export class Game {
     }
     if(s.units.length){const left=s.units.filter(u=>u.side===0),right=s.units.filter(u=>u.side===1);const a=left.length?Math.max(...left.map(u=>u.x)):110;const b=right.length?Math.min(...right.map(u=>u.x)):this.map.width-110;s.frontline=clamp((a+b)/2,110,this.map.width-110);}
     if(this.ruleset.endgame.forcedDecay&&s.time>420){for(const b of s.bases)b.hp=Math.max(0,b.hp-dt*(20+(s.time-420)*0.3));}
-    if(s.bases[0].hp<=0||s.bases[1].hp<=0){if(s.bases[0].hp===0&&s.bases[1].hp===0)s.winner='draw';else s.winner=s.bases[0].hp<=0?1:0;if(fog)refreshFog(this);return;}
+    if(supportsColossus(this.ruleset)){advanceColossus(this);const outcome=settleColossusOutcome(this);if(outcome!==null){s.winner=outcome;return;}}
+    else if(s.bases[0].hp<=0||s.bases[1].hp<=0){if(s.bases[0].hp===0&&s.bases[1].hp===0)s.winner='draw';else s.winner=s.bases[0].hp<=0?1:0;if(fog)refreshFog(this);return;}
     if(supportsCampaignControl(this.ruleset)){
       // Core loss/win above takes precedence on the same tick. Never count after
       // mission termination, beyond its deadline, or in a rendering/evaluation call.
@@ -223,6 +231,7 @@ export class Game {
   }
   _ai(side=1){
     if(![0,1].includes(side)||this.state.winner!==null||this.limitReason)return;
+    if(supportsColossus(this.ruleset)&&this.state.bases[side].hp<=0)return;
     if(supportsHammer(this.ruleset))return runHammerAI(this,side);
     const observation=supportsFog(this.ruleset)?observe(this,side):null;
     const strategyEnemies=observation?[...observation.state.buildings.filter(b=>b.side!==side),...observation.fog.memories]:null;
@@ -389,7 +398,7 @@ function validateSave(data){
     num(u.airTargetId,1,data.nextId-1,'airTargetId',true);
     const target=s.units.find(e=>e.id===u.airTargetId);
     if(!target||target.id===u.id||target.side===u.side||target.hp<=0)fail('invalid air target');
-    const distance=Math.hypot(target.x-u.x,target.y-u.y);
+    const distance=isColossus(target)?bodyDistance(u,target):Math.hypot(target.x-u.x,target.y-u.y);
     if(distance>ruleset.movement.autonomousAir.retention||
       (Math.abs(laneFor(map,target.y)-u.lane)>1&&distance>ruleset.units[u.type].range))fail('air target is outside local retention');
   }
@@ -417,6 +426,8 @@ function validateSave(data){
   for(let side=0;side<2;side++){if(s.units.filter(u=>u.side===side).length>70||s.buildings.filter(b=>b.side===side).length>map.buildLimit||s.buildings.filter(b=>b.side===side&&b.type==='mint').length>3)fail('per-side entity limit exceeded');}
   for(const e of s.effects){obj(e,'effect');if(!['build','upgrade','sell','spawn','death','hit','blast','magic','volley'].includes(e.type))fail('unknown effect');num(e.side,0,1,'effect.side',true);num(e.x,0,map.width,'effect.x');num(e.y,0,map.height,'effect.y');num(e.maxLife,.01,2,'effect.maxLife');num(e.life,0,e.maxLife,'effect.life');num(e.radius,0,200,'effect.radius');if(supportsFog(ruleset))num(e.fogSeen,0,3,'effect.fogSeen',true);}
   for(const p of s.projectiles){obj(p,'projectile');if(supportsFog(ruleset))num(p.fogSeen,0,3,'projectile.fogSeen',true);if(Object.hasOwn(p,'citadelExtra')&&(!supportsCitadelOptions(ruleset)||p.citadelExtra!==true||p.type!=='tower'||s.citadelOptions.sides[p.side]?.choice!=='arrows'||s.citadelOptions.sides[p.side].extraShots<1||p.sx!==(p.side?map.width-110:110)||p.sy!==450))fail('invalid extra-arrow projectile');for(const field of ['sourceAir','targetAir'])if(p[field]!==undefined&&typeof p[field]!=='boolean')fail('projectile flight flags must be boolean');if(!['archer','siege','wizard','gryphon','tower'].includes(p.type))fail('unknown projectile');if(ruleset.campaignOnly&&p.type!=='tower'&&!Object.hasOwn(ruleset.units,p.type))fail('projectile is outside this campaign roster');num(p.side,0,1,'projectile.side',true);for(const k of ['x','sx','tx'])num(p[k],0,map.width,'projectile.'+k);for(const k of ['y','sy','ty'])num(p[k],0,map.height,'projectile.'+k);num(p.maxLife,.01,1,'projectile.maxLife');num(p.life,0,p.maxLife,'projectile.life');}
+  if(supportsColossus(ruleset))validateColossusState({state:s,tick:data.tick,nextId:data.nextId,map,ruleset},fail);
+  else if(Object.hasOwn(s,'colossus'))fail('Colossus is outside this ruleset');
   if(s.winner==='draw'&&s.bases.some(b=>b.hp>0))fail('draw requires both cores to be destroyed');
   if(typeof s.winner==='number'&&s.bases[1-s.winner].hp>0)fail('winner has not destroyed the opposing base');
   if(supportsMinorReserve(ruleset))validateMinorReserve(s.minorReserve,{map,tick:data.tick,nextId:data.nextId,state:s},fail);
@@ -432,7 +443,7 @@ export function validateEngineFields(data){
 }
 function strictFields(value,required,optional,fail){if(!value||typeof value!=='object'||Array.isArray(value)||Object.keys(value).some(k=>!required.includes(k)&&!optional.includes(k))||required.some(k=>!Object.hasOwn(value,k)))fail('unknown field or missing required field');}
 function strictStateFields(s,fail,ruleset){
-  strictFields(s,['time','gold','income','bases','buildings','units','projectiles','effects','frontline','winner','spellCooldown','overtime','stats',...(supportsBridgeControl(ruleset)?['bridgeControl']:[]),...(supportsCampaignControl(ruleset)?['campaignControl']:[]),...(supportsCitadelOptions(ruleset)?['citadelOptions']:[]),...(supportsFog(ruleset)?['fog']:[]),...(supportsHammer(ruleset)?['hammerCommitment']:[]),...(supportsMinorReserve(ruleset)?['minorReserve']:[])],[],fail);
+  strictFields(s,['time','gold','income','bases','buildings','units','projectiles','effects','frontline','winner','spellCooldown','overtime','stats',...(supportsBridgeControl(ruleset)?['bridgeControl']:[]),...(supportsCampaignControl(ruleset)?['campaignControl']:[]),...(supportsCitadelOptions(ruleset)?['citadelOptions']:[]),...(supportsFog(ruleset)?['fog']:[]),...(supportsHammer(ruleset)?['hammerCommitment']:[]),...(supportsColossus(ruleset)?['colossus']:[]),...(supportsMinorReserve(ruleset)?['minorReserve']:[])],[],fail);
   strictFields(s.stats,['kills','built','damage'],[],fail);
   const entity=['id','type','side','hp','maxHp','cooldown','x','y'],flight=supportsFlightOrders(ruleset),autoAir=supportsAutonomousAir(ruleset);
   for(const [name,required,optional] of [

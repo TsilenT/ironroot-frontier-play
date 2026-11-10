@@ -1,6 +1,7 @@
 import { getMap, getRuleset } from './engine.js';
 import { identityOf, scenarioForBattle, validateBattleIdentity } from './battle-codec.js';
 import { supportsBridgeControl, bridgeIncome, BRIDGE_RULES_TEXT } from './bridge-control.js';
+import { supportsColossus } from './colossus.js';
 
 /** Read-only, current-session observations. This module never drives the game. */
 const INTERVAL = 2;
@@ -69,7 +70,8 @@ function composition(entities, owner, types, definitions) {
 }
 function snapshot(game, map, roster) {
   const { units: UNITS, buildings: BUILDINGS } = roster;
-  const unitTypes = Object.keys(UNITS), buildingTypes = Object.keys(BUILDINGS);
+  // Reveal state survives boss death/restore; current live counts do not.
+  const unitTypes = Object.keys(UNITS).filter(type => type !== 'colossus' || !supportsColossus(game.ruleset) || game.state.colossus.phase !== 'armed'), buildingTypes = Object.keys(BUILDINGS);
   const time = readTime(game), state = game.state;
   if (game.map.id !== map.id || game.map.revision !== map.revision) fail('battlefield changed during recording.');
   const units = liveEntities(state.units, UNITS, 'units', 140);

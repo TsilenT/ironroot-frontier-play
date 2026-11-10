@@ -1,3 +1,5 @@
+import {FINAL_CHAPTER_RULESETS,FINAL_CHAPTER_MAPS} from './final-chapter-identities.js';
+import {colossusAftermathAlive} from './colossus.js';
 /** One pure admission boundary for Resume, backup and candidate saves. */
 import { Game, MAPS, getMap, getRuleset, LEGACY_RULESET_ID, validateEngineFields } from './engine.js';
 import { deepFreeze, FOG_SKIRMISH_RULESET_ID, LANTERNS_RULESET_ID, FALSE_QUIET_RULESET_IDS, BORROWED_GROUND_RULESET_ID, RIVER_BETWEEN_RULESET_ID } from './rulesets.js';
@@ -64,6 +66,9 @@ export function validateBattleIdentity(identity){
   let rules,map;try{rules=getRuleset(identity.ruleset.id,identity.ruleset.revision);map=getMap(identity.map.id,identity.map.revision);}catch{fail('This save needs a compatible ruleset or battlefield version.','unsupported-identity');}
   if(rules.qaOnly)fail('This experimental ruleset is available only in the isolated QA shell, not profile saves or backups.','qa-only-ruleset');
   const scenario=resolveScenario(identity.scenario);
+  if(Object.hasOwn(FINAL_CHAPTER_MAPS,rules.id)||Object.hasOwn(FINAL_CHAPTER_RULESETS,scenario.id)){
+    if(scenario.kind!=='campaign'||scenario.revision!==1||rules.revision!==1||rules.id!==FINAL_CHAPTER_RULESETS[scenario.id]||map.revision!==1||map.id!==FINAL_CHAPTER_MAPS[rules.id])fail('Final chapter requires its exact authored scenario, ruleset and battlefield.','unsupported-identity');
+  }
   // The campaign yard and its rules cannot be relabelled as another scenario,
   // including identity-only history rows that never instantiate a Game.
   if((map.id==='borrowed-yard'||rules.id===BORROWED_GROUND_RULESET_ID||scenario.id==='borrowed-ground')&&
@@ -138,11 +143,12 @@ export function decodeBattle(value,{campaignProgress=campaign.createCampaignProg
   let game;try{validateEngineFields(data);game=Game.restore(data);}catch(error){fail('Saved battle contains invalid or incompatible engine data: '+error.message);}
   const identity=identityOf(game,scenario),resolved=resolveScenario(identity.scenario);
   if(resolved.kind==='lesson')fail('Practice lessons are not resumable saves.');
-  if(game.state.winner!==null||game.state.bases.some(base=>base.hp<=0))fail('Saved battle has already ended.','ended-battle');
+  if(game.state.winner!==null||game.state.bases[0].hp<=0||(game.state.bases[1].hp<=0&&!(identity.scenario.kind==='campaign'&&identity.scenario.id==='the-last-engine'&&identity.scenario.revision===1&&colossusAftermathAlive(game))))fail('Saved battle has already ended.','ended-battle');
   if(resolved.mission){
     const mission=resolved.mission;
     if(game.difficulty!==mission.difficulty||game.ai!==(mission.ai===true))fail('Saved battle does not match its mission rules.');
     if(resolved.kind==='campaign'){
+      try{campaign.validateFinalChapterBindings(game,resolved.id);}catch(error){fail(error.message,'campaign-original-binding');}
       if(!campaign.isMissionUnlocked(campaignProgress,resolved.id,resolved.revision))fail('Saved campaign battle is locked by campaign progress.','locked-mission');
       if(!campaign.canUseCampaignRuleset(campaignProgress,resolved.id,resolved.revision,game.ruleset.id))fail('Saved campaign roster has not been earned by this profile.','locked-roster');
     }

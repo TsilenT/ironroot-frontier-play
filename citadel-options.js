@@ -1,5 +1,7 @@
+import {colossusAftermathAlive} from './colossus.js';
 /** Immutable, one-purchase citadel choice contract for current battle identities. */
-export const CITADEL_OPTIONS = Object.freeze({policy:'citadel-choice-v1',cost:190,extraDamageMultiplier:0.5,regenRate:3,regenDelay:8});
+import {CITADEL_OPTIONS} from './citadel-spec.js';
+export {CITADEL_OPTIONS} from './citadel-spec.js';
 export const CITADEL_OPTIONS_RULES_TEXT = 'Citadel choices: spend 190 gold once on Extra Arrow or Regeneration. Choose only one for this battle. Extra Arrow adds one half-damage shot at a different enemy in the existing range on each firing cycle (16 damage, then 9 after 5:00). Regeneration restores 3 HP/s after 8 seconds without citadel damage and after the purchase wait, up to normal maximum health. No instant heal. Regeneration stops while timed citadel decay is active. Both sides pay the same cost.';
 export const CITADEL_RULES_TEXT = CITADEL_OPTIONS_RULES_TEXT;
 export const CITADEL_AI_TEXT = 'The enemy checks at its normal decision times. If eligible and able to pay 190 gold, it chooses Extra Arrow with at least two enemies in citadel range; otherwise it considers Regeneration when missing at least 150 HP after 8 quiet seconds, before timed decay. It does not reserve gold or receive extra resources.';
@@ -13,7 +15,7 @@ export function canBuyCitadelOption(game,kind,side=0){
   if(!supportsCitadelOptions(game.ruleset))return no('citadel-disabled','Citadel choices are not enabled for this battle.');
   if(!validSide(side)||!['arrows','regen'].includes(kind))return no('invalid-citadel-choice','Choose Extra Arrow or Regeneration for your citadel.');
   if(game.limitReason)return no('save-safety-limit',game.limitReason);
-  if(game.state.winner!==null||game.state.bases.some(b=>b.hp<=0))return no('battle-ended','The battle has ended.');
+  if(game.state.winner!==null||game.state.bases[side].hp<=0||!colossusAftermathAlive(game)&&game.state.bases.some(b=>b.hp<=0))return no('battle-ended','The battle has ended.');
   if(game.state.citadelOptions.sides[side].choice!==null)return no('citadel-already-chosen','This citadel already has its one choice for this battle.');
   if(game.state.gold[side]<CITADEL_OPTIONS.cost)return no('insufficient-gold',`Need ${CITADEL_OPTIONS.cost} gold.`);
   return {ok:true,cost:CITADEL_OPTIONS.cost,reason:'Ready: choose one citadel option for 190 gold.'};
@@ -27,7 +29,7 @@ export function buyCitadelOption(game,kind,side=0){
 }
 export function citadelOptionStatus(game,side=0){
   const enabled=supportsCitadelOptions(game?.ruleset)&&validSide(side),record=enabled?game.state.citadelOptions.sides[side]:null;
-  const choice=record?.choice??null,base=game?.state?.bases?.[side],ended=game?.state?.winner!==null||!base||game.state.bases.some(b=>b.hp<=0);
+  const choice=record?.choice??null,base=game?.state?.bases?.[side],ended=game?.state?.winner!==null||!base||base.hp<=0||!colossusAftermathAlive(game)&&game.state.bases.some(b=>b.hp<=0);
   const decayActive=!!game?.ruleset?.endgame?.forcedDecay&&game.state.time>420;
   const wait=choice==='regen'?remainingWait(Math.max(0,Math.max(record.purchasedAt,record.lastDamageAt??0)+CITADEL_OPTIONS.regenDelay-game.state.time)):0;
   const availability=enabled?canBuyCitadelOption(game,'arrows',side):{ok:false,code:'citadel-disabled',reason:'Citadel choices are not enabled for this battle.'};
@@ -38,10 +40,10 @@ export function citadelOptionStatus(game,side=0){
     canBuy:availability.ok,code:availability.code??null,reason:availability.reason,blockedByDecay:decayActive,decayActive,ended,fullHealth:!!base&&base.hp>=base.maxHp};
 }
 export function advanceCitadelRegeneration(game,dt){
-  if(!supportsCitadelOptions(game.ruleset)||game.state.winner!==null||game.state.bases.some(b=>b.hp<=0)||(game.ruleset.endgame.forcedDecay&&game.state.time>420))return;
+  if(!supportsCitadelOptions(game.ruleset)||game.state.winner!==null||!colossusAftermathAlive(game)&&game.state.bases.some(b=>b.hp<=0)||(game.ruleset.endgame.forcedDecay&&game.state.time>420))return;
   for(const side of [0,1]){
     const record=game.state.citadelOptions.sides[side],base=game.state.bases[side];
-    if(record.choice!=='regen')continue;
+    if(base.hp<=0||record.choice!=='regen')continue;
     const start=Math.max(record.purchasedAt,record.lastDamageAt??0)+CITADEL_OPTIONS.regenDelay;
     // Heal only a complete fixed step that starts after the quiet/purchase wait.
     if(game.state.time-dt<start-1e-8)continue;
