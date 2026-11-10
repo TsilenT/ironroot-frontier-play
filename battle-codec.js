@@ -79,6 +79,9 @@ export function validateBattleIdentity(identity){
   if((rules.id==='frontier-campaign-road-we-know'||scenario.id==='the-road-we-know')&&
     (rules.id!=='frontier-campaign-road-we-know'||rules.revision!==1||map.id!=='twin-span'||map.revision!==1||scenario.kind!=='campaign'||scenario.id!=='the-road-we-know'||scenario.revision!==1))
     fail('The Road We Know requires its exact campaign, Twin Span and ruleset identities.','unsupported-identity');
+  if((rules.id==='frontier-campaign-bowstrings'||scenario.id==='cut-the-bowstrings')&&
+    (rules.id!=='frontier-campaign-bowstrings'||rules.revision!==1||map.id!=='classic'||map.revision!==1||scenario.kind!=='campaign'||scenario.id!=='cut-the-bowstrings'||scenario.revision!==1))
+    fail('Cut the Bowstrings requires its exact campaign, Classic and ruleset identities.','campaign-identity');
   if((rules.id==='frontier-campaign-three-minutes'||scenario.id==='three-minutes-more')&&
     (rules.id!=='frontier-campaign-three-minutes'||rules.revision!==1||map.id!=='twin-span'||map.revision!==1||scenario.kind!=='campaign'||scenario.id!=='three-minutes-more'||scenario.revision!==1))
     fail('Three Minutes More requires its exact campaign, Twin Span and ruleset identities.','campaign-identity');

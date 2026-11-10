@@ -1233,7 +1233,7 @@ function chartedMission() {
 function objectiveFocusTargets() {
   const charted = chartedMission();
   if (charted) return chartedObjectiveTargets(charted, battleView(), getCampaignTargets(game, currentCampaign));
-  if (currentCampaign === 'through-the-reed-beds') return getCampaignTargets(game, currentCampaign).map(target => ({
+  if (['through-the-reed-beds', 'cut-the-bowstrings'].includes(currentCampaign)) return getCampaignTargets(game, currentCampaign).map(target => ({
     ...target, label:target.name, road:['North','Middle','South'][target.lane],
     hp:target.building?.hp??0,maxHp:target.building?.maxHp??0,
     percent:target.building?Math.ceil(100*target.building.hp/target.building.maxHp):0,
@@ -1287,11 +1287,11 @@ function beginProtectedObjectives() {
   $('minorReserveHUD').classList.toggle('hidden', !reserve);
   $('protectedTargets').classList.toggle('hidden', !targets.length);
   $('objectiveIdentity').classList.toggle('hidden', !docked);
-  $('objectiveIdentity').textContent = targets.length ? currentChallenge ? `FIELD TRIAL · ANY ${getChallengeForGame(game, currentChallenge).requiredTargets} OF ${targets.length}` : `${game.difficulty.toUpperCase()} · ${currentCampaign === 'through-the-reed-beds' ? 'ANY 2 OF 3' : charted ? (charted.id==='false-quiet'?'FOG · CHARTED FORT':'FOG · CHARTED POSTS') : signals ? 'KEEP 1 SIGNAL' : 'PROTECT'}` : '';
+  $('objectiveIdentity').textContent = targets.length ? currentChallenge ? `FIELD TRIAL · ANY ${getChallengeForGame(game, currentChallenge).requiredTargets} OF ${targets.length}` : `${game.difficulty.toUpperCase()} · ${currentCampaign === 'cut-the-bowstrings' ? 'BREAK BOTH BOWS' : currentCampaign === 'through-the-reed-beds' ? 'ANY 2 OF 3' : charted ? (charted.id==='false-quiet'?'FOG · CHARTED FORT':'FOG · CHARTED POSTS') : signals ? 'KEEP 1 SIGNAL' : 'PROTECT'}` : '';
   if (reserve) $('objectiveIdentity').textContent = `${game.difficulty.toUpperCase()} · OPTIONAL POST`;
-  $('protectedTargets').classList.toggle('trial-targets', (!!currentChallenge || !!charted || currentCampaign === 'through-the-reed-beds') && !!targets.length);
+  $('protectedTargets').classList.toggle('trial-targets', (!!currentChallenge || !!charted || ['through-the-reed-beds', 'cut-the-bowstrings'].includes(currentCampaign)) && !!targets.length);
   $('protectedTargets').classList.toggle('charted-targets', !!charted && !!targets.length);
-  $('protectedTargets').setAttribute('aria-label', charted ? (charted.id==='false-quiet'?'Charted original Middle Road Fort. Health unknown outside current sight; dispatch confirms destruction. Activate the fort to focus its known location.':'Charted original customs posts. Health unknown outside current sight; dispatch confirms destruction. Activate a post to focus its known location.') : currentChallenge || currentCampaign === 'through-the-reed-beds' ? 'Choose any two original enemy positions; activate a standing position to focus camera' : signals ? 'Keep at least one original signal; activate a standing signal to focus camera' : 'Protected original structures; activate to focus camera');
+  $('protectedTargets').setAttribute('aria-label', charted ? (charted.id==='false-quiet'?'Charted original Middle Road Fort. Health unknown outside current sight; dispatch confirms destruction. Activate the fort to focus its known location.':'Charted original customs posts. Health unknown outside current sight; dispatch confirms destruction. Activate a post to focus its known location.') : currentCampaign === 'cut-the-bowstrings' ? 'Break both original enemy archery ranges; activate a standing position to focus camera' : currentChallenge || currentCampaign === 'through-the-reed-beds' ? 'Choose any two original enemy positions; activate a standing position to focus camera' : signals ? 'Keep at least one original signal; activate a standing signal to focus camera' : 'Protected original structures; activate to focus camera');
   for (const target of targets) {
     const button = document.createElement('button');
     button.type = 'button';
@@ -1770,7 +1770,7 @@ $('playAgain').onclick = () => {
   if (currentCampaign) {
     const overview = getCampaignOverview(campaignProgress);
     if (objectiveOutcome?.completed && currentCampaign === overview.missions.at(-1).id) {
-      mode = currentCampaign === 'three-minutes-more' ? 'campaign' : 'skirmish';
+      mode = overview.completed ? 'skirmish' : 'campaign';
       battleSession.remove();
       showTitle({ focusStart: true });
       return;
@@ -1985,7 +1985,7 @@ function finish() {
       $('resultObjectives').append(p);
     }
   }
-  if (mission?.id === 'through-the-reed-beds') for (const target of getCampaignTargets(game, currentCampaign)) {
+  if (['through-the-reed-beds', 'cut-the-bowstrings'].includes(mission?.id)) for (const target of getCampaignTargets(game, currentCampaign)) {
     const p=document.createElement('p');
     p.textContent=`${target.name}: ${target.building ? won ? 'standing · not needed' : 'standing' : 'original destroyed'}`;
     $('resultObjectives').append(p);
@@ -2005,7 +2005,7 @@ function finish() {
   }
   const finalMission = !!mission && currentCampaign === getCampaignOverview(campaignProgress).missions.at(-1).id;
   $('playAgain').innerHTML = mission
-    ? (won ? finalMission ? currentCampaign === 'three-minutes-more' ? 'CAMPAIGN MISSIONS' : 'SKIRMISHES' : 'CONTINUE CAMPAIGN' : 'RETRY MISSION') + ' <span>→</span>'
+    ? (won ? finalMission ? getCampaignOverview(campaignProgress).completed ? 'SKIRMISHES' : 'CAMPAIGN MISSIONS' : 'CONTINUE CAMPAIGN' : 'RETRY MISSION') + ' <span>→</span>'
     : trial
       ? (won ? 'MORE FIELD TRIALS' : 'RETRY FIELD TRIAL') + ' <span>→</span>'
       : 'NEW SKIRMISH <span>→</span>';
