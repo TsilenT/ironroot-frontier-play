@@ -1358,22 +1358,58 @@ export class Renderer {
   drawColossus(u, time, phase) {
     const c=this.c,pose=colossusPose(u,time,phase,{reducedMotion:this.reducedMotion}),emerging=pose.mode==='emerging';
     c.save();c.translate(u.x,u.y);
-    // The marked footprint matches the 210-world-pixel physical body, across roads.
-    c.fillStyle='#201e22aa';c.beginPath();c.ellipse(0,15,210,190,0,0,Math.PI*2);c.fill();
+    // Artwork has height above the ground; the circular physical footprint is unchanged.
+    const point=(x,depth,height)=>[x+depth*.24,depth*.58-height];
+    const face=(vertices,color,stroke='#4b3830')=>{c.beginPath();vertices.forEach((v,i)=>{const p=point(...v);if(i)c.lineTo(...p);else c.moveTo(...p);});c.closePath();c.fillStyle=color;c.fill();c.strokeStyle=stroke;c.lineWidth=2;c.stroke();};
+    const beam=(a,b,color,width)=>{c.beginPath();c.moveTo(...point(...a));c.lineTo(...point(...b));c.strokeStyle=color;c.lineWidth=width;c.stroke();};
+    const box=(x0,x1,d0,d1,z0,z1,top,near,front)=>{
+      face([[x0,d0,z0],[x0,d1,z0],[x0,d1,z1],[x0,d0,z1]],front);
+      face([[x0,d1,z0],[x1,d1,z0],[x1,d1,z1],[x0,d1,z1]],near);
+      face([[x0,d0,z1],[x1,d0,z1],[x1,d1,z1],[x0,d1,z1]],top);
+    };
+    c.fillStyle='#201e22aa';c.beginPath();c.ellipse(0,35,205,105,0,0,Math.PI*2);c.fill();
     c.strokeStyle=u.hit>0?'#f1c499':'#c99a73';c.lineWidth=4;c.setLineDash([12,10]);
     c.beginPath();c.arc(0,0,COLOSSUS.radius,0,Math.PI*2);c.stroke();c.setLineDash([]);
-    for(const y of [-140,140]){
-      c.fillStyle='#29292b';c.fillRect(-175,y-30,350,60);c.strokeStyle='#ac9275';c.lineWidth=5;c.strokeRect(-175,y-30,350,60);
-      for(let x=-140;x<=140;x+=56){c.fillStyle='#615c52';c.beginPath();c.arc(x,y,19,0,Math.PI*2);c.fill();c.stroke();c.beginPath();c.moveTo(x-14*Math.cos(pose.wheelAngle),y-14*Math.sin(pose.wheelAngle));c.lineTo(x+14*Math.cos(pose.wheelAngle),y+14*Math.sin(pose.wheelAngle));c.stroke();}
-      c.strokeStyle='#c5ad87';c.lineWidth=3;for(let x=-160+pose.treadOffset;x<165;x+=32){c.beginPath();c.moveTo(x,y-26);c.lineTo(x+10,y-26);c.moveTo(x,y+26);c.lineTo(x+10,y+26);c.stroke();}
+    const track=(near)=>{
+      const d0=near?110:-155,d1=near?155:-110,outer=near?d1:d0;
+      box(-170,170,d0,d1,0,49,'#7b6d57','#302f2c','#494237');
+      for(let x=-140;x<=140;x+=56){
+        const [cx,cy]=point(x,outer,24);c.fillStyle='#5b5549';c.strokeStyle='#b49a70';c.lineWidth=4;
+        c.beginPath();c.ellipse(cx,cy,19,21,0,0,Math.PI*2);c.fill();c.stroke();
+        c.beginPath();c.moveTo(cx-13*Math.cos(pose.wheelAngle),cy-15*Math.sin(pose.wheelAngle));c.lineTo(cx+13*Math.cos(pose.wheelAngle),cy+15*Math.sin(pose.wheelAngle));c.stroke();
+        c.fillStyle='#d2b080';c.beginPath();c.arc(cx,cy,4,0,Math.PI*2);c.fill();
+      }
+      for(let x=-160+pose.treadOffset;x<160;x+=32)beam([x,d0,50],[x,d1,50],'#c0a77d',4);
+      beam([-170,outer,2],[170,outer,2],'#a28c69',4);
+    };
+    track(false);
+    const hullBottom=40,hullTop=104;
+    box(-150,150,-112,112,hullBottom,hullTop,u.hit>0?'#c38c64':'#b47c51','#71503d','#8d5d40');
+    // Beveled armor, a raised boiler and a shaded near wall share the ordinary siege-unit camera.
+    face([[-150,-112,104],[-130,-94,116],[132,-94,116],[150,-112,104]],'#d2aa71');
+    for(const x of [-124,-78,-32,14,60,106,138]){
+      const p=point(x,113,75);c.fillStyle='#d5b37b';c.beginPath();c.arc(...p,3,0,Math.PI*2);c.fill();
     }
-    c.fillStyle=u.hit>0?'#96775e':'#654c44';c.fillRect(-158,-118,316,236);
-    c.strokeStyle='#d2b080';c.lineWidth=7;c.strokeRect(-158,-118,316,236);
-    c.fillStyle='#302e32';c.fillRect(-132,-85,94,170);c.fillStyle='#c98552';c.fillRect(-120,-68,70,136);
-    c.fillStyle='#9b8067';for(const y of [-110,94])c.fillRect(-20,y-pose.panelLift,160,16);
-    c.strokeStyle='#3a3331';c.lineWidth=11;for(let y=-55;y<68;y+=30){c.beginPath();c.moveTo(-126,y);c.lineTo(-42,y);c.stroke();}
-    c.fillStyle='#9b7d64';c.fillRect(-205+pose.brace,-42,110,84);c.strokeStyle='#d9b88e';c.lineWidth=5;c.strokeRect(-205+pose.brace,-42,110,84);
-    for(const y of [-75,75]){c.fillStyle='#2a282b';c.fillRect(22,y-25,125,50);c.fillStyle='#a78e73';c.fillRect(40+pose.piston,y-18,90,36);}
+    box(-32,117,-62,62,104,151,'#be9062','#654839','#80583c');
+    face([[-32,-62,151],[-13,-47,162],[101,-47,162],[117,-62,151]],'#dfb77a');
+    for(let x=-16;x<100;x+=23)beam([x,63,119],[x,63,143],'#302d2a',9);
+    box(62,90,-33,-9,151,173,'#a58c66','#554739','#6c513a');
+    box(98,119,-33,-9,151,165,'#b79a6b','#554739','#6c513a');
+    // Raised inspection lids retain the damageable-emergence pose, never simulation state.
+    for(const d of [-91,91]){
+      box(-120,24,d-11,d+11,107+pose.panelLift,114+pose.panelLift,'#d2ac70','#97734b','#b18a55');
+      beam([-113,d,119+pose.panelLift],[17,d,119+pose.panelLift],'#efd09a',3);
+    }
+    for(const d of [-77,77]){
+      box(32,137,d-16,d+16,111,132,'#b59a72','#5a493a','#786146');
+      beam([-110+pose.piston,d,119],[43+pose.piston,d,119],'#ead2a4',10);
+      beam([-110+pose.piston,d,119],[-78+pose.piston,d,119],'#735338',15);
+    }
+    // Center the ram on the projected front face, including the hull's height.
+    const ramLift=(hullBottom+hullTop-34-75)/2;
+    box(-192+pose.brace,-120,-45,45,34+ramLift,75+ramLift,'#d3aa72','#826043','#ad7d4f');
+    for(const d of [-30,-10,10,30])beam([-193+pose.brace,d,42+ramLift],[-193+pose.brace,d,67+ramLift],'#42362f',5);
+    track(true);
     if(pose.contact){c.strokeStyle='#dcb68b';c.lineWidth=9;c.beginPath();c.arc(0,0,COLOSSUS.radius+10,Math.PI*.55,Math.PI*1.45);c.stroke();}
     const font=Math.max(18,12/(this.scale||1));c.font=`bold ${font}px sans-serif`;c.textAlign='center';c.textBaseline='bottom';c.fillStyle='#fff1ce';
     c.fillText(emerging?'THE LAST ENGINE · EMERGING':pose.mode==='approach'?'THE LAST ENGINE · APPROACH':'THE LAST ENGINE · SIEGE MARCH',0,-230);
