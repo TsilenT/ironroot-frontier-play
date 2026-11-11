@@ -182,7 +182,7 @@ export class FogRenderer extends Renderer {
     }
   }
   resize() { super.resize(); this.invalidateMasks(); }
-  resetObservation() { this.vfx.reset(); this.rootwardenMotion.clear(); this.invalidateMasks(); }
+  resetObservation() { this.vfx.reset(); this.unitMotion.clear(); this.invalidateMasks(); }
   draw(view, ui, dt) {
     if (!view?.fog || typeof view.canBuild !== 'function') throw new Error('Renderer accepts an observation façade only.');
     // Includes ordinary rendering and the genuine terminal reveal. The app's

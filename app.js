@@ -119,13 +119,13 @@ function refreshPresentation() {
 function battleView() { return presentationGame === game && presentation ? presentation : refreshPresentation(); }
 function battleFront() { const view = battleView(); return view.fog ? view.fog.frontX : view.state.frontline; }
 function resetBattlePresentation() {
-  renderer.vfx?.reset(); renderer.rootwardenMotion?.clear();
+  renderer.vfx?.reset(); renderer.unitMotion?.clear();
   const zoom = renderer.zoom;
   if (supportsFog(game.ruleset)) fogRenderer ||= new FogRenderer($('battle'), $('minimap'));
   renderer = supportsFog(game.ruleset) ? fogRenderer : ordinaryRenderer;
   renderer.zoom = zoom; renderer.reducedMotion = preferences.reducedMotion;
   renderer.vfx?.setPreferences({ reducedMotion: preferences.reducedMotion, quality: preferences.quality });
-  renderer.vfx?.reset(); renderer.rootwardenMotion?.clear();
+  renderer.vfx?.reset(); renderer.unitMotion?.clear();
   renderer.resize(); fogAudio.reset(); engineAudio.prime(game);
   presentation = null; presentationGame = null;
   ui.pointer = null; ui.selected = null;

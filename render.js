@@ -176,7 +176,7 @@ export class Renderer {
     this.terrainKey = this.map.id + ':' + this.map.revision + ':' + this.theme;
     this.resize();
     this.time = 0;
-    this.rootwardenMotion = new Map();
+    this.unitMotion = new Map();
     this.reducedMotion = matchMedia('(prefers-reduced-motion: reduce)').matches;
     this.vfx = new BattleVFX({ reducedMotion: this.reducedMotion });
   }
@@ -466,7 +466,7 @@ export class Renderer {
       this.activeGame = game;
       this.buildings = game.buildings || BUILDINGS;
       this.units = game.units || UNITS;
-      this.rootwardenMotion.clear();
+      this.unitMotion.clear();
     }
     const buildType = typeof ui.build === 'string' && Object.hasOwn(this.buildings, ui.build) ? ui.build : null;
     this.time += ui.paused ? 0 : dt;
@@ -547,16 +547,20 @@ export class Renderer {
     this.drawBase(s.bases[0], game);
     this.drawBase(s.bases[1], game);
     // Presentation-only locomotion from observed simulation positions, never cooldown.
-    const wardenIds = new Set();
-    for (const u of s.units) if (u.type === 'rootwarden') {
-      wardenIds.add(u.id);
-      const old = this.rootwardenMotion.get(u.id);
-      if (!old || old.time !== s.time) this.rootwardenMotion.set(u.id, {
-        x: u.x, y: u.y, time: s.time,
-        moving: !!old && Math.hypot(u.x - old.x, u.y - old.y) > 0.001,
-      });
+    const unitIds = new Set();
+    for (const u of s.units) {
+      unitIds.add(u.id);
+      const old = this.unitMotion.get(u.id);
+      if (!old || old.time !== s.time) {
+        const distance = old && s.time > old.time ? Math.hypot(u.x - old.x, u.y - old.y) : 0;
+        const phase = old && s.time > old.time ? old.phase : s.time * 11 + u.id;
+        this.unitMotion.set(u.id, {
+          x: u.x, y: u.y, time: s.time, moving: distance > 0.001,
+          phase: (phase + distance * 11 / this.units[u.type].speed) % (2 * Math.PI),
+        });
+      }
     }
-    for (const id of this.rootwardenMotion.keys()) if (!wardenIds.has(id)) this.rootwardenMotion.delete(id);
+    for (const id of this.unitMotion.keys()) if (!unitIds.has(id)) this.unitMotion.delete(id);
     const entities = [...s.buildings, ...s.units].sort((a, b) => a.y - b.y);
     for (const e of entities) {
       const radius = e.type === 'colossus' ? COLOSSUS.radius : 0;
@@ -1432,7 +1436,7 @@ export class Renderer {
       drawRootwarden(c, { side: u.side, facing: direction, scale: modelScale,
         compact: battlefield && battlefieldReadability(this.scale).compact > 0,
         reducedMotion: this.reducedMotion, marker: false, outline,
-        state: u.hit > 0 ? 'hit' : u.attack > 0 ? 'attack' : this.rootwardenMotion?.get(u.id)?.moving ? 'walk' : 'idle',
+        state: u.hit > 0 ? 'hit' : u.attack > 0 ? 'attack' : this.unitMotion?.get(u.id)?.moving ? 'walk' : 'idle',
         // Native damage is immediate: show contact/settle, never a post-damage windup.
         phase: u.hit > 0 ? 1 - u.hit / 0.16 : u.attack > 0 ? 0.48 + 0.52 * (1 - u.attack / 0.22) : 0.5,
         time, seed: u.id });
@@ -1447,8 +1451,9 @@ export class Renderer {
     const feedback = battlefield ? sampleCombatFeedback(u, this.reducedMotion) : null,
       contact = feedback?.contact || 0,
       recoil = feedback?.recoil || 0,
-      moving = u.cooldown <= 0,
-      walk = this.reducedMotion ? 0 : Math.sin(time * 11 + u.id) * 2;
+      locomotion = battlefield ? this.unitMotion?.get(u.id) : null,
+      moving = battlefield ? !!locomotion?.moving : u.cooldown <= 0,
+      walk = this.reducedMotion ? 0 : Math.sin(locomotion?.phase ?? time * 11 + u.id) * 2;
     c.save();
     c.translate(u.x, u.y);
     if (battlefield) {
