@@ -294,32 +294,13 @@
           <div class="mode-label">CHOOSE YOUR OPPONENT</div>
           <div class="difficulty-choices">
             <button class="active" data-difficulty="easy" aria-pressed="true">
-              <b>The Outrider</b><small>A gentler first battle</small></button
+              <b>The Outrider</b><small>Easy</small></button
             ><button data-difficulty="normal" aria-pressed="false">
-              <b>The Marshal</b><small>A balanced challenge</small></button
+              <b>The Marshal</b><small>Normal</small></button
             ><button data-difficulty="hard" aria-pressed="false">
-              <b>The Warlord</b><small>No ground given</small>
+              <b>The Warlord</b><small>Hard</small>
             </button>
           </div>
-          <label class="skirmish-rules-label" for="skirmishRules">Endgame
-            <select id="skirmishRules">
-              <option value="frontier-air-local-open">Open endgame</option>
-              <option value="frontier-air-local-timed">Timed endgame</option>
-            </select>
-          </label>
-          <p id="skirmishRulesDescription" class="rules-description"></p>
-          <label class="skirmish-bridge-label" for="skirmishBridgeIncome">
-            <input type="checkbox" id="skirmishBridgeIncome" aria-describedby="skirmishBridgeDescription" />
-            <span>Bridge control income <small>Experimental · off by default</small></span>
-          </label>
-          <p id="skirmishBridgeDescription" class="rules-description"></p>
-          <label class="skirmish-bridge-label" for="skirmishFog">
-            <input type="checkbox" id="skirmishFog" aria-describedby="skirmishFogDescription" />
-            <span>Fog of war <small>Experimental · off by default</small></span>
-          </label>
-          <p id="skirmishFogDescription" class="rules-description"></p>
-          <p class="rules-description">Click or tap your home citadel to open Citadel upgrades, or use the pause menu. Spend 190 gold once on Extra Arrow or Regeneration, or keep the gold for your army.</p>
-          <p class="rules-description">Saved battles keep their original rules.</p>
           <details class="map-picker" id="mapPicker">
             <summary id="mapPickerToggle">
               Battlefield <b id="selectedMapName">Classic</b>
@@ -331,7 +312,36 @@
             ></div>
             <p class="map-description" id="mapDescription"></p>
           </details>
+          <label class="skirmish-rules-label" for="skirmishRules">Endgame
+            <select id="skirmishRules" aria-describedby="skirmishRulesSummary">
+              <option value="frontier-air-local-open">Open endgame</option>
+              <option value="frontier-air-local-timed">Timed endgame</option>
+            </select>
+          </label>
+          <p id="skirmishRulesSummary" class="rules-description"></p>
+          <label class="skirmish-bridge-label" for="skirmishBridgeIncome">
+            <input type="checkbox" id="skirmishBridgeIncome" aria-describedby="skirmishBridgeDescription" />
+            <span>Bridge control income <small>Experimental · off by default</small></span>
+          </label>
+          <label class="skirmish-bridge-label" for="skirmishFog">
+            <input type="checkbox" id="skirmishFog" aria-describedby="skirmishFogAvailability skirmishFogDescription" />
+            <span>Fog of war <small>Experimental · off by default</small></span>
+          </label>
+          <p id="skirmishFogAvailability" class="rules-description"></p>
+          <details class="skirmish-details" id="skirmishDetails">
+            <summary>Battle rules &amp; details</summary>
+            <h3>Endgame</h3>
+            <p id="skirmishRulesDescription" class="rules-description"></p>
+            <h3>Bridge control income</h3>
+            <p id="skirmishBridgeDescription" class="rules-description"></p>
+            <h3>Fog of war</h3>
+            <p id="skirmishFogDescription" class="rules-description"></p>
+            <h3>Citadel upgrades</h3>
+            <p class="rules-description">Click or tap your home citadel to open Citadel upgrades, or use the pause menu. Spend 190 gold once on Extra Arrow or Regeneration, or keep the gold for your army.</p>
+            <p class="rules-description">Saved battles keep their original rules.</p>
+          </details>
         </div>
+        <p class="skirmish-scroll-hint">Scroll to browse setup ↕</p>
         <div id="campaignConfig">
           <nav class="campaign-path" aria-label="Campaign navigation">
             <button id="campaignStoryNav">Story</button><span aria-hidden="true">›</span>
@@ -419,7 +429,7 @@
         </button>
         <p class="save-status hidden" id="saveStatus" role="status"></p>
         <button id="exportUnreadableBattle" class="text-button hidden">Download original save</button>
-        <p class="welcome-foot">Campaign · Skirmish · Field trials · v0.40.5</p>
+        <p class="welcome-foot">Campaign · Skirmish · Field trials · v0.40.6</p>
         <div class="welcome-links">
           <a class="text-button training-link" id="welcomeTraining" href="./training.html" aria-label="Optional guided practice. Learn without changing your saved battle">Guided practice (optional) →</a>
           <button class="text-button" id="welcomeFullscreen" type="button" data-fullscreen aria-pressed="false" aria-describedby="welcomeFullscreenStatus">Enter fullscreen</button>

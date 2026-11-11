@@ -2848,6 +2848,7 @@ function setMode(value) {
   document
     .querySelector('.welcome')
     .classList.toggle('campaign-mode', mode === 'campaign');
+  document.querySelector('.welcome').classList.toggle('skirmish-mode', mode === 'skirmish');
   $('start').disabled = false;
   $('start').classList.remove('hidden');
   $('start').innerHTML =
@@ -2865,12 +2866,18 @@ function updateSkirmishRules() {
   const fog = $('skirmishFog').checked;
   const compatible = fogSetupAllowed(selectedMap, selectedRuleset, bridgeMode);
   $('skirmishFog').disabled = !fog && !compatible;
+  $('skirmishFogAvailability').textContent = !fog && !compatible
+    ? 'Fog of war needs Classic, open endgame and bridge income off.'
+    : 'Fog of war reveals enemies only while they are in sight.';
   $('skirmishRules').disabled = fog;
   $('skirmishBridgeIncome').disabled = fog;
   $('skirmishFogDescription').textContent = 'Requires Classic, open endgame and bridge income off. Known terrain; only current enemy contacts are visible. Last-seen buildings may be stale. Aim Volley within sight. Decorative projectile trails are omitted.';
   renderMapSelection();
   const rules = getRuleset(skirmishRulesetId(selectedRuleset, bridgeMode, fog && compatible), 1);
   $('skirmishRules').value = selectedRuleset;
+  $('skirmishRulesSummary').textContent = rules.endgame.forcedDecay
+    ? 'Citadels lose health from 7:00.'
+    : 'Citadels never decay with time.';
   $('skirmishRulesDescription').textContent = rules.endgame.forcedDecay
     ? 'Eight buildings, including Rootwardens and gryphons that seek nearby enemies one road over. Production and structure damage increase at 5:00; citadels lose health from 7:00.'
     : 'Eight buildings, including Rootwardens and gryphons that seek nearby enemies one road over. Production and structure damage increase at 5:00; citadels never decay with time.';

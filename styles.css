@@ -4003,12 +4003,18 @@ body.gamepad-active a:focus {
 .selection-panel { max-height: calc(100% - 96px); overflow-y: auto; overscroll-behavior: contain; scroll-padding-block: 8px; }
 .protected-mobile .command-deck .selection-panel { max-height: none; overflow: visible; }
 .protected-mobile .command-deck:has(.selection-panel:not(.hidden)) { scroll-padding-block: 8px; }
-/* Keep primary pause actions readable in short portrait views. */
-@media (max-width: 400px) and (max-height: 600px) and (orientation: portrait) {
-  .pause-menu { padding: 16px 18px; }
-  .pause-menu .pause-briefing { margin: 10px 0; padding: 10px 0; }
+/* Leave room for the capacity disclosure and every action on portrait phones. */
+@media (max-width: 700px) and (max-height: 700px) and (orientation: portrait) {
+  .pause-menu { padding: 14px 18px; }
+  .pause-menu .menu-heading h2 { font-size: 32px; margin: 4px 0; }
+  .pause-menu .pause-briefing { margin: 8px 0; padding: 8px 0; }
+  .pause-menu .bridge-details { margin-top: 4px; }
   .pause-menu .pause-utilities { margin: 8px 0; }
   .pause-menu .menu-status { margin: 8px 0; }
+  .pause-menu .pause-exit-actions { gap: 4px; }
+}
+@media (max-width: 400px) and (max-height: 600px) and (orientation: portrait) {
+  .pause-menu .pause-utilities small { display: none; }
 }
 .flight-guide { padding: 12px; margin: 14px 0; border: 1px solid #65745b; font-size: 14px; line-height: 1.5; }
 .flight-guide h3 { margin-top: 0; }
@@ -4184,3 +4190,82 @@ body.gamepad-active a:focus {
 .protected-mobile .minor-reserve-card { min-height: 44px; padding: 4px 5px; gap: 2px 4px; }
 .protected-mobile .objective-hud .minor-reserve-card .protected-name,
 .protected-mobile .objective-hud .minor-reserve-card .protected-health { font-size: 10px; line-height: 12px; }
+
+/* Skirmish keeps its launch action outside the scrollable setup. All choices
+   stay in the main form; only their longer explanations are collapsed. */
+.skirmish-mode {
+  width: min(680px, 100%);
+  height: min(850px, calc(100dvh - 40px));
+  display: flex;
+  flex-direction: column;
+  padding: 22px 28px 18px;
+  overflow: auto;
+}
+.skirmish-mode > * { flex-shrink: 0; }
+.skirmish-mode > :is(.eyebrow, .welcome-sigil, .welcome-copy, .welcome-rule) { display: none; }
+.skirmish-mode h1 { font-size: 28px; letter-spacing: 4px; margin: 0 0 10px; }
+.skirmish-mode h1 span { display: inline; font-size: 12px; letter-spacing: 2px; margin-left: 6px; padding: 0; }
+.skirmish-mode .mode-tabs { gap: 4px; margin-bottom: 10px; }
+.skirmish-mode .mode-tabs button { flex: 1; min-width: 0; min-height: 44px; padding: 4px 2px; font-size: 12px; letter-spacing: .3px; }
+.skirmish-mode #skirmishConfig {
+  flex: 1 1 auto;
+  min-height: 80px;
+  overflow: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+  scrollbar-color: #9d9c69 #17281e;
+  text-align: left;
+  padding: 0 4px 12px 0;
+  margin-bottom: 12px;
+  border-bottom: 1px solid #526147;
+}
+.skirmish-mode .mode-label { font-size: 12px; letter-spacing: 1px; margin: 4px 0 8px; }
+.skirmish-mode .difficulty-choices { margin-bottom: 12px; }
+.skirmish-mode .difficulty-choices button { min-height: 64px; padding: 9px 3px; }
+.skirmish-mode .difficulty-choices b { font-size: 18px; letter-spacing: 0; }
+.skirmish-mode .difficulty-choices small { font-size: 13px; line-height: 1.4; margin-top: 4px; }
+.skirmish-mode .map-picker { margin-bottom: 10px; }
+.skirmish-mode .map-picker > summary { min-height: 44px; padding: 10px; font-size: 14px; }
+.skirmish-mode .map-choices small, .skirmish-mode .map-description { font-size: 13px; line-height: 1.5; }
+.skirmish-mode .skirmish-rules-label { font-size: 14px; }
+.skirmish-mode .skirmish-bridge-label { font-size: 14px; min-height: 48px; margin-top: 8px; }
+.skirmish-mode .skirmish-bridge-label input { flex-basis: 24px; width: 24px; height: 24px; accent-color: #d5b474; }
+.skirmish-mode .skirmish-bridge-label small { font-size: 12px; line-height: 1.4; }
+.skirmish-mode .rules-description { font-size: 14px; line-height: 1.5; }
+.skirmish-mode .skirmish-details > summary { min-height: 44px; padding: 12px 0; font-size: 14px; color: #e5cf94; cursor: pointer; }
+.skirmish-mode .skirmish-details h3 { font: 600 20px var(--display); margin: 14px 0 6px; }
+.skirmish-mode #skirmishConfig :is(button, select, input, summary):focus-visible { outline: 2px solid #f4d68d; outline-offset: -2px; }
+.skirmish-mode #start { min-height: 48px; padding: 14px; }
+.skirmish-mode .resume-saved { min-height: 44px; font-size: 12px; line-height: 1.4; margin: 8px 0 0; }
+.skirmish-mode .welcome-foot { font-size: 10px; margin: 8px 0 4px; }
+.skirmish-mode .welcome-links { gap: 0 12px; }
+.skirmish-mode .welcome-links :is(button, a) { min-height: 36px; padding: 6px 0; font-size: 12px; }
+.skirmish-mode .welcome-links .welcome-fullscreen-status { margin-top: 6px; }
+.skirmish-scroll-hint { display: none; }
+@media (max-height: 700px) {
+  .skirmish-mode .skirmish-scroll-hint { display: block; margin: -6px 0 6px; color: #c3cdb7; font-size: 12px; line-height: 18px; }
+}
+@media (max-width: 700px) {
+  .skirmish-mode { height: calc(100dvh - 28px); padding: 16px; }
+}
+@media (max-height: 500px) and (orientation: landscape) {
+  .skirmish-mode {
+    height: calc(100dvh - 28px);
+    padding: 10px 22px;
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    grid-template-rows: auto minmax(80px, 1fr) auto auto auto;
+    gap: 6px 12px;
+  }
+  .skirmish-mode h1, .skirmish-mode .welcome-foot { display: none; }
+  .skirmish-mode .mode-tabs { grid-column: 1 / -1; margin: 0; }
+  .skirmish-mode #skirmishConfig { grid-column: 1 / -1; grid-row: 2; margin: 0; }
+  .skirmish-mode .skirmish-scroll-hint { grid-column: 1 / -1; grid-row: 3; margin: 0; }
+  .skirmish-mode :is(#start, #resumeSaved) { grid-row: 4; margin: 0; min-height: 44px; padding: 8px; }
+  .skirmish-mode #start { grid-column: 1; }
+  .skirmish-mode #resumeSaved { grid-column: 2; }
+  .skirmish-mode #start:has(+ .resume-saved.hidden) { grid-column: 1 / -1; }
+  .skirmish-mode .welcome-links { grid-column: 1 / -1; grid-row: 5; }
+  .skirmish-mode #saveStatus { grid-column: 1 / -1; margin: 0; font-size: 12px; }
+  .skirmish-mode #exportUnreadableBattle { grid-column: 1 / -1; min-height: 44px; }
+}
