@@ -1,5 +1,6 @@
 import {lastEngineView,createLastEngineAudioObserver} from './final-chapter-view.js';
 import { buildingUpgradeView } from './building-upgrade-view.js';
+import { armyCapacityView, defeatFacts } from './strategy-feedback-view.js';
 import { createViewportPause, inspectMobileGeometry, visibleViewportRect, insetViewportRect, fitMobileViewport, protectedToastTop } from './mobile-battlefield.js';
 import { createProfileSession, PROFILE_MARKER_KEY, CURRENT_PROFILE_PROTOCOL_VERSION } from './profile-session.js';
 import { createInputScopeGuard } from './input-scope.js';
@@ -786,6 +787,9 @@ function updateSelection() {
   $('selectionStats').innerHTML =
     `<span>♥ ${Math.ceil(b.hp)} / ${Math.ceil(b.maxHp)}</span><span>${d.unit ? `${(d.spawnTime / (1 + 0.22 * (b.level - 1)) / (game.state.overtime ? 1.65 : 1)).toFixed(1)}s / wave` : d.range ? `Range ${d.range}` : `+${(2.5 * (1 + 0.5 * (b.level - 1))).toFixed(1)} gold /s`}</span>`;
   $('selectionDescription').textContent = airBuildingDescription(game, b.type);
+  const capacity = armyCapacityView(battleView().state);
+  $('selectionCapacity').classList.toggle('hidden', !d.unit || !capacity.full);
+  $('selectionCapacity').textContent = d.unit ? capacity.warning : '';
   const preview = buildingUpgradeView(game, b);
   // Preview copy is fixed text and formatted numbers, never saved/user markup.
   $('upgradePreview').innerHTML = `<h4>${preview.title}</h4>` +
@@ -1974,7 +1978,7 @@ function finish() {
         ? 'NO CITADEL LEFT STANDING'
         : won
           ? 'BATTLE WON'
-          : 'TRY ANOTHER STRATEGY';
+          : 'BATTLE LOST';
   $('resultTitle').textContent = mission
     ? won
       ? 'MISSION COMPLETE'
@@ -2003,8 +2007,11 @@ function finish() {
         ? 'Both citadels fell together. Neither commander claims the frontier.'
         : won
           ? 'Your army broke the enemy citadel.'
-          : 'Your citadel fell. Try a different army or defend another lane.';
+          : 'Your citadel fell.';
   if (supportsFog(game.ruleset)) $('resultCopy').textContent += ' Fog battle ended. The field and report now reveal full information.';
+  const facts = won || draw ? [] : defeatFacts(game.state);
+  $('resultFacts').classList.toggle('hidden', !facts.length);
+  $('resultFacts').innerHTML = facts.length ? `<h3>At battle’s end</h3><dl>${facts.map(fact => `<div><dt>${fact.label}</dt><dd>${fact.value}</dd></div>`).join('')}</dl>` : '';
   finishProtectedObjectives();
   $('resultTime').textContent = timeText(game.state.time);
   $('resultKills').textContent = game.state.stats.kills[0];
@@ -2483,9 +2490,15 @@ function updateHUD() {
   $('income').setAttribute('aria-label', bridgeMode
     ? `Total income ${s.income[0].toFixed(2)} gold per second, including ${bridgeRate.toFixed(2)} from bridges.`
     : `Total income ${s.income[0]} gold per second.`);
-  const army = s.units.filter((u) => u.side === 0).length;
-  $('army').textContent = army >= 70 ? '70/70' : army;
-  $('army').title = `${army} / 70 army capacity`;
+  const capacity = armyCapacityView(s);
+  $('army').textContent = capacity.label;
+  $('army').title = capacity.description;
+  $('army').setAttribute('aria-label', capacity.description);
+  $('army').classList.toggle('army-full', capacity.full);
+  const capacityNotice = capacity.full ? capacity.description : '';
+  if ($('armyCapacityStatus').textContent !== capacityNotice) $('armyCapacityStatus').textContent = capacityNotice;
+  $('pauseArmySummary').textContent = `Army capacity · ${capacity.label}${capacity.full ? ' · Full' : ''}`;
+  $('pauseArmyStatus').textContent = capacity.description;
   $('time').textContent = timeText(s.time);
   $('battleClockLabel').textContent = coachingHold ? 'TEACHING PAUSE' : 'BATTLE TIME';
   for (const [i, prefix] of [

@@ -1,6 +1,7 @@
 // Atomic, versioned offline shell. Bump VERSION with every public build.
-const VERSION = 'ironroot-v0.40.2';
+const VERSION = 'ironroot-v0.40.4';
 const FILES = [
+  './strategy-feedback-view.js',
   './building-upgrade-view.js',
   './final-chapter-view.js',
   './citadel-spec.js',

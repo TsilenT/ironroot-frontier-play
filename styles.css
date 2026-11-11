@@ -186,6 +186,7 @@ button:disabled {
   color: #a8c2a0;
   font-size: 22px;
 }
+#army.army-full { color: var(--gold); }
 .clock-block {
   flex-direction: column;
   gap: 0 !important;
@@ -608,6 +609,13 @@ button:disabled {
 .upgrade-preview dt { color: #b9c7ae; }
 .upgrade-preview dd { margin: 0; color: #e3e8d7; font-variant-numeric: tabular-nums; }
 .upgrade-preview p { margin: 6px 0 0; color: #b9c7ae; font-size: 10px; }
+.selection-capacity { margin: 0 0 10px; color: var(--gold); font-size: 11px; line-height: 1.5; }
+.result-facts { margin: 16px 0; padding: 12px; background: #112018; border: 1px solid #56664a; text-align: left; }
+.result-facts h3 { margin: 0 0 8px; font: 600 20px var(--display); }
+.result-facts dl { margin: 0; font-size: 12px; line-height: 1.5; }
+.result-facts dl > div { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 4px 12px; margin: 4px 0; }
+.result-facts dt { color: #b9c7ae; }
+.result-facts dd { margin: 0; font-variant-numeric: tabular-nums; }
 .gold-button {
   background: var(--gold);
   color: #243024;

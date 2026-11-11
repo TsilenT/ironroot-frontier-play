@@ -37,13 +37,14 @@
             ><small id="income">+10 /s</small>
           </div>
           <div class="army-block">
-            <span>⚑</span><b id="army">0</b><small>ARMY</small>
+            <span>⚑</span><b id="army">0/70</b><small>ARMY</small>
           </div>
           <div class="clock-block">
             <b id="time">00:00</b><small id="battleClockLabel">BATTLE TIME</small>
           </div>
         </div>
       </header>
+      <p id="armyCapacityStatus" class="sr-only" role="status"></p>
       <main class="battlefield" id="battlefield">
         <canvas
           id="battle"
@@ -131,6 +132,7 @@
           </div>
           <div class="selection-stats" id="selectionStats"></div>
           <p class="selection-description" id="selectionDescription"></p>
+          <p class="selection-capacity hidden" id="selectionCapacity"></p>
           <div class="upgrade-preview" id="upgradePreview"></div>
           <div class="selection-actions">
             <button id="upgrade" class="gold-button" aria-describedby="upgradePreview">Upgrade</button
@@ -213,6 +215,10 @@
         <div class="pause-briefing">
           <h3 id="pauseBattleName"></h3>
           <p id="pauseObjective"></p>
+          <details class="bridge-details" id="pauseArmyDetails">
+            <summary id="pauseArmySummary">Army capacity</summary>
+            <p id="pauseArmyStatus"></p>
+          </details>
           <details id="pauseFogDetails" class="bridge-details fog-memory-details hidden">
             <summary id="pauseFogSummary">Last-seen details</summary>
             <p>Last-seen details are old observations, not confirmed current state. Crowded labels are omitted from the field. Positions run left to right along the known map.</p>
@@ -413,7 +419,7 @@
         </button>
         <p class="save-status hidden" id="saveStatus" role="status"></p>
         <button id="exportUnreadableBattle" class="text-button hidden">Download original save</button>
-        <p class="welcome-foot">Campaign · Skirmish · Field trials · v0.40.2</p>
+        <p class="welcome-foot">Campaign · Skirmish · Field trials · v0.40.4</p>
         <div class="welcome-links">
           <a class="text-button training-link" id="welcomeTraining" href="./training.html" aria-label="Optional guided practice. Learn without changing your saved battle">Guided practice (optional) →</a>
           <button class="text-button" id="welcomeFullscreen" type="button" data-fullscreen aria-pressed="false" aria-describedby="welcomeFullscreenStatus">Enter fullscreen</button>
@@ -961,6 +967,7 @@ OTHER DEALINGS IN THE FONT SOFTWARE.
         <div class="result-sigil" id="resultSigil">⚑</div>
         <h2 id="resultTitle">VICTORY</h2>
         <p id="resultCopy">Your army broke the enemy citadel.</p>
+        <section id="resultFacts" class="result-facts hidden" aria-label="Final battle snapshot"></section>
         <ul id="resultProtectedLoss" class="result-protected-loss hidden" aria-label="Protected structure losses"></ul>
         <div id="resultObjectives" class="result-objectives hidden"></div>
         <p id="progressSaveWarning" class="save-warning hidden" role="status">
