@@ -4191,6 +4191,11 @@ body.gamepad-active a:focus {
 .protected-mobile .objective-hud .minor-reserve-card .protected-name,
 .protected-mobile .objective-hud .minor-reserve-card .protected-health { font-size: 10px; line-height: 12px; }
 
+.runtime-update { margin: 10px 0; padding: 10px; border: 1px solid #9d8b56; background: #253524; }
+.runtime-update p { margin: 0 0 8px; color: #e3e8d7; font-size: 12px; line-height: 1.45; }
+.runtime-update button { width: 100%; min-height: 44px; }
+.runtime-update button[aria-disabled="true"] { opacity: .65; cursor: progress; }
+
 /* Skirmish keeps its launch action outside the scrollable setup. All choices
    stay in the main form; only their longer explanations are collapsed. */
 .skirmish-mode {

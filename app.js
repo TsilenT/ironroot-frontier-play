@@ -1,4 +1,5 @@
 import {lastEngineView,createLastEngineAudioObserver} from './final-chapter-view.js';
+import { createRuntimeUpdate } from './runtime-update.js';
 import { buildingUpgradeView } from './building-upgrade-view.js';
 import { armyCapacityView, defeatFacts } from './strategy-feedback-view.js';
 import { createViewportPause, inspectMobileGeometry, visibleViewportRect, insetViewportRect, fitMobileViewport, protectedToastTop } from './mobile-battlefield.js';
@@ -4576,3 +4577,59 @@ window.addEventListener('pageshow', event => {
 document.addEventListener('visibilitychange', () => {
   if (!document.hidden && !navigationAway) menuHistory.reconcile();
 });
+
+// Discovery never reloads or pauses a battle. The explicit update action must
+// verify every pending save through the existing ownership/recovery guards.
+function prepareRuntimeReload() {
+  const blocked = message => ({ok: false, message});
+  const active = started && game.state.winner === null && !objectiveOutcome;
+  const profile = profileSession.status();
+  if (recoveryHold || profileGate || pendingFinalizeOutcome || !profile.canWrite || profile.reloadRequired || profile.recoveryRequired)
+    return blocked('Resolve the save warning in Options before updating. Keep this page open.');
+  if (active && !paused) return blocked('Pause the battle before updating.');
+  if (active && battleSession.status() !== 'current')
+    return blocked('This battle cannot be safely saved here. Keep this page open and check Options.');
+  if (progressDirty && !persistProgress()) return blocked('Progress could not be saved. Keep this page open and try again.');
+  retryHistorySave(); retryPreferences();
+  if (progressDirty || historySession.pendingCount() || preferenceSession.dirty())
+    return blocked('Saving could not be verified. Keep this page open, restore storage access and try again.');
+  if (active && !save()) return blocked('The battle could not be saved. Keep this page open and try again.');
+  const latest = profileSession.status();
+  if (recoveryHold || profileGate || !latest.canWrite || latest.reloadRequired || latest.recoveryRequired ||
+      (active && battleSession.status() !== 'current'))
+    return blocked('The saved profile changed. Keep this page open and check Options.');
+  return {ok: true};
+}
+if ('serviceWorker' in navigator && location.protocol !== 'ironroot:' && document.documentElement.dataset.runtimeVersion) {
+  const panels = [...document.querySelectorAll('[data-runtime-update]')];
+  const runtimeUpdate = createRuntimeUpdate({
+    serviceWorker: navigator.serviceWorker,
+    version: document.documentElement.dataset.runtimeVersion,
+    prepareReload: prepareRuntimeReload,
+    // Preserve beforeunload protection; never set allowProfileReload here.
+    reload: () => location.reload(),
+    onChange: syncRuntimeUpdateUI,
+  });
+  function syncRuntimeUpdateUI() {
+    const state = runtimeUpdate.state();
+    for (const panel of panels) {
+      panel.classList.toggle('hidden', !state.available);
+      const status = panel.querySelector('[data-runtime-update-status]');
+      const message = state.message || 'Update ready. Reload for the latest release. Saved progress stays on this device.';
+      if (status.textContent !== message) status.textContent = message;
+      const action = panel.querySelector('[data-runtime-update-action]');
+      // Keep focus on this action during the asynchronous check, like fullscreen.
+      action.setAttribute('aria-disabled', String(state.pending));
+      action.textContent = state.pending ? 'Preparing update…'
+        : started && game.state.winner === null && !objectiveOutcome ? 'Save & update' : 'Update game';
+    }
+  }
+  for (const panel of panels) panel.querySelector('button').onclick = () => { void runtimeUpdate.apply(); };
+  for (const id of ['welcome', 'pauseVeil']) new MutationObserver(syncRuntimeUpdateUI).observe($(id), {attributes: true, attributeFilter: ['class']});
+  window.addEventListener('load', () => { void runtimeUpdate.check(); });
+  window.addEventListener('focus', () => { void runtimeUpdate.check(); });
+  document.addEventListener('visibilitychange', () => { if (!document.hidden) void runtimeUpdate.check(); });
+  window.addEventListener('pagehide', () => runtimeUpdate.stop());
+  window.addEventListener('pageshow', () => runtimeUpdate.start());
+  runtimeUpdate.start();
+}

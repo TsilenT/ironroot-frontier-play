@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="en">
+<html lang="en" data-runtime-version="ironroot-v0.40.7">
   <head>
     <meta charset="UTF-8" />
     <meta
@@ -239,6 +239,10 @@
           <button id="help" class="secondary-button" aria-label="Open field guide">Field guide<small>Units, controls &amp; economy</small></button>
         </div>
         <p id="pauseSaveStatus" class="menu-status" role="status" aria-live="polite"></p>
+        <div class="runtime-update hidden" data-runtime-update>
+          <p id="pauseUpdateStatus" data-runtime-update-status role="status" aria-live="polite"></p>
+          <button type="button" class="secondary-button" data-runtime-update-action aria-describedby="pauseUpdateStatus">Save &amp; update</button>
+        </div>
         <p id="battleLimitWarning" class="battle-limit-warning hidden" role="status"></p>
         <div class="pause-exit-actions">
           <button id="saveExit" class="secondary-button">Save &amp; return to title</button>
@@ -429,7 +433,11 @@
         </button>
         <p class="save-status hidden" id="saveStatus" role="status"></p>
         <button id="exportUnreadableBattle" class="text-button hidden">Download original save</button>
-        <p class="welcome-foot">Campaign · Skirmish · Field trials · v0.40.6</p>
+        <div class="runtime-update hidden" data-runtime-update>
+          <p id="welcomeUpdateStatus" data-runtime-update-status role="status" aria-live="polite"></p>
+          <button type="button" class="secondary-button" data-runtime-update-action aria-describedby="welcomeUpdateStatus">Update game</button>
+        </div>
+        <p class="welcome-foot">Campaign · Skirmish · Field trials · v0.40.7</p>
         <div class="welcome-links">
           <a class="text-button training-link" id="welcomeTraining" href="./training.html" aria-label="Optional guided practice. Learn without changing your saved battle">Guided practice (optional) →</a>
           <button class="text-button" id="welcomeFullscreen" type="button" data-fullscreen aria-pressed="false" aria-describedby="welcomeFullscreenStatus">Enter fullscreen</button>

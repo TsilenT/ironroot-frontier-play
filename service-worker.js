@@ -1,6 +1,7 @@
 // Atomic, versioned offline shell. Bump VERSION with every public build.
-const VERSION = 'ironroot-v0.40.6';
+const VERSION = 'ironroot-v0.40.7';
 const FILES = [
+  './runtime-update.js',
   './strategy-feedback-view.js',
   './building-upgrade-view.js',
   './final-chapter-view.js',
@@ -114,4 +115,10 @@ self.addEventListener('fetch', (event) => {
       .then((cache) => cache.match(request))
       .then((cached) => cached || fetch(request)),
   );
+});
+
+// Reply only over the request's private port; discovery never navigates clients.
+self.addEventListener('message', (event) => {
+  if (event.data?.type === 'IRONROOT_RUNTIME_VERSION')
+    event.ports?.[0]?.postMessage({type: 'IRONROOT_RUNTIME_VERSION', version: VERSION});
 });
