@@ -1,4 +1,5 @@
 import {lastEngineView,createLastEngineAudioObserver} from './final-chapter-view.js';
+import { buildingUpgradeView } from './building-upgrade-view.js';
 import { createViewportPause, inspectMobileGeometry, visibleViewportRect, insetViewportRect, fitMobileViewport, protectedToastTop } from './mobile-battlefield.js';
 import { createProfileSession, PROFILE_MARKER_KEY, CURRENT_PROFILE_PROTOCOL_VERSION } from './profile-session.js';
 import { createInputScopeGuard } from './input-scope.js';
@@ -316,6 +317,8 @@ const preferences = {
   music: true,
   sfx: true,
   volume: 0.5,
+  musicVolume: 0.7,
+  sfxVolume: 0.85,
   reducedMotion: renderer.reducedMotion,
   quality: 'high',
   skirmishBridgeIncome: false,
@@ -326,8 +329,9 @@ try {
   if (saved && typeof saved === 'object') {
     for (const key of ['sound', 'music', 'sfx', 'reducedMotion', 'skirmishBridgeIncome'])
       if (typeof saved[key] === 'boolean') preferences[key] = saved[key];
-    if (Number.isFinite(saved.volume))
-      preferences.volume = Math.max(0, Math.min(1, saved.volume));
+    for (const key of ['volume', 'musicVolume', 'sfxVolume'])
+      if (Number.isFinite(saved[key]))
+        preferences[key] = Math.max(0, Math.min(1, saved[key]));
     if (['high', 'low'].includes(saved.quality))
       preferences.quality = saved.quality;
     if (Object.hasOwn(saved, 'keyboard')) {
@@ -340,6 +344,8 @@ let soundOn = preferences.sound;
 const audio = new GameAudio({
   muted: !soundOn,
   volume: preferences.volume,
+  musicVolume: preferences.musicVolume,
+  sfxVolume: preferences.sfxVolume,
   musicEnabled: preferences.music,
   sfxEnabled: preferences.sfx,
 });
@@ -780,6 +786,11 @@ function updateSelection() {
   $('selectionStats').innerHTML =
     `<span>♥ ${Math.ceil(b.hp)} / ${Math.ceil(b.maxHp)}</span><span>${d.unit ? `${(d.spawnTime / (1 + 0.22 * (b.level - 1)) / (game.state.overtime ? 1.65 : 1)).toFixed(1)}s / wave` : d.range ? `Range ${d.range}` : `+${(2.5 * (1 + 0.5 * (b.level - 1))).toFixed(1)} gold /s`}</span>`;
   $('selectionDescription').textContent = airBuildingDescription(game, b.type);
+  const preview = buildingUpgradeView(game, b);
+  // Preview copy is fixed text and formatted numbers, never saved/user markup.
+  $('upgradePreview').innerHTML = `<h4>${preview.title}</h4>` +
+    (preview.rows.length ? `<dl>${preview.rows.map(row => `<div><dt>${row.label}</dt><dd>${row.before} → ${row.after}</dd></div>`).join('')}</dl>` : '') +
+    (preview.note ? `<p>${preview.note}</p>` : '');
   const cost = game.upgradeCost ? game.upgradeCost(b) : upgradeCost(b);
   $('upgrade').textContent = b.level < 3 ? `Upgrade · ◆ ${cost}` : 'Max level';
   $('upgrade').disabled =
@@ -1813,6 +1824,7 @@ $('replayMission').onclick = () => {
 };
 $('resultMenu').onclick = () => showTitle({ focusStart: true });
 $('inspectBattle').onclick = () => {
+  document.querySelector('.result').classList.remove('reward-motion');
   $('resultModal').classList.add('hidden');
   toast('Battle ended. Open the field guide or return to title.');
   pauseControl('menu');
@@ -1979,6 +1991,7 @@ function finish() {
   document
     .querySelector('.result')
     .classList.toggle('campaign-result', !!mission);
+  document.querySelector('.result').classList.toggle('reward-motion', !!won && !preferences.reducedMotion);
   $('resultSigil').textContent = won ? '⚑' : '♜';
   $('resultCopy').textContent = mission
     ? won
@@ -2014,9 +2027,16 @@ function finish() {
   if (mission) {
     const stars = document.createElement('div');
     stars.className = 'result-stars';
-    stars.textContent =
-      '★'.repeat(objectiveOutcome.stars) +
-      '☆'.repeat(3 - objectiveOutcome.stars);
+    stars.setAttribute('role', 'img');
+    stars.setAttribute('aria-label', `${objectiveOutcome.stars} of 3 mission stars`);
+    for (let index = 0; index < 3; index++) {
+      const star = document.createElement('span');
+      const earned = index < objectiveOutcome.stars;
+      star.className = earned ? 'reward-star earned' : 'reward-star';
+      star.textContent = earned ? '★' : '☆';
+      star.setAttribute('aria-hidden', 'true');
+      stars.append(star);
+    }
     $('resultObjectives').append(stars);
     for (const medal of objectiveOutcome.medals) {
       const p = document.createElement('p');
@@ -3333,8 +3353,7 @@ function syncSettings() {
   $('audioEnabled').checked = soundOn;
   $('musicEnabled').checked = preferences.music;
   $('sfxEnabled').checked = preferences.sfx;
-  $('masterVolume').value = Math.round(preferences.volume * 100);
-  $('volumeValue').textContent = Math.round(preferences.volume * 100) + '%';
+  for (const [key, id, valueId] of audioVolumeControls) syncAudioVolume(key, id, valueId);
   $('reduceMotion').checked = preferences.reducedMotion;
   $('effectQuality').value = preferences.quality;
   updatePreferenceSaveStatus();
@@ -3483,14 +3502,28 @@ $('sfxEnabled').onchange = () => {
   }
   savePreferences();
 };
-$('masterVolume').oninput = () => {
-  preferences.volume = Number($('masterVolume').value) / 100;
-  audio.setVolume(preferences.volume);
-  $('volumeValue').textContent = Math.round(preferences.volume * 100) + '%';
-  savePreferences();
-};
+const audioVolumeControls = [
+  ['volume', 'masterVolume', 'volumeValue', 'setVolume'],
+  ['musicVolume', 'musicVolume', 'musicVolumeValue', 'setMusicVolume'],
+  ['sfxVolume', 'sfxVolume', 'sfxVolumeValue', 'setSfxVolume'],
+];
+function syncAudioVolume(key, id, valueId) {
+  const percent = Math.round(preferences[key] * 100);
+  $(id).value = percent;
+  $(id).setAttribute('aria-valuetext', percent + '%');
+  $(valueId).textContent = percent + '%';
+}
+for (const [key, id, valueId, setter] of audioVolumeControls) {
+  $(id).oninput = () => {
+    preferences[key] = Number($(id).value) / 100;
+    audio[setter](preferences[key]);
+    syncAudioVolume(key, id, valueId);
+    savePreferences();
+  };
+}
 $('reduceMotion').onchange = () => {
   preferences.reducedMotion = $('reduceMotion').checked;
+  if (preferences.reducedMotion) document.querySelector('.result').classList.remove('reward-motion');
   renderer.reducedMotion = preferences.reducedMotion;
   renderer.vfx?.setPreferences({
     reducedMotion: preferences.reducedMotion,
@@ -3569,6 +3602,10 @@ window.addEventListener('blur', () => {
   cancelKeyboardCapture();
   inputScope.interrupt();
   resetBattleGesture();
+  // A window can lose focus without becoming hidden (for example Alt-Tab
+  // with both windows visible). Save and wait for an explicit Resume here too.
+  if (started && !paused && game.state.winner === null && !objectiveOutcome)
+    pause(true);
 });
 document.addEventListener('visibilitychange', () => {
   if (document.hidden) {
@@ -3604,6 +3641,9 @@ function dialogDefaultFocus(layer) {
 }
 function syncDialogs() {
   syncInputScope();
+  // A reward belongs to its fresh result, not later Last Result/history visits.
+  if ($('resultModal').classList.contains('hidden'))
+    document.querySelector('.result').classList.remove('reward-motion');
   globalThis.queueMicrotask?.(syncMenuHistory);
   // A safety/recovery interruption takes precedence over a destructive prompt.
   if (!$('restartModal').classList.contains('hidden') &&

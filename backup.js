@@ -138,7 +138,7 @@ function trials(value) {
   return clean;
 }
 function settings(value) {
-  const keys = ['sound', 'music', 'sfx', 'volume', 'reducedMotion', 'quality', 'keyboard', 'skirmishBridgeIncome'];
+  const keys = ['sound', 'music', 'sfx', 'volume', 'musicVolume', 'sfxVolume', 'reducedMotion', 'quality', 'keyboard', 'skirmishBridgeIncome'];
   fields(value, keys, [], 'Preferences');
   const clean = {};
   for (const key of keys) if (own(value, key)) {
@@ -147,7 +147,7 @@ function settings(value) {
       catch { fail('Battle keyboard controls contain an invalid version, action, key or duplicate binding.'); }
       continue;
     }
-    if (key === 'volume') number(value[key], 0, 1, 'Volume');
+    if (['volume', 'musicVolume', 'sfxVolume'].includes(key)) number(value[key], 0, 1, 'Volume');
     else if (key === 'quality') { if (!['high', 'low'].includes(value[key])) fail('Preferences contain an unknown quality.'); }
     else if (typeof value[key] !== 'boolean') fail('Preference toggles must be boolean.');
     clean[key] = value[key];

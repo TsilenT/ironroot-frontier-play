@@ -601,6 +601,13 @@ button:disabled {
   display: flex;
   gap: 8px;
 }
+.upgrade-preview { border-top: 1px solid #56664a; padding-top: 8px; margin-bottom: 10px; font-size: 11px; line-height: 1.4; }
+.upgrade-preview h4 { margin: 0 0 6px; color: var(--gold); font-size: 12px; }
+.upgrade-preview dl { margin: 0; }
+.upgrade-preview dl > div { display: flex; justify-content: space-between; gap: 8px; margin-top: 3px; flex-wrap: wrap; }
+.upgrade-preview dt { color: #b9c7ae; }
+.upgrade-preview dd { margin: 0; color: #e3e8d7; font-variant-numeric: tabular-nums; }
+.upgrade-preview p { margin: 6px 0 0; color: #b9c7ae; font-size: 10px; }
 .gold-button {
   background: var(--gold);
   color: #243024;
@@ -3985,9 +3992,9 @@ body.gamepad-active a:focus {
 
 /* The existing inspector remains scrollable for longer rules-aware descriptions.
    Keep the focus inset in the actual scrollport, including on small screens. */
-.selection-panel.air-inspector { max-height: calc(100% - 96px); overflow-y: auto; overscroll-behavior: contain; scroll-padding-block: 8px; }
-.protected-mobile .command-deck .selection-panel.air-inspector { max-height: none; overflow: visible; }
-.protected-mobile .command-deck:has(.air-inspector:not(.hidden)) { scroll-padding-block: 8px; }
+.selection-panel { max-height: calc(100% - 96px); overflow-y: auto; overscroll-behavior: contain; scroll-padding-block: 8px; }
+.protected-mobile .command-deck .selection-panel { max-height: none; overflow: visible; }
+.protected-mobile .command-deck:has(.selection-panel:not(.hidden)) { scroll-padding-block: 8px; }
 /* Keep primary pause actions readable in short portrait views. */
 @media (max-width: 400px) and (max-height: 600px) and (orientation: portrait) {
   .pause-menu { padding: 16px 18px; }

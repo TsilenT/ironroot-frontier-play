@@ -16,6 +16,7 @@
     <link rel="icon" href="./icon.svg" type="image/svg+xml" />
     <link rel="stylesheet" href="./styles.css" />
     <link rel="stylesheet" href="./report-view.css" />
+    <link rel="stylesheet" href="./reward-feedback.css" />
   </head>
   <body>
     <div class="app" id="app">
@@ -130,8 +131,9 @@
           </div>
           <div class="selection-stats" id="selectionStats"></div>
           <p class="selection-description" id="selectionDescription"></p>
+          <div class="upgrade-preview" id="upgradePreview"></div>
           <div class="selection-actions">
-            <button id="upgrade" class="gold-button">Upgrade</button
+            <button id="upgrade" class="gold-button" aria-describedby="upgradePreview">Upgrade</button
             ><button id="sell" class="secondary-button">Salvage</button>
           </div>
         </div>
@@ -411,7 +413,7 @@
         </button>
         <p class="save-status hidden" id="saveStatus" role="status"></p>
         <button id="exportUnreadableBattle" class="text-button hidden">Download original save</button>
-        <p class="welcome-foot">Campaign · Skirmish · Field trials · v0.40.1</p>
+        <p class="welcome-foot">Campaign · Skirmish · Field trials · v0.40.2</p>
         <div class="welcome-links">
           <a class="text-button training-link" id="welcomeTraining" href="./training.html" aria-label="Optional guided practice. Learn without changing your saved battle">Guided practice (optional) →</a>
           <button class="text-button" id="welcomeFullscreen" type="button" data-fullscreen aria-pressed="false" aria-describedby="welcomeFullscreenStatus">Enter fullscreen</button>
@@ -574,8 +576,26 @@
               type="range"
               min="0"
               max="100"
-              step="5"
+              step="1"
               aria-label="Master volume" /></label
+          ><label class="setting-row volume-row"
+            ><span>Music volume <b id="musicVolumeValue">70%</b></span
+            ><input
+              id="musicVolume"
+              type="range"
+              min="0"
+              max="100"
+              step="1"
+              aria-label="Music volume" /></label
+          ><label class="setting-row volume-row"
+            ><span>Effects volume <b id="sfxVolumeValue">85%</b></span
+            ><input
+              id="sfxVolume"
+              type="range"
+              min="0"
+              max="100"
+              step="1"
+              aria-label="Effects volume" /></label
           ><label class="setting-row"
             ><span>Reduced motion<small>Disable screen shake and flying debris</small></span
             ><input id="reduceMotion" type="checkbox" /></label
