@@ -172,8 +172,25 @@ button:disabled {
   color: var(--muted);
 }
 .gold-block {
+  position: relative;
   color: var(--gold);
 }
+.gold-change {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  z-index: 4;
+  pointer-events: none;
+  padding: 3px 6px;
+  border: 1px solid #8f794c;
+  border-radius: 4px;
+  background: #18251b;
+  color: #ffe0a3;
+  font: 600 12px/1.2 var(--font);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.gold-change[data-kind='refund'] { color: #c4e5bf; border-color: #7f9e77; }
 .coin {
   font-size: 19px;
 }

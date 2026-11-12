@@ -19,3 +19,25 @@ export function defeatFacts(state) {
     {label: 'Your unspent gold', value: String(Math.floor(state.gold[0]))},
   ];
 }
+
+// Observe committed player commands only, never the continuously changing
+// balance. Stable command identities suppress duplicate presentation callbacks.
+export function createGoldFeedbackLedger() {
+  let current = null, seen = new Set();
+  return {
+    reset() { current = null; seen.clear(); },
+    record(context, identity, before, after) {
+      if (!context || typeof identity !== 'string' || !identity ||
+          !Number.isFinite(before) || !Number.isFinite(after) || before < 0 || after < 0) return null;
+      const delta = after - before, amount = Math.round(Math.abs(delta));
+      // These purchase/refund commands use whole gold, even when income leaves
+      // a fractional balance. Do not turn passive fractions into a transaction.
+      if (!Number.isSafeInteger(amount) || amount < 1 || Math.abs(Math.abs(delta) - amount) > 1e-6) return null;
+      if (context !== current) { current = context; seen = new Set(); }
+      if (seen.has(identity)) return null;
+      seen.add(identity);
+      return {text: `${delta < 0 ? '−' : '+'}${amount.toLocaleString('en-US')}`,
+        kind: delta < 0 ? 'spent' : 'refund', amount};
+    },
+  };
+}

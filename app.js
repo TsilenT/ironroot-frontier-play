@@ -1,7 +1,7 @@
 import {lastEngineView,createLastEngineAudioObserver} from './final-chapter-view.js';
 import { createRuntimeUpdate } from './runtime-update.js';
 import { buildingUpgradeView } from './building-upgrade-view.js';
-import { armyCapacityView, defeatFacts } from './strategy-feedback-view.js';
+import { armyCapacityView, defeatFacts, createGoldFeedbackLedger } from './strategy-feedback-view.js';
 import { createViewportPause, inspectMobileGeometry, visibleViewportRect, insetViewportRect, fitMobileViewport, protectedToastTop } from './mobile-battlefield.js';
 import { createProfileSession, PROFILE_MARKER_KEY, CURRENT_PROFILE_PROTOCOL_VERSION } from './profile-session.js';
 import { createInputScopeGuard } from './input-scope.js';
@@ -102,6 +102,8 @@ import {
   isMissionUnlocked,
 } from './campaign.js';
 const $ = (id) => document.getElementById(id);
+const goldFeedbackLedger = createGoldFeedbackLedger();
+let goldFeedbackTimeout = null;
 const ordinaryRenderer = new Renderer($('battle'), $('minimap'));
 let renderer = ordinaryRenderer, fogRenderer = null;
 const fogAudio = new ObservationAudio({ ownCommandSounds: false });
@@ -465,6 +467,38 @@ function toast(text) {
   $('toast').classList.add('show');
   toastTimer = 3;
 }
+function clearGoldFeedback() {
+  clearTimeout(goldFeedbackTimeout);
+  goldFeedbackTimeout = null;
+  $('goldChange').classList.add('hidden');
+  $('goldChange').textContent = '';
+}
+function resetGoldFeedback() {
+  clearGoldFeedback();
+  goldFeedbackLedger.reset();
+}
+function showGoldFeedback(identity, before) {
+  const view = goldFeedbackLedger.record(game, identity, before, game.state.gold[0]);
+  if (!view) return;
+  clearGoldFeedback();
+  const label = $('goldChange');
+  label.textContent = view.text;
+  label.dataset.kind = view.kind;
+  label.title = `${view.kind === 'spent' ? 'Spent' : 'Refunded'} ${view.amount} gold`;
+  // Portrait headers include citadel health. Short landscape also puts the
+  // objectives in this column, immediately below the header. Clear both.
+  const sidebar = $('app').classList.contains('protected-sidebar');
+  const anchor = sidebar ? $('objectiveHUD') : $('topbar');
+  label.style.top = `${anchor.getBoundingClientRect().bottom + 4 - label.parentElement.getBoundingClientRect().top}px`;
+  label.classList.remove('hidden');
+  // This extra receipt is optional: a very short protected sidebar may have no
+  // free band between targets and navigation. Preserve those controls instead.
+  if (sidebar && label.getBoundingClientRect().bottom + 4 > $('protectedNavigation').getBoundingClientRect().top) {
+    clearGoldFeedback();
+    return;
+  }
+  goldFeedbackTimeout = setTimeout(clearGoldFeedback, 2000);
+}
 function setSound() {
   audio.setMuted(!soundOn);
   $('sound').classList.toggle('muted', !soundOn);
@@ -816,8 +850,10 @@ function updateSelection() {
 }
 $('upgrade').onclick = () => {
   if (!canInteract() || battleSession.status() !== 'current') return;
+  const goldBefore = game.state.gold[0];
   const r = game.upgrade(ui.selected);
   if (r.ok) {
+    showGoldFeedback(`upgrade:${r.building.id}:${r.building.level}`, goldBefore);
     sound('upgrade');
     const b = r.building;
     toast(
@@ -839,8 +875,10 @@ $('sell').onclick = () => {
     refreshPresentation(); updateHUD();
     return;
   }
-  const r = game.sell(ui.selected);
+  const id = ui.selected, goldBefore = game.state.gold[0];
+  const r = game.sell(id);
   if (r.ok) {
+    showGoldFeedback(`sell:${id}`, goldBefore);
     sound('click');
     toast(`Building salvaged for ${r.refund} gold.`);
     cancel();
@@ -1156,6 +1194,7 @@ function start(
         ? createCurrentChallenge(currentChallenge)
         : new Game({ difficulty, seed: Date.now() >>> 0, mapId: selectedMap, mapRevision: 1, rulesetId: skirmishRulesetId(selectedRuleset, $('skirmishBridgeIncome').checked, $('skirmishFog').checked), rulesetRevision: 1 }));
   // An ended attempt must not grant terminal sight to its replacement.
+  resetGoldFeedback();
   objectiveOutcome = null;
   resetBattlePresentation();
   populateBuildCards();
@@ -1429,7 +1468,7 @@ function syncProtectedLayout() {
   positionToast();
   return changed || fitted;
 }
-window.addEventListener('resize', () => { syncProtectedLayout(); syncViewportSafety(); });
+window.addEventListener('resize', () => { clearGoldFeedback(); syncProtectedLayout(); syncViewportSafety(); });
 function updateCompactBuildControl() {
   const button = $('compactBuild'), open = $('app').classList.contains('compact-build-open');
   const armed = !!(ui.build || ui.spell);
@@ -1774,6 +1813,7 @@ function showTitle({ focusStart = false, focusResume = false } = {}) {
     showRecoverySettings();
     return;
   }
+  resetGoldFeedback();
   viewportPause.clear();
   $('viewportModal').classList.add('hidden');
   padHud = false;
@@ -2241,6 +2281,7 @@ function activateBattlePoint(w, { repeatBuild = false } = {}) {
         pauseControl('pause');
       }
       sound('build');
+      showGoldFeedback(`build:${result.building.id}`, goldBefore);
       toast(
         `${(game.buildings || BUILDINGS)[ui.build].name} raised. ${ui.build === 'aerie' && supportsAutonomousAir(game.ruleset) ? 'Gryphons will seek nearby enemies, including one road over.' : (game.buildings || BUILDINGS)[ui.build].unit ? 'First troops in a moment.' : 'Your frontier grows.'}`,
       );
@@ -2396,7 +2437,7 @@ window.addEventListener('keydown', (e) => {
   }
 });
 document.addEventListener('visibilitychange', () => {
-  if (document.hidden) { holdInterruptedDialogs(); audio.setScene('paused'); }
+  if (document.hidden) { clearGoldFeedback(); holdInterruptedDialogs(); audio.setScene('paused'); }
   else { retryHistorySave(); retryPreferences(); }
   if (document.hidden && started && !paused && game.state.winner === null)
     pause(true);
@@ -3139,8 +3180,10 @@ function purchaseCitadelOption(kind) {
   syncProfileSafety();
   if (!citadelDialogSafe() || !paused || $('citadelModal').classList.contains('hidden') ||
       dialogLayers.findLast(layer => !layer.classList.contains('hidden')) !== $('citadelModal')) return;
+  const goldBefore = game.state.gold[0];
   const result = game.buyCitadelOption(kind, 0);
   if (!result.ok) { $('citadelPurchaseStatus').textContent = result.reason; updateCitadelUI(); return; }
+  showGoldFeedback(`citadel:${kind}`, goldBefore);
   const message = kind === 'arrows' ? 'Extra Arrow chosen. A second enemy in range receives the extra shot.' : 'Regeneration chosen. Recovery can begin after 8 seconds without damage and never exceeds full health.';
   $('citadelPurchaseStatus').textContent = message;
   sound('upgrade');
@@ -3823,7 +3866,7 @@ function syncViewportSafety() {
     : 'The battlefield fits again. Resume when you are ready.');
   syncDialogs();
 }
-window.visualViewport?.addEventListener('resize', () => { syncProtectedLayout(); syncViewportSafety(); });
+window.visualViewport?.addEventListener('resize', () => { clearGoldFeedback(); syncProtectedLayout(); syncViewportSafety(); });
 window.visualViewport?.addEventListener('scroll', syncViewportSafety);
 
 // Portable backups stay on the player's device. Nothing is uploaded.
