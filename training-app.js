@@ -211,7 +211,7 @@ export function bootTraining(doc = document) {
   const miniGesture = createTrainingGesture();
   const ui = { build:null, selected:null, pointer:null, dragging:false, paused:true, targets:[] };
   let snapshot = session.snapshot(), scope = null, stepKey = null, feedback = '', leaving = false, lastFrame = 0, hudElapsed = 0;
-  let miniPointer = null, visualGame = null;
+  let miniPointer = null, visualGame = null, keyboardFocus = false;
 
   function resetGesture() {
     gesture.cancel(); miniGesture.cancel(); miniPointer = null;
@@ -267,6 +267,8 @@ export function bootTraining(doc = document) {
     return result;
   }
   function refresh() {
+    const previousFocus = doc.activeElement;
+    const coachKeyboardFocus = keyboardFocus && previousFocus?.closest('.coach');
     snapshot = session.snapshot();
     visualGame = syncTrainingVisuals(renderer, session.game, visualGame);
     const nextScope = trainingScope(snapshot);
@@ -351,6 +353,17 @@ export function bootTraining(doc = document) {
     ui.targets = (snapshot.targetHints || []).filter((h) => h.buildingId).map((h) => h.buildingId);
     updateHUD();
     if (newStep) updateMinimapDescription();
+    // Disabling/removing the active action drops native focus onto the page,
+    // whose sequential Tab position can skip the newly revealed Continue.
+    // Repair only keyboard focus that this refresh made unusable. Pointer
+    // activations retain their native focus/scroll behavior; valid controls
+    // (including Pause, Restart and disclosures) keep focus during observation.
+    if (coachKeyboardFocus && (!previousFocus.isConnected || previousFocus.disabled || previousFocus.closest('[hidden]')) &&
+        (doc.activeElement === previousFocus || doc.activeElement === doc.body)) {
+      const next = $('continueLesson');
+      if (!next.hidden && !next.disabled) { next.focus({ preventScroll:true }); revealCoachControl(next); }
+      else focusStep();
+    }
   }
   function updateHUD() {
     const state = session.game.state;
@@ -395,11 +408,11 @@ export function bootTraining(doc = document) {
     else { choices.reset(); refresh(); }
   }
   const stop = (event) => { event.preventDefault(); event.stopImmediatePropagation(); };
-  doc.addEventListener('pointerdown', (event) => { coachAlignment.beginPointer(event); inputScope.pointerDown(event); }, { capture:true });
+  doc.addEventListener('pointerdown', (event) => { keyboardFocus = false; coachAlignment.beginPointer(event); inputScope.pointerDown(event); }, { capture:true });
   doc.addEventListener('pointerup', (event) => { coachAlignment.releasePointer(event); if (inputScope.pointerEnd(event)) { resetGesture(); stop(event); } }, { capture:true });
   doc.addEventListener('pointercancel', (event) => { coachAlignment.cancelPointer(event); inputScope.pointerEnd(event, true); resetGesture(); }, { capture:true });
   doc.addEventListener('click', (event) => { coachAlignment.endActivation(event); if (inputScope.click(event)) stop(event); }, { capture:true });
-  doc.addEventListener('keydown', (event) => { coachAlignment.keyboard(); if (inputScope.keyDown(event)) stop(event); }, { capture:true });
+  doc.addEventListener('keydown', (event) => { keyboardFocus = true; coachAlignment.keyboard(); if (inputScope.keyDown(event)) stop(event); }, { capture:true });
   doc.addEventListener('keyup', (event) => { if (inputScope.keyUp(event)) stop(event); }, { capture:true });
   $('trainingBattle').addEventListener('pointerdown', (event) => {
     if (event.pointerType === 'mouse' && event.button !== 0) return;
