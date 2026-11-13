@@ -4130,6 +4130,14 @@ body.gamepad-active a:focus {
 .trial-targets .protected-health { grid-column: 1 / -1; }
 .trial-targets .protected-target[data-state='destroyed'] { border-color: #b7d991; background: #293c2c; }
 
+/* At narrow usable portrait widths, three authored names need two lines.
+   Keep full text and 44px hit targets inside the dock, not over navigation. */
+.app.protected-mobile.protected-portrait.narrow-targets { --mobile-dock: 98px; }
+.app.protected-mobile.protected-short-portrait.narrow-targets { --mobile-dock: 74px; }
+.protected-portrait.narrow-targets .protected-dock .objective-hud.protect-hud { grid-template-rows: 14px 14px 58px; }
+.protected-short-portrait.narrow-targets .protected-dock .objective-hud.protect-hud { grid-template-rows: 14px 58px; }
+.protected-portrait.narrow-targets .protected-target { padding: 4px 5px 7px; }
+
 /* Optional bridge setup and pause detail reuse the existing scrollable menus.
    In-play contribution occupies existing HUD text, with no new phone track. */
 .skirmish-bridge-label { display: flex; align-items: center; gap: 10px; min-height: 44px; margin-top: 8px; cursor: pointer; font-size: 13px; }

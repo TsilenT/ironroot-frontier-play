@@ -1432,9 +1432,14 @@ function syncProtectedLayout() {
   $('app').classList.toggle('mobile-ordinary', !protect);
   $('app').classList.toggle('protected-compact', landscape || portrait);
   const padding = landscape || portrait ? getComputedStyle($('app')) : {};
-  const shortPortrait = portrait && insetViewportRect(viewport, padding).height < 560;
+  const content = insetViewportRect(viewport, padding);
+  const shortPortrait = portrait && content.height < 560;
+  // Reed Beds' authored names wrap at narrow usable widths, including safe
+  // areas. Reserve a second line without taking space from shorter trial names.
+  const narrowTargets = currentCampaign === 'through-the-reed-beds' && portrait && content.width < 386 && protectedControls.size === 3 &&
+    $('protectedTargets').classList.contains('trial-targets') && !$('protectedTargets').classList.contains('charted-targets');
   const next = (sidebar ? 'sidebar' : shortPortrait ? 'portrait-short' : landscape ? 'landscape' : portrait ? 'portrait' : 'ordinary') + ($('app').classList.contains('mobile-coaching') ? ':coaching' : '') +
-    ($('app').classList.contains('coach-collapsed') ? ':collapsed' : '');
+    ($('app').classList.contains('coach-collapsed') ? ':collapsed' : '') + (narrowTargets ? ':narrow-targets' : '');
   const fitted = fitMobileViewport($('app'), viewport, landscape || portrait, padding);
   const changed = mobileLayout !== next;
   const focused = document.activeElement;
@@ -1445,6 +1450,7 @@ function syncProtectedLayout() {
   mobileLayout = next;
   $('app').classList.toggle('protected-sidebar', sidebar);
   $('app').classList.toggle('protected-short-portrait', shortPortrait);
+  $('app').classList.toggle('narrow-targets', narrowTargets);
   $('protectedNavigation').classList.toggle('hidden', !landscape && !portrait);
   const move = (id, parent) => { if ($(id).parentNode !== $(parent)) $(parent).append($(id)); };
   move('objectiveHUD', protect || landscape || portrait ? 'protectedDock' : 'battlefield');
