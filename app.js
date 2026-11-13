@@ -358,6 +358,10 @@ renderer.vfx.setPreferences({
   reducedMotion: preferences.reducedMotion,
   quality: preferences.quality,
 });
+function updateTrainingLink() {
+  $('welcomeTraining').href = `./training.html#motion=${preferences.reducedMotion ? 'reduce' : 'full'}&detail=${preferences.quality}`;
+}
+updateTrainingLink();
 function initAudio() {
   audio.unlock().then((ok) => {
     if (!ok && soundOn)
@@ -3593,6 +3597,7 @@ $('reduceMotion').onchange = () => {
     reducedMotion: preferences.reducedMotion,
     quality: preferences.quality,
   });
+  updateTrainingLink();
   savePreferences();
 };
 $('effectQuality').onchange = () => {
@@ -3601,6 +3606,7 @@ $('effectQuality').onchange = () => {
     reducedMotion: preferences.reducedMotion,
     quality: preferences.quality,
   });
+  updateTrainingLink();
   savePreferences();
 };
 // Dialog focus never escapes into a live battlefield behind the overlay.

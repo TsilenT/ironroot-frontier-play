@@ -201,10 +201,23 @@ export function trainingScope(snapshot) {
   return [snapshot.attemptId, snapshot.lessonIndex, snapshot.stepIndex, snapshot.status, snapshot.paused].join(':');
 }
 
+/** Only visual choices cross the entry link; the practice profile stays isolated. */
+export function trainingVisualPreferences(fragment, defaults = {}) {
+  const visual = { reducedMotion: !!defaults.reducedMotion, quality: defaults.quality === 'low' ? 'low' : 'high' };
+  const params = new URLSearchParams(typeof fragment === 'string' ? fragment.replace(/^#/, '') : '');
+  const motion = params.getAll('motion'), detail = params.getAll('detail');
+  if (motion.length === 1 && ['reduce', 'full'].includes(motion[0])) visual.reducedMotion = motion[0] === 'reduce';
+  if (detail.length === 1 && ['low', 'high'].includes(detail[0])) visual.quality = detail[0];
+  return visual;
+}
+
 export function bootTraining(doc = document) {
   const $ = (id) => doc.getElementById(id);
   let session = createCurrentTrainingSession();
   const renderer = new Renderer($('trainingBattle'), $('trainingMinimap'));
+  const visual = trainingVisualPreferences(doc.defaultView?.location?.hash, { reducedMotion: renderer.reducedMotion });
+  renderer.reducedMotion = visual.reducedMotion;
+  renderer.vfx.setPreferences(visual);
   let choices = createTrainingChoices(session);
   const inputScope = createInputScopeGuard();
   const gesture = createTrainingGesture();
