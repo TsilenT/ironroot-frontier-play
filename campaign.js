@@ -474,7 +474,7 @@ export const SHARED_WATCH_MISSIONS=[{
   scenarioRevision:1,mapId:'classic',mapRevision:1,rulesetId:SHARED_WATCH_RULESET_ID,rulesetRevision:1,
   description:'Ground pressure competes for attention across the coastal roads. A paid middle watch can share nearby defense, especially on the middle and southern approaches, while mobile support can defend and then advance with an attack.',
   dialogue:{speaker:'Captain Rowan',text:'One watch can hold nearby ground, but it will not march with our army. We can pay for that safety or send the coin forward.'},
-  victoryText:'The enemy citadel falls and the company secures the Siege Coast. The current route ends here; later chapters remain ahead.',
+  victoryText:'The enemy citadel falls and the company secures the Siege Coast. Rowan turns inland to face the last local reserves.',
   objective:'Destroy the enemy citadel by 10:00. Your citadel must survive.',
   hint:'A middle watch shares a limited firing stream across nearby ground threats. Alternatively, pay for ranged and durable mobile support that can join an attack. No tower, road, unit or workshop target is required.',
   difficulty:'normal',seed:8405,timeLimit:600,startingGold:1100,startingHealth:6000,enemyGold:100,ai:true,prerequisites:['the-long-screen'],
@@ -488,7 +488,7 @@ export const SHARED_WATCH_MISSIONS=[{
     'All eight earned buildings, automatic adjacent-road flyers and normal paid citadel choices are available. At 5:00 ordinary escalation speeds production ×1.65, multiplies troop structure damage ×1.75 and lowers citadel shot damage from 32 to 18. There is no fog or forced drain.'],
 }];
 
-export const BROKEN_LINE_CHAPTER=deepFreeze({id:'broken-line',number:9,name:'The Broken Line',subtitle:'Face the last local reserves',theme:'woodland',plannedMissions:5,description:'Chapter 9 begins here. Five missions are currently available; at least five are planned.',epilogue:'The Broken Line is complete. Rowan’s company can prepare for the final chapter; the campaign is not yet finished.'});
+export const BROKEN_LINE_CHAPTER=deepFreeze({id:'broken-line',number:9,name:'The Broken Line',subtitle:'Face the last local reserves',theme:'woodland',plannedMissions:5,description:'The coastal roads are secure, but enemy reserves still guard the routes inland. Rowan’s company must open a passage to the last fortress.',epilogue:'The last reserves have fallen back. Rowan’s company takes the road to the fortress and begins the Last Ascent.'});
 export const WAKE_RESERVE_MISSIONS=[{
   id:'wake-the-reserve',chapterId:'broken-line',number:30,name:'Wake the Reserve',subtitle:'Choose when to face the northern reserve',
   scenarioRevision:1,mapId:'classic',mapRevision:1,rulesetId:MINOR_RESERVE_RULESET_ID,rulesetRevision:1,
@@ -569,7 +569,7 @@ export const BOWSTRINGS_MISSIONS=[{
   scenarioRevision:1,mapId:'classic',mapRevision:1,rulesetId:BOWSTRINGS_RULESET_ID,rulesetRevision:1,
   description:'A small gryphon company is already aloft. Break the two outer archery positions that cover the approach, or destroy the enemy citadel. Other positions may remain standing.',
   dialogue:{speaker:'Captain Rowan',text:'The North Bow and South Bow cover the air above these roads. Break their original ranges, and our company can pass. Support the gryphons or find another way through.'},
-  victoryText:'The outer bow positions no longer bar the company’s passage. The Broken Line is complete; the final chapter still lies ahead.',
+  victoryText:'The outer bow positions no longer bar the company’s passage. The road to the fortress is open.',
   objective:'Destroy both original North Bow and South Bow archery ranges by 10:00, or destroy the enemy citadel. Your citadel must survive; 1 HP is enough.',
   hint:'Archers counter gryphons. Use ordinary ground support or a paid Volley against exposed archers, then let your surviving troops reach the ranges. Flyers take no route orders; ground demolition is also legal.',
   difficulty:'normal',seed:9704,timeLimit:600,startingGold:900,startingHealth:6000,enemyGold:100,ai:true,prerequisites:['three-minutes-more'],startingGryphons:2,

@@ -1,7 +1,7 @@
 // Current presentation only. Mission identity, unlocks and victory rules stay in campaign.js.
 export const CURRENT_RIVER_COMPACT_EPILOGUE = 'From the lantern-lit banks to the borrowed yard, the river towns now share the watch over crossings and signal fires, so the next convoy need not depend on Rowan’s company to reach the far bank.';
 export const CURRENT_UNLIT_ROADS_EPILOGUE = 'The watchfires answer across all three roads again. With a passage open through the reed beds, Rowan’s company leaves the uplands for the coast.';
-export const CURRENT_SIEGE_COAST_EPILOGUE = 'The quays and coastal roads are secure. Rowan’s company has completed the Siege Coast; later chapters remain ahead.';
+export const CURRENT_SIEGE_COAST_EPILOGUE = 'The quays and coastal roads are secure. Rowan’s company marches inland to face the last enemy reserves in the Broken Line.';
 const GOALS = {
   'cut-the-bowstrings': 'Destroy both original North Bow and South Bow archery ranges by 10:00, or destroy the enemy citadel. Your citadel must survive; 1 HP is enough.',
   'three-minutes-more': 'Survive until 3:00 with your citadel alive, or destroy the enemy citadel earlier. One HP is enough.',
