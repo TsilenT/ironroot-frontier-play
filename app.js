@@ -1434,9 +1434,10 @@ function syncProtectedLayout() {
   const padding = landscape || portrait ? getComputedStyle($('app')) : {};
   const content = insetViewportRect(viewport, padding);
   const shortPortrait = portrait && content.height < 560;
-  // Reed Beds' authored names wrap at narrow usable widths, including safe
-  // areas. Reserve a second line without taking space from shorter trial names.
-  const narrowTargets = currentCampaign === 'through-the-reed-beds' && portrait && content.width < 386 && protectedControls.size === 3 &&
+  // The authored three-position names need a second line below these usable
+  // widths. Shorter trial names keep their existing battlefield space.
+  const targetWrapWidth = currentCampaign === 'through-the-reed-beds' ? 386 : currentCampaign === 'below-the-ramparts' ? 403 : 0;
+  const narrowTargets = portrait && content.width < targetWrapWidth && protectedControls.size === 3 &&
     $('protectedTargets').classList.contains('trial-targets') && !$('protectedTargets').classList.contains('charted-targets');
   const next = (sidebar ? 'sidebar' : shortPortrait ? 'portrait-short' : landscape ? 'landscape' : portrait ? 'portrait' : 'ordinary') + ($('app').classList.contains('mobile-coaching') ? ':coaching' : '') +
     ($('app').classList.contains('coach-collapsed') ? ':collapsed' : '') + (narrowTargets ? ':narrow-targets' : '');
@@ -2632,7 +2633,7 @@ function updateHUD() {
       `${timeText(Math.ceil(Math.max(0, authored.timeLimit - s.time)))} remaining`;
     if(engineView){
       $('objectiveTime').textContent = engineView.phaseCue + ' · No deadline';
-      $('objectiveProgress').textContent = engineView.hudLabel;
+      $('objectiveProgress').textContent = $('app').classList.contains('protected-mobile') ? engineView.mobileHudLabel : engineView.hudLabel;
       $('objectiveProgress').setAttribute('aria-label',engineView.accessibleLabel);
       if(engineView.announcementKey!==lastEngineAnnouncementKey){$('protectedAlert').textContent=engineView.announcement;lastEngineAnnouncementKey=engineView.announcementKey;}
     }
