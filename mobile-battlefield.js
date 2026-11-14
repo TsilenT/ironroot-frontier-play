@@ -64,6 +64,21 @@ export function createViewportPause() {
     clear(){active=false;blocked=false;},
   };
 }
+// The objective port is a fixed shell control. Its children may be off-screen
+// inside a real clipped scroller, but must retain full-size, separate hit areas
+// and remain inside reachable content coordinates. Never excuse raw overflow.
+export function inspectScrollableObjectives({port,slot=port,clientWidth=port?.width,clientHeight=port?.height,scrollLeft=0,scrollTop=0,scrollWidth,scrollHeight,controls=[],clipped=false}) {
+  port=port&&rect(port);slot=slot&&rect(slot);controls=controls.map(r=>r&&rect(r));
+  if (!clipped || !finite(port) || !finite(slot) || !contains(slot,port) || ![clientWidth,clientHeight,scrollLeft,scrollTop,scrollWidth,scrollHeight].every(Number.isFinite) || clientWidth<1 || clientHeight<1 || scrollWidth<clientWidth-.5 || scrollWidth>clientWidth+.5 || scrollHeight<clientHeight-.5)
+    return {safe:false,reason:'Objective details need a contained scrolling region.'};
+  const content={left:port.left-scrollLeft,top:port.top-scrollTop,width:scrollWidth,height:scrollHeight};
+  content.right=content.left+content.width;content.bottom=content.top+content.height;
+  if (controls.some(r=>!finite(r)||r.width<43.5||r.height<43.5||!contains(content,r)))
+    return {safe:false,reason:'An objective control needs more reachable space.'};
+  for(let i=0;i<controls.length;i++)for(let j=i+1;j<controls.length;j++)if(overlaps(controls[i],controls[j]))
+    return {safe:false,reason:'Objective controls need separate space.'};
+  return {safe:true,reason:''};
+}
 // Choose a readable toast band without covering the original structures.
 export function protectedToastTop(height,toastHeight,obstacles=[]) {
   const margin=8,preferred=(height-toastHeight)/2;

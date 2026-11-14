@@ -2,7 +2,7 @@ import {lastEngineView,createLastEngineAudioObserver} from './final-chapter-view
 import { createRuntimeUpdate } from './runtime-update.js';
 import { buildingUpgradeView } from './building-upgrade-view.js';
 import { armyCapacityView, defeatFacts, createGoldFeedbackLedger } from './strategy-feedback-view.js';
-import { createViewportPause, inspectMobileGeometry, visibleViewportRect, insetViewportRect, fitMobileViewport, protectedToastTop } from './mobile-battlefield.js';
+import { createViewportPause, inspectMobileGeometry, inspectScrollableObjectives, visibleViewportRect, insetViewportRect, fitMobileViewport, protectedToastTop } from './mobile-battlefield.js';
 import { createProfileSession, PROFILE_MARKER_KEY, CURRENT_PROFILE_PROTOCOL_VERSION } from './profile-session.js';
 import { createInputScopeGuard } from './input-scope.js';
 import { ACTIONS, effectiveBindings, normalizeKeyboardMap, bindingConflict, bindableCode, keyLabel, actionLabel, ignoreKeyboardEvent, keyboardAction } from './keyboard.js';
@@ -1404,9 +1404,7 @@ function beginProtectedObjectives() {
       // A physical release must belong to a fresh press on this exact control.
       // Keyboard / assistive activation retains native Space/Enter behavior;
       // the global input-scope guard rejects held keys from another scope.
-      if (event.detail !== 0 && (armedProtectedControl?.button !== button ||
-        (Number.isFinite(event.pointerId) && event.pointerId >= 0 &&
-          armedProtectedControl.pointerId !== event.pointerId))) return;
+      if (event.detail !== 0 && !objectivePressValid(armedProtectedControl, event)) return;
       armedProtectedControl = null;
       focusProtectedObjective(target.originalId);
     });
@@ -1434,13 +1432,8 @@ function syncProtectedLayout() {
   const padding = landscape || portrait ? getComputedStyle($('app')) : {};
   const content = insetViewportRect(viewport, padding);
   const shortPortrait = portrait && content.height < 560;
-  // The authored three-position names need a second line below these usable
-  // widths. Shorter trial names keep their existing battlefield space.
-  const targetWrapWidth = currentCampaign === 'through-the-reed-beds' ? 386 : currentCampaign === 'below-the-ramparts' ? 403 : 0;
-  const narrowTargets = portrait && content.width < targetWrapWidth && protectedControls.size === 3 &&
-    $('protectedTargets').classList.contains('trial-targets') && !$('protectedTargets').classList.contains('charted-targets');
   const next = (sidebar ? 'sidebar' : shortPortrait ? 'portrait-short' : landscape ? 'landscape' : portrait ? 'portrait' : 'ordinary') + ($('app').classList.contains('mobile-coaching') ? ':coaching' : '') +
-    ($('app').classList.contains('coach-collapsed') ? ':collapsed' : '') + (narrowTargets ? ':narrow-targets' : '');
+    ($('app').classList.contains('coach-collapsed') ? ':collapsed' : '');
   const fitted = fitMobileViewport($('app'), viewport, landscape || portrait, padding);
   const changed = mobileLayout !== next;
   const focused = document.activeElement;
@@ -1451,7 +1444,7 @@ function syncProtectedLayout() {
   mobileLayout = next;
   $('app').classList.toggle('protected-sidebar', sidebar);
   $('app').classList.toggle('protected-short-portrait', shortPortrait);
-  $('app').classList.toggle('narrow-targets', narrowTargets);
+  $('objectiveContent').tabIndex = landscape || portrait ? 0 : -1;
   $('protectedNavigation').classList.toggle('hidden', !landscape && !portrait);
   const move = (id, parent) => { if ($(id).parentNode !== $(parent)) $(parent).append($(id)); };
   move('objectiveHUD', protect || landscape || portrait ? 'protectedDock' : 'battlefield');
@@ -1466,7 +1459,7 @@ function syncProtectedLayout() {
   move('battleTools', landscape || portrait ? 'protectedNavigation' : 'battlefield');
   move('mapControls', landscape || portrait ? 'protectedNavigation' : 'battlefield');
   const buildParent = portrait || sidebar ? $('protectedNavigation') : $('objectiveHUD');
-  const buildNext = portrait || sidebar ? $('battleTools') : $('protectedTargets');
+  const buildNext = portrait || sidebar ? $('battleTools') : $('objectiveContent');
   if ($('compactBuild').parentNode !== buildParent || $('compactBuild').nextSibling !== buildNext)
     buildParent.insertBefore($('compactBuild'), buildNext);
   move('selectionPanel', landscape || portrait ? 'commandDeck' : 'battlefield');
@@ -1477,7 +1470,15 @@ function syncProtectedLayout() {
     if (focused?.isConnected && !focused.closest('.hidden,[inert]') && focused.getClientRects().length) focused.focus({preventScroll:true});
   }
   positionToast();
+  syncObjectiveScrollHint();
   return changed || fitted;
+}
+function syncObjectiveScrollHint() {
+  const port = $('objectiveContent'), mobile = $('app').classList.contains('protected-mobile');
+  const overflow = mobile && port.scrollHeight > port.clientHeight + 1;
+  $('objectiveHUD').classList.toggle('objectives-scrollable', overflow);
+  const label = overflow ? 'Objective details. Scroll to read more.' : 'Objective details';
+  if (port.getAttribute('aria-label') !== label) port.setAttribute('aria-label', label);
 }
 window.addEventListener('resize', () => { clearGoldFeedback(); syncProtectedLayout(); syncViewportSafety(); });
 function updateCompactBuildControl() {
@@ -1536,19 +1537,30 @@ function focusProtectedObjective(originalId) {
   $('front').style.borderColor = '';
   toast(`Showing ${target.label}.`);
 }
+function objectivePressValid(press, event) {
+  if (!press || event.currentTarget !== press.button ||
+      (Number.isFinite(event.pointerId) && event.pointerId >= 0 && press.pointerId !== event.pointerId)) return false;
+  const rect = press.button.getBoundingClientRect();
+  if (['left','top','width','height'].some(key => Math.abs(rect[key] - press.rect[key]) > .5)) return false;
+  return press.button.contains(document.elementFromPoint(event.clientX, event.clientY));
+}
 document.addEventListener('pointerdown', event => {
   const button = event.target.closest?.('[data-protected-id]');
   armedProtectedControl = button && $('protectedTargets').contains(button) &&
-    (event.pointerType !== 'mouse' || event.button === 0) ? { button, pointerId: event.pointerId } : null;
-  armedReserveControl = event.target.closest?.('#focusMinorReserve') &&
-    (event.pointerType !== 'mouse' || event.button === 0) ? { pointerId: event.pointerId } : null;
+    (event.pointerType !== 'mouse' || event.button === 0) ? { button, pointerId:event.pointerId, rect:button.getBoundingClientRect(), scrollTop:$('objectiveContent').scrollTop, scrollLeft:$('objectiveContent').scrollLeft } : null;
+  const reserveButton = event.target.closest?.('#focusMinorReserve');
+  armedReserveControl = reserveButton &&
+    (event.pointerType !== 'mouse' || event.button === 0) ? { button:reserveButton, pointerId:event.pointerId, rect:reserveButton.getBoundingClientRect(), scrollTop:$('objectiveContent').scrollTop, scrollLeft:$('objectiveContent').scrollLeft } : null;
 }, true);
 document.addEventListener('pointercancel', () => { armedProtectedControl = null; armedReserveControl = null; }, true);
+$('objectiveContent').addEventListener('scroll', () => {
+  const moved = press => press && (Math.abs(press.scrollTop-$('objectiveContent').scrollTop)>.5 || Math.abs(press.scrollLeft-$('objectiveContent').scrollLeft)>.5);
+  if (moved(armedProtectedControl)) armedProtectedControl = null;
+  if (moved(armedReserveControl)) armedReserveControl = null;
+});
 window.addEventListener('blur', () => { armedProtectedControl = null; armedReserveControl = null; });
 $('focusMinorReserve').onclick = event => {
-  if (event.detail !== 0 && (!armedReserveControl ||
-    (Number.isFinite(event.pointerId) && event.pointerId >= 0 &&
-      armedReserveControl.pointerId !== event.pointerId))) return;
+  if (event.detail !== 0 && !objectivePressValid(armedReserveControl, event)) return;
   armedReserveControl = null;
   const reserve = currentMinorReserve();
   if (!reserve || reserve.ended || !canFocusProtectedObjective()) return;
@@ -2415,7 +2427,7 @@ window.addEventListener('keydown', (e) => {
   )
     return;
   // Space/Page/arrow keys scroll the focused lesson; they are not battle commands.
-  if ($('campaignCoach').contains(e.target)) return;
+  if ($('campaignCoach').contains(e.target) || ($('app').classList.contains('protected-mobile') && $('objectiveContent').contains(e.target))) return;
   const button = e.target?.closest?.('button');
   // Clicking a battle HUD button leaves native focus there. Keep its ordinary
   // shortcuts usable, but only Resume admits shortcuts in the pause menu.
@@ -2668,6 +2680,7 @@ function updateHUD() {
   }
   updateSelection();
   updateCampaignDeck();
+  syncObjectiveScrollHint();
 }
 function updateFogMemoryDetails(view) {
   const details = view.fog?.enabled ? observationHUD(view).memoryDetails : [];
@@ -3850,17 +3863,24 @@ function syncViewportSafety() {
   let geometry = {safe:true,reason:''};
   if (mobile) {
     const reserve = currentMinorReserve();
-    const controls = ['pause','speed','sound','settings','home','front','minimap','compactBuild',
-      ...(reserve && !reserve.ended ? ['focusMinorReserve'] : []),
-      ...[...protectedControls.values()].map(c => c.button.id)].filter(Boolean).map(id => $(id).getBoundingClientRect());
-    // Protected buttons use stable authored IDs in data attributes, not DOM IDs.
-    for (const {button} of protectedControls.values()) if (!button.id) controls.push(button.getBoundingClientRect());
+    const port = $('objectiveContent'), portStyle = getComputedStyle(port);
+    const controls = ['pause','speed','sound','settings','home','front','minimap','compactBuild'].map(id => $(id).getBoundingClientRect());
+    controls.push(port.getBoundingClientRect());
+    const objectiveNodes = [...new Set([
+      ...[...protectedControls.values()].map(c => c.button),
+      ...(reserve && !reserve.ended ? [$('focusMinorReserve')] : []),
+      ...[...port.querySelectorAll('button,a[href],input,select,summary,[role="button"]')].filter(controlIsVisible),
+    ])];
+    const objectiveControls = objectiveNodes.map(node => node.getBoundingClientRect());
     const teaching = $('app').classList.contains('mobile-coaching');
     if (teaching) for (const id of ['coachResume', 'toggleCoach'])
       if (!$(id).classList.contains('hidden')) controls.push($(id).getBoundingClientRect());
     const safeContent = insetViewportRect(viewport, getComputedStyle($('app')));
     geometry = inspectMobileGeometry({viewport:safeContent,canvas:$('battle').getBoundingClientRect(),
       regions:['topbar','protectedDock','protectedNavigation', ...(teaching && !$('app').classList.contains('coach-collapsed') ? ['campaignTeaching'] : [])].map(id => $(id).getBoundingClientRect()),controls});
+    if (geometry.safe) geometry = inspectScrollableObjectives({port:port.getBoundingClientRect(),slot:$('protectedDock').getBoundingClientRect(),clientWidth:port.clientWidth,clientHeight:port.clientHeight,scrollLeft:port.scrollLeft,scrollTop:port.scrollTop,
+      scrollWidth:port.scrollWidth,scrollHeight:port.scrollHeight,controls:objectiveControls,
+      clipped:objectiveNodes.every(node => port.contains(node)) && ['auto','scroll'].includes(portStyle.overflowY) && portStyle.overflowX === 'hidden' && /\b(paint|content|strict)\b/.test(portStyle.contain)});
   }
   const wasActive = viewportPause.active;
   const changed = viewportPause.measure(!geometry.safe);
@@ -4210,7 +4230,7 @@ function controllerScope() {
 function padControls(scope) {
   return [
     ...(scope.element?.querySelectorAll(
-      'button:not([disabled]),a[href],input:not([type="file"]):not([disabled]),select:not([disabled]),summary',
+      'button:not([disabled]),a[href],input:not([type="file"]):not([disabled]),select:not([disabled]),summary,#objectiveContent[tabindex="0"]',
     ) || []),
   ].filter(controlIsVisible);
 }
@@ -4227,6 +4247,13 @@ function controllerNavigate(direction, scope) {
   const controls = padControls(scope),
     active = document.activeElement,
     current = controls.indexOf(active);
+  if (active?.id === 'objectiveContent' && ['up','down'].includes(direction)) {
+    const port = active, remaining = port.scrollHeight - port.clientHeight - port.scrollTop;
+    if (direction === 'up' ? port.scrollTop > 1 : remaining > 1) {
+      port.scrollBy(0, (direction === 'up' ? -1 : 1) * Math.max(24, port.clientHeight * .75));
+      return;
+    }
+  }
   if (
     ['left', 'right'].includes(direction) &&
     active?.matches('input[type="range"]')
